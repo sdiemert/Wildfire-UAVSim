@@ -1,0 +1,8 @@
+# Install with: python3 -m pip install -r requirements.txt
+#
+# Mesa MUST stay on 1.x. Mesa 2.0 removed mesa.time and the tornado-based
+# ModularServer / ModularVisualization used by main.py and
+# Canvas_Grid_Visualization.py, so newer versions fail at import.
+mesa==1.2.1
+numpy
+matplotlib
