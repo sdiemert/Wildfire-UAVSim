@@ -99,10 +99,10 @@ def _import_simulation():
 
     import agents
     import config as cfg
-    import policies
+    import policy
     import wildfire_model
 
-    return cfg, wildfire_model, agents, policies
+    return cfg, wildfire_model, agents, policy
 
 
 def apply_overrides(overrides: dict[str, Any]) -> None:
@@ -110,7 +110,8 @@ def apply_overrides(overrides: dict[str, Any]) -> None:
 
     `from config import *` copies the bindings into each module's
     own namespace, so patching only config would have no effect
-    on wildfire_model, agents or policies.
+    on wildfire_model or agents. The policy package deliberately reads
+    through `config.` instead, so it needs no patching.
     """
     if not overrides:
         return
@@ -141,8 +142,9 @@ def seed_simulation(seed: int) -> None:
     The model draws from both the `random` module (fuel levels, fire spread) and
     SYSTEM_RANDOM (tree placement, UAV actions, policy tie breaks). SYSTEM_RANDOM
     is a random.SystemRandom instance, which cannot be seeded, so it is replaced
-    by a seeded random.Random -- again in every module that star-imported it,
-    policies.py included.
+    by a seeded random.Random -- again in every module that star-imported it.
+    Policies read config.SYSTEM_RANDOM at call time, so patching config reaches
+    them without the package having to be walked.
     """
     random.seed(seed)
     seeded = random.Random(seed)
@@ -486,7 +488,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--policy",
         default="random",
-        help="policy that chooses UAV directions, see policies.py (default: random)",
+        help="policy that chooses UAV directions, see the policy/ package (default: random)",
     )
     parser.add_argument("--log-level", default="INFO",
                         choices=("DEBUG", "INFO", "WARNING", "ERROR"), help="console log level")

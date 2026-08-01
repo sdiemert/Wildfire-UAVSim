@@ -5,7 +5,7 @@ import functools
 
 # own python modules
 
-import policies
+from policy import Observation
 
 from config import *
 
@@ -240,7 +240,7 @@ class UAV(mesa.Agent):
             for agent in self.model.grid.get_cell_list_contents([cell]):
                 if type(agent) is Fire:
                     cells.append((cell, int(agent.is_burning() is True)))
-        return policies.Observation(uav_id=self.unique_id, pos=self.pos, cells=cells)
+        return Observation(uav_id=self.unique_id, pos=self.pos, cells=cells)
 
     # function for obtaining observed cells for the corresponding UAV
     def surrounding_states(self):

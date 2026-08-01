@@ -7,7 +7,10 @@ import matplotlib.pyplot as plt
 # own python modules
 
 import agents
-import policies
+
+# imported by name because 'policy' is also the name of the constructor argument and attribute below,
+# which would shadow the module
+from policy import RandomPolicy, build_policy
 
 from config import *
 
@@ -30,9 +33,9 @@ class WildFireModel(mesa.Model):
         # so any existing caller behaves exactly as before. A policy name is accepted as well as an instance,
         # because the web interface dropdown hands its selection over as a string.
         if policy is None:
-            policy = policies.RandomPolicy()
+            policy = RandomPolicy()
         elif isinstance(policy, str):
-            policy = policies.build_policy(policy)
+            policy = build_policy(policy)
         self.policy = policy
 
         # attributes intialization
@@ -50,6 +53,10 @@ class WildFireModel(mesa.Model):
         self.MR2_VALUE = 0
 
         self.reset()
+
+        # makes the active policy visible on the console when the web interface Reset button reinstantiates
+        # the model, which is otherwise silent about which selection took effect
+        self.log.info("model ready: %d UAVs, policy=%s", self.NUM_AGENTS, self.policy)
 
     # reset method with attributes initialization. This method should be used whenever it is needed to reset the
     # environment in execution time. For example, when the graphical interface is up, and reset button is pressed, this

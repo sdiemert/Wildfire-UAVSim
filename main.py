@@ -10,7 +10,8 @@ from Canvas_Grid_Visualization import CanvasGrid
 
 import wildfire_model
 import agents
-import policies
+
+from policy import POLICIES, RandomPolicy
 
 from config import *
 
@@ -46,11 +47,11 @@ def agent_portrayal(agent):
 # builds the settings shown on the left hand side of the web page. Mesa passes the current value of each
 # one to WildFireModel as a keyword argument, both on start up and every time Reset is pressed.
 def model_params():
-    policy_names = sorted(policies.POLICIES)
+    policy_names = sorted(POLICIES)
     return {
         "policy": mesa.visualization.Choice(
             name="UAV policy",
-            value=policies.RandomPolicy.name,
+            value=RandomPolicy.name,
             choices=policy_names,
             description="Rule that decides which direction each UAV flies. "
                         "Pick one and press Reset to restart the simulation with it.",
@@ -66,7 +67,7 @@ def main():
 
     print('actions:', N_ACTIONS)
     print('observations:', N_OBSERVATIONS)
-    print('policies:', ', '.join(sorted(policies.POLICIES)))
+    print('policies:', ', '.join(sorted(POLICIES)))
 
     # initialize CanvasGrid
     grid = CanvasGrid(agent_portrayal, WIDTH, HEIGHT, 10 * WIDTH, 10 * HEIGHT)
