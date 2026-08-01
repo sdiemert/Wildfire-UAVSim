@@ -57,6 +57,8 @@ class RunConfig:
     seed: int | None = None
     overrides: dict[str, Any] = field(default_factory=dict)
     log_every: int = 10
+    # policy name, resolved to an instance inside the worker; a plain string keeps RunConfig picklable
+    policy: str = "random"
 
 
 @dataclass
@@ -97,9 +99,10 @@ def _import_simulation():
 
     import agents
     import config as cfg
+    import policies
     import wildfire_model
 
-    return cfg, wildfire_model, agents
+    return cfg, wildfire_model, agents, policies
 
 
 def apply_overrides(overrides: dict[str, Any]) -> None:
@@ -107,13 +110,13 @@ def apply_overrides(overrides: dict[str, Any]) -> None:
 
     `from config import *` copies the bindings into each module's
     own namespace, so patching only config would have no effect
-    on wildfire_model or agents.
+    on wildfire_model, agents or policies.
     """
     if not overrides:
         return
 
-    cfg, wildfire_model, agents = _import_simulation()
-    modules = (cfg, wildfire_model, agents)
+    modules = _import_simulation()
+    cfg = modules[0]
 
     for name, value in overrides.items():
         if not hasattr(cfg, name):
@@ -136,15 +139,14 @@ def seed_simulation(seed: int) -> None:
     """Seed every random source the simulation uses.
 
     The model draws from both the `random` module (fuel levels, fire spread) and
-    SYSTEM_RANDOM (tree placement, UAV actions). SYSTEM_RANDOM is a
-    random.SystemRandom instance, which cannot be seeded, so it is replaced by a
-    seeded random.Random -- again in every module that star-imported it.
+    SYSTEM_RANDOM (tree placement, UAV actions, policy tie breaks). SYSTEM_RANDOM
+    is a random.SystemRandom instance, which cannot be seeded, so it is replaced
+    by a seeded random.Random -- again in every module that star-imported it,
+    policies.py included.
     """
-    cfg, wildfire_model, agents = _import_simulation()
-
     random.seed(seed)
     seeded = random.Random(seed)
-    for module in (cfg, wildfire_model, agents):
+    for module in _import_simulation():
         if hasattr(module, "SYSTEM_RANDOM"):
             setattr(module, "SYSTEM_RANDOM", seeded)
 
@@ -195,7 +197,7 @@ def run_simulation(config: RunConfig) -> RunResult:
     started = time.perf_counter()
 
     try:
-        cfg, wildfire_model, agents = _import_simulation()
+        cfg, wildfire_model, agents, policy_module = _import_simulation()
 
         if config.overrides:
             apply_overrides(config.overrides)
@@ -203,18 +205,23 @@ def run_simulation(config: RunConfig) -> RunResult:
         if config.seed is not None:
             seed_simulation(config.seed)
 
+        policy = policy_module.build_policy(config.policy)
+
         log.info(
-            "starting: %d steps, %dx%d grid, %d UAVs, seed=%s",
+            "starting: %d steps, %dx%d grid, %d UAVs, policy=%s, seed=%s",
             config.steps,
             cfg.HEIGHT,
             cfg.WIDTH,
             cfg.NUM_AGENTS,
+            policy,
             config.seed,
         )
 
-        # the model prints to stdout on construction; route that into the log
+        # the model prints to stdout on construction; route that into the log.
+        # passing 'log' gives the model and its agents this run's logger, so agent level
+        # messages are tagged with the run they belong to.
         with contextlib.redirect_stdout(_LogWriter(log)):
-            model = wildfire_model.WildFireModel()
+            model = wildfire_model.WildFireModel(log=log, policy=policy)
 
         steps_completed = 0
         for step in range(1, config.steps + 1):
@@ -222,12 +229,18 @@ def run_simulation(config: RunConfig) -> RunResult:
                 with contextlib.redirect_stdout(_LogWriter(log)):
                     model.step()
             except SystemExit:
-                # WildFireModel.step() calls sys.exit(0) once its own BATCH_SIZE
-                # is reached; the loop below normally stops first.
+                # defensive: nothing in the model calls sys.exit() any more, but a
+                # policy or a future change might.
                 log.info("model requested exit at step %d", step)
                 break
 
             steps_completed = step
+
+            # the model clears 'running' when it reaches its own BATCH_SIZE; this
+            # loop normally stops first, so it only matters for --steps > BATCH_SIZE
+            if not model.running:
+                log.info("model stopped itself at step %d (BATCH_SIZE reached)", step)
+                break
 
             if config.log_every and step % config.log_every == 0:
                 burning, burned_out = _count_fire_cells(model, agents)
@@ -470,6 +483,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="NAME=VALUE",
         help="override a constant from config.py (repeatable)",
     )
+    parser.add_argument(
+        "--policy",
+        default="random",
+        help="policy that chooses UAV directions, see policies.py (default: random)",
+    )
     parser.add_argument("--log-level", default="INFO",
                         choices=("DEBUG", "INFO", "WARNING", "ERROR"), help="console log level")
     parser.add_argument("--log-file", default=None, help="also write logs to this file")
@@ -485,8 +503,14 @@ def main(argv: list[str] | None = None) -> int:
     log = configure_logging(args.log_level, args.log_file)
 
     overrides = dict(args.overrides)
-    cfg, _, _ = _import_simulation()
+    cfg, _, _, policy_module = _import_simulation()
     steps = args.steps if args.steps is not None else overrides.get("BATCH_SIZE", cfg.BATCH_SIZE)
+
+    # fail fast on an unknown policy name, rather than once per worker
+    if args.policy not in policy_module.POLICIES:
+        log.error("unknown policy %r, available: %s",
+                  args.policy, ", ".join(sorted(policy_module.POLICIES)))
+        return 2
 
     workers = args.workers if args.workers > 0 else (os.cpu_count() or 1)
     workers = min(workers, args.runs)
@@ -504,6 +528,7 @@ def main(argv: list[str] | None = None) -> int:
             seed=None if args.seed is None else args.seed + run_id,
             overrides=overrides,
             log_every=args.log_every,
+            policy=args.policy,
         )
         for run_id in range(args.runs)
     ]

@@ -1,12 +1,13 @@
 # python libraries
 
-import sys
+import logging
 import mesa
 import matplotlib.pyplot as plt
 
 # own python modules
 
 import agents
+import policies
 
 from config import *
 
@@ -15,10 +16,24 @@ from config import *
 # setting agents, methods for checking the state of the grid, etc
 class WildFireModel(mesa.Model):
 
-    # constructor
-    def __init__(self):
+    # constructor. 'log' lets a runner (see headless.py) hand in a run specific logger, so that agent messages
+    # are attributed to the simulation they came from. When it isn't given, messages go to the shared
+    # "wildfire.model" logger, which has no handlers unless something configured it, and so stays silent.
+    def __init__(self, log=None, policy=None):
 
         plt.ion()
+
+        # set before reset(), because agents log through self.model.log while they are being created
+        self.log = log if log is not None else logging.getLogger("wildfire.model")
+
+        # the policy that chooses UAV directions each step. Defaults to the original uniform random choice,
+        # so any existing caller behaves exactly as before. A policy name is accepted as well as an instance,
+        # because the web interface dropdown hands its selection over as a string.
+        if policy is None:
+            policy = policies.RandomPolicy()
+        elif isinstance(policy, str):
+            policy = policies.build_policy(policy)
+        self.policy = policy
 
         # attributes intialization
 
@@ -40,6 +55,10 @@ class WildFireModel(mesa.Model):
     # environment in execution time. For example, when the graphical interface is up, and reset button is pressed, this
     # method is called
     def reset(self):
+
+        # Mesa's visualization server stops asking for steps once this turns False, and sets it back to True
+        # itself when the model is reinstantiated by the Reset button
+        self.running = True
 
         self.unique_agents_id = 0
         # Inverted width and height order, because of matrix accessing purposes, like in many examples:
@@ -142,14 +161,18 @@ class WildFireModel(mesa.Model):
                     counter += 1
         self.MR2_VALUE += counter // 2  # remove duplicate interactions
 
-    # method for obtaining each UAV partial observation
-    def state(self):
-        states = []
+    # method for collecting the partial view of every UAV, in scheduler order. This is the order
+    # set_drone_dirs() uses as well, so a policy can return one action per entry of this list.
+    def observations(self):
+        return [agent.observe() for agent in self.schedule.agents if type(agent) is agents.UAV]
+
+    # method for obtaining each UAV partial observation. 'observations' can be passed in to avoid querying
+    # the grid a second time when the caller already collected them.
+    def state(self, observations=None):
+        if observations is None:
+            observations = self.observations()
         # this for loop obtains the amount of burning cells for each agent
-        for agent in self.schedule.agents:
-            if type(agent) is agents.UAV:
-                surrounding_states = agent.surrounding_states()
-                states.append(surrounding_states)
+        states = [observation.flat_states() for observation in observations]
 
         # this for loop adds zeros in those positions of the list that would correspond to cells that cannot be
         # observed. This is done when a UAV reaches an edge/corner, not getting the list in the corresponding format
@@ -164,20 +187,26 @@ class WildFireModel(mesa.Model):
     def step(self):
         self.datacollector.collect(self)
 
-        # check if simulation ended, if so print MR1 and MR2 overall metrics,
-        # and finish loop. Otherwise, keep executing.
+        # check if simulation ended, if so report MR1 and MR2 overall metrics, and stop stepping.
+        # Otherwise, keep executing. Stopping is signalled through the Mesa 'running' flag rather than
+        # sys.exit(), so that the visualization server survives the end of a run and the Reset button can
+        # start a new one.
         if BATCH_SIZE == self.evaluation_timesteps_counter - 1:
-            print(" --- MR1 --- ")
-            print(self.MR1_LIST)
-            print(" --- MR2 --- ")
-            print(self.MR2_VALUE)
-            sys.exit(0)
+            self.log.info(" --- MR1 --- ")
+            self.log.info("%s", self.MR1_LIST)
+            self.log.info(" --- MR2 --- ")
+            self.log.info("%s", self.MR2_VALUE)
+            self.running = False
+            return
 
         if sum(isinstance(i, agents.UAV) for i in self.schedule.agents) > 0:
-            state = self.state()  # s_t
-            # self.new_direction is used to execute previous obtained a_t
-            self.new_direction = [SYSTEM_RANDOM.choice(range(0, N_ACTIONS))
-                                  for i in range(0, self.NUM_AGENTS)]  # a_t
+            # what each UAV can see at time t; keeps cell positions, so a policy can decide where to fly
+            observations = self.observations()
+            state = self.state(observations)  # s_t
+
+            # the policy turns s_t into one action per UAV. Actions are chosen from the observations of the
+            # current step and executed in the same step, when schedule.step() runs UAV.advance().
+            self.new_direction = self.policy.select_actions(observations)  # a_t
 
             # TODO: algorithm/s calculation with partial state
             # reward = self.algorithm(state) # r_t+1

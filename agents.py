@@ -5,6 +5,8 @@ import functools
 
 # own python modules
 
+import policies
+
 from config import *
 
 
@@ -98,6 +100,12 @@ class Fire(mesa.Agent):
     def advance(self):
         # make fire spread slower
         if self.steps_counter % FIRE_SPREAD_SPEED == 0:
+            # only state changes are logged: a message per cell per step would mean hundreds of thousands
+            # of records for a default sized grid
+            if self.next_burning_state and not self.burning:
+                self.model.log.debug("cell %s ignited (p=%.3f, fuel=%d)", self.pos, self.cell_prob, self.fuel)
+            elif self.burning and self.fuel <= 0:
+                self.model.log.debug("cell %s burnt out", self.pos)
             self.burning = self.next_burning_state
 
 
@@ -218,20 +226,26 @@ class UAV(mesa.Agent):
                 can_move = False
         return can_move
 
-    # function for obtaining observed cells for the corresponding UAV
-    def surrounding_states(self):
-        surrounding_states = []
+    # function that obtains what this UAV can currently see, keeping the position of every observed cell.
+    # surrounding_states() throws the positions away, which is enough to count burning cells but not enough
+    # for a policy that has to decide which way to fly, so policies use this method instead.
+    def observe(self):
+        cells = []
         # obtains adjacent cells s' from a concrete cell s (self.pos)
         adjacent_cells = self.model.grid.get_neighborhood(
             self.pos, moore=self.moore, include_center=True, radius=UAV_OBSERVATION_RADIUS
         )
-        # obtains each fire cell state, in a list (1 if its burning, 0 if it isn't)
+        # records (position, burning) for every observed cell that holds vegetation
         for cell in adjacent_cells:
-            agents = self.model.grid.get_cell_list_contents([cell])
-            for agent in agents:
+            for agent in self.model.grid.get_cell_list_contents([cell]):
                 if type(agent) is Fire:
-                    surrounding_states.append(int(agent.is_burning() is True))
-        return surrounding_states
+                    cells.append((cell, int(agent.is_burning() is True)))
+        return policies.Observation(uav_id=self.unique_id, pos=self.pos, cells=cells)
+
+    # function for obtaining observed cells for the corresponding UAV
+    def surrounding_states(self):
+        # obtains each fire cell state, in a list (1 if its burning, 0 if it isn't)
+        return self.observe().flat_states()
 
     # function for moving UAV over the grid area
     def move(self):
@@ -240,6 +254,12 @@ class UAV(mesa.Agent):
         move_x = [1, 0, -1, 0]
         move_y = [0, -1, 0, 1]
         moved = False
+        previous_pos = self.pos
+
+        # policies may hold position instead of moving; there is no movement vector for that
+        if self.selected_dir == ACTION_STAY:
+            self.model.log.debug("UAV %d holding position at %s", self.unique_id, self.pos)
+            return False
 
         # it calculates the position the corresponding UAV will move to
         pos_to_move = (self.pos[0] + move_x[self.selected_dir], self.pos[1] + move_y[self.selected_dir])
@@ -248,6 +268,14 @@ class UAV(mesa.Agent):
         if not self.model.grid.out_of_bounds(pos_to_move) and self.not_UAV_adjacent(pos_to_move):
             self.model.grid.move_agent(self, tuple(pos_to_move))
             moved = True
+
+        # run scoped logger, set by the runner (see headless.py); silent when nothing configured it
+        if moved:
+            self.model.log.debug("UAV %d moved %s -> %s (dir=%d)",
+                                 self.unique_id, previous_pos, self.pos, self.selected_dir)
+        else:
+            self.model.log.debug("UAV %d blocked, stayed at %s (dir=%d)",
+                                 self.unique_id, self.pos, self.selected_dir)
 
         return moved
 

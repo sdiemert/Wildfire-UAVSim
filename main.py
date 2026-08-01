@@ -1,5 +1,7 @@
 # python libraries
 
+import logging
+
 import mesa
 
 from Canvas_Grid_Visualization import CanvasGrid
@@ -8,6 +10,7 @@ from Canvas_Grid_Visualization import CanvasGrid
 
 import wildfire_model
 import agents
+import policies
 
 from config import *
 
@@ -40,15 +43,36 @@ def agent_portrayal(agent):
     return portrayal
 
 
+# builds the settings shown on the left hand side of the web page. Mesa passes the current value of each
+# one to WildFireModel as a keyword argument, both on start up and every time Reset is pressed.
+def model_params():
+    policy_names = sorted(policies.POLICIES)
+    return {
+        "policy": mesa.visualization.Choice(
+            name="UAV policy",
+            value=policies.RandomPolicy.name,
+            choices=policy_names,
+            description="Rule that decides which direction each UAV flies. "
+                        "Pick one and press Reset to restart the simulation with it.",
+        ),
+    }
+
+
 # function that holds the main logic, in which the wildfire simulation and the web page interface are launched
 def main():
+    # the model and its agents report through the "wildfire" logger, so give it somewhere to write
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s [%(name)s] %(message)s",
+                        datefmt="%H:%M:%S")
+
     print('actions:', N_ACTIONS)
     print('observations:', N_OBSERVATIONS)
+    print('policies:', ', '.join(sorted(policies.POLICIES)))
 
     # initialize CanvasGrid
     grid = CanvasGrid(agent_portrayal, WIDTH, HEIGHT, 10 * WIDTH, 10 * HEIGHT)
     # initialize Modular server for mesa Python visualization
-    server = mesa.visualization.ModularServer(wildfire_model.WildFireModel, [grid], "WildFire Model")
+    server = mesa.visualization.ModularServer(wildfire_model.WildFireModel, [grid], "WildFire Model",
+                                              model_params())
     server.port = 8521  # default port, others can be set
     server.launch()
 
