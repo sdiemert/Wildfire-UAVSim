@@ -2,3 +2,8 @@ __pycache__
 *.pyc
 
 .venv/
+/.idea/Wildfire-UAVSim.iml
+/.idea/.gitignore
+/.idea/modules.xml
+/.idea/inspectionProfiles/profiles_settings.xml
+/.idea/vcs.xml
