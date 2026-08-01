@@ -7,7 +7,7 @@ parallel.
 
 Examples:
 
-    # single run, default parameters from common_fixed_variables.py
+    # single run, default parameters from config.py
     python3 headless.py
 
     # 20 runs on 4 worker processes, results written to disk
@@ -96,27 +96,27 @@ def _import_simulation():
     matplotlib.use("Agg", force=True)
 
     import agents
-    import common_fixed_variables as cfv
+    import config as cfg
     import wildfire_model
 
-    return cfv, wildfire_model, agents
+    return cfg, wildfire_model, agents
 
 
 def apply_overrides(overrides: dict[str, Any]) -> None:
     """Override simulation constants across every module that star-imported them.
 
-    `from common_fixed_variables import *` copies the bindings into each module's
-    own namespace, so patching only common_fixed_variables would have no effect
+    `from config import *` copies the bindings into each module's
+    own namespace, so patching only config would have no effect
     on wildfire_model or agents.
     """
     if not overrides:
         return
 
-    cfv, wildfire_model, agents = _import_simulation()
-    modules = (cfv, wildfire_model, agents)
+    cfg, wildfire_model, agents = _import_simulation()
+    modules = (cfg, wildfire_model, agents)
 
     for name, value in overrides.items():
-        if not hasattr(cfv, name):
+        if not hasattr(cfg, name):
             raise KeyError(f"unknown simulation constant: {name}")
         for module in modules:
             if hasattr(module, name):
@@ -140,11 +140,11 @@ def seed_simulation(seed: int) -> None:
     random.SystemRandom instance, which cannot be seeded, so it is replaced by a
     seeded random.Random -- again in every module that star-imported it.
     """
-    cfv, wildfire_model, agents = _import_simulation()
+    cfg, wildfire_model, agents = _import_simulation()
 
     random.seed(seed)
     seeded = random.Random(seed)
-    for module in (cfv, wildfire_model, agents):
+    for module in (cfg, wildfire_model, agents):
         if hasattr(module, "SYSTEM_RANDOM"):
             setattr(module, "SYSTEM_RANDOM", seeded)
 
@@ -195,7 +195,7 @@ def run_simulation(config: RunConfig) -> RunResult:
     started = time.perf_counter()
 
     try:
-        cfv, wildfire_model, agents = _import_simulation()
+        cfg, wildfire_model, agents = _import_simulation()
 
         if config.overrides:
             apply_overrides(config.overrides)
@@ -206,9 +206,9 @@ def run_simulation(config: RunConfig) -> RunResult:
         log.info(
             "starting: %d steps, %dx%d grid, %d UAVs, seed=%s",
             config.steps,
-            cfv.HEIGHT,
-            cfv.WIDTH,
-            cfv.NUM_AGENTS,
+            cfg.HEIGHT,
+            cfg.WIDTH,
+            cfg.NUM_AGENTS,
             config.seed,
         )
 
@@ -439,7 +439,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--steps",
         type=int,
         default=None,
-        help="steps per simulation (default: BATCH_SIZE from common_fixed_variables.py)",
+        help="steps per simulation (default: BATCH_SIZE from config.py)",
     )
     parser.add_argument(
         "--workers",
@@ -468,7 +468,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=parse_override,
         default=[],
         metavar="NAME=VALUE",
-        help="override a constant from common_fixed_variables.py (repeatable)",
+        help="override a constant from config.py (repeatable)",
     )
     parser.add_argument("--log-level", default="INFO",
                         choices=("DEBUG", "INFO", "WARNING", "ERROR"), help="console log level")
@@ -485,8 +485,8 @@ def main(argv: list[str] | None = None) -> int:
     log = configure_logging(args.log_level, args.log_file)
 
     overrides = dict(args.overrides)
-    cfv, _, _ = _import_simulation()
-    steps = args.steps if args.steps is not None else overrides.get("BATCH_SIZE", cfv.BATCH_SIZE)
+    cfg, _, _ = _import_simulation()
+    steps = args.steps if args.steps is not None else overrides.get("BATCH_SIZE", cfg.BATCH_SIZE)
 
     workers = args.workers if args.workers > 0 else (os.cpu_count() or 1)
     workers = min(workers, args.runs)

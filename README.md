@@ -21,7 +21,7 @@ This python file holds the logic for managing the wildfire simulation, by utiliz
 
 This python file allows to execute the wildfire simulation built in `widlfire_model.py` file.
 
-### `common_fixed_variables.py`
+### `config.py`
 
 This python file holds the variables used to set the simulation execution configurations.
 

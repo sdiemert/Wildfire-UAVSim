@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 import agents
 
-from common_fixed_variables import *
+from config import *
 
 
 # class WildFireModel holds methods for managing the main logic of the grid, such as the main execution loop,

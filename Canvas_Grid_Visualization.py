@@ -5,7 +5,7 @@ Modular Canvas Rendering
 Module for visualizing model objects in grid cells.
 """
 from agents import UAV
-from common_fixed_variables import UAV_OBSERVATION_RADIUS
+from config import UAV_OBSERVATION_RADIUS
 from collections import defaultdict
 
 from mesa.visualization.ModularVisualization import VisualizationElement

@@ -9,7 +9,7 @@ from Canvas_Grid_Visualization import CanvasGrid
 import wildfire_model
 import agents
 
-from common_fixed_variables import *
+from config import *
 
 
 # creates agent dictionary for rendering it on Canvas Gird from Mesa framework
