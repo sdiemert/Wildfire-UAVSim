@@ -53,7 +53,7 @@ SMOKE_PRE_DISPELLING_COUNTER = 2
 
 # UAVs params
 
-NUM_AGENTS = 1
+NUM_AGENTS = 4
 N_ACTIONS = 4
 # action indices, used to index the movement vectors in UAV.move()
 ACTION_RIGHT = 0
