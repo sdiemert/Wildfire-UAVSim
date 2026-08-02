@@ -31,7 +31,23 @@ This python file contains a Mesa class, modified for making UAV observation area
 
 ### `policy/`
 
-This python package holds the policies that decide which direction each UAV flies. `policy/base.py` defines the abstract `Policy` interface, `policy/observation.py` defines the `Observation` a UAV receives, and every concrete policy lives in its own file (`policy/random_policy.py`, `policy/follow_fire.py`). The policy in use can be picked from the dropdown on the web interface, or with the `--policy` option of `headless.py`.
+This python package holds the policies that decide where each UAV flies. `policy/base.py` defines the abstract `Policy` interface, `policy/observation.py` defines the `Observation` a UAV receives, `policy/action.py` defines the `Action` it returns, and every concrete policy lives in its own file (`policy/random_policy.py`, `policy/follow_fire.py`). The policy in use can be picked from the dropdown on the web interface, or with the `--policy` option of `headless.py`.
+
+A policy receives one `Observation` per UAV and returns one `Action` per UAV: a direction and a speed.
+
+```python
+from policy import Action, Policy
+from config import ACTION_UP
+
+class MyPolicy(Policy):
+    name = "my-policy"
+
+    def select_actions(self, observations):
+        # every UAV flies three cells north, whatever it sees
+        return [Action(ACTION_UP, 3) for _ in observations]
+```
+
+`Action.stay()` holds position and `Action.dump()` drops water; both carry a speed of zero. A UAV never covers more than `UAV_SPEED` cells in a step, whatever speed is asked for, and stops early at the edge of the grid or in front of another UAV. A policy may also return a bare direction index, or a `(direction, speed)` pair, which are coerced into an `Action` — a bare direction means one cell per step, as it did before speeds existed.
 
 ### `headless.py`
 
@@ -113,13 +129,14 @@ Right mouse click on the `tests` directory and select `Run 'pytest in tests'`. I
 Policies only ever receive `Observation` objects, so a test can describe exactly what a UAV sees without building a grid. The `observation` fixture in `tests/conftest.py` creates them:
 
 ```python
-def test_moves_toward_a_fire_on_its_right(observation):
+def test_moves_toward_a_fire_on_its_right(observation, uav_speed):
+    uav_speed(5)
     policy = MyPolicy()
     obs = observation(pos=(5, 5), burning=[(8, 5)], unburnt=[(4, 5)])
-    assert policy.select_actions([obs]) == [ACTION_RIGHT]
+    assert policy.select_actions([obs]) == [Action(ACTION_RIGHT, 3)]
 ```
 
-`pos` is where the UAV is, `burning` and `unburnt` are the cells it can see; cells outside its observation radius are simply left out. For a policy that makes random choices, the `seed_rng` fixture replaces `config.SYSTEM_RANDOM` with a seeded generator so the result is reproducible:
+`pos` is where the UAV is, `burning` and `unburnt` are the cells it can see; cells outside its observation radius are simply left out. The `uav_speed` fixture pins `UAV_SPEED` for the test, so an expected speed does not depend on what `config.py` is set to. For a policy that makes random choices, the `seed_rng` fixture replaces `config.SYSTEM_RANDOM` with a seeded generator so the result is reproducible:
 
 ```python
 def test_is_reproducible(observation, seed_rng):
@@ -130,7 +147,9 @@ def test_is_reproducible(observation, seed_rng):
     assert policy.select_actions([observation(pos=(5, 5))]) == first
 ```
 
-The contract tests in `tests/test_policy_interface.py` are parametrised over every policy in the registry, so a newly registered policy is automatically checked for returning one valid action per UAV, handling an empty view, and having a usable name.
+The contract tests in `tests/test_policy_interface.py` are parametrised over every policy in the registry, so a newly registered policy is automatically checked for returning one valid `Action` per UAV, keeping its speeds within `UAV_SPEED`, handling an empty view, and having a usable name.
+
+Tests about the movement itself — how far a UAV actually gets — need a grid, and live in `tests/test_uav_speed.py`.
 
 # Graphical interface functionalities
 
@@ -184,6 +203,41 @@ minimum amount of burnable fuel present in each cell, respectively.
 `DENSITY_PROB`: It is a value in the range `[0, 1]` that establishes the
 percentage of the grid covered by vegetation.
 
+### Ignition
+
+Where and when the initial wildfire starts. Both can be fixed or randomised.
+
+`FIRE_START_POSITION`: the cell the fire starts from.
+
+| Value      | Meaning                                                                       |
+|------------|-------------------------------------------------------------------------------|
+| `None`     | the centre of the grid (the default)                                          |
+| `"random"` | a uniformly random cell, never on the home base footprint                     |
+| `(x, y)`   | that exact cell                                                                |
+
+The ignition cell always holds a Fire agent, whatever `DENSITY_PROB` decides, so the fire has somewhere to start even on a sparse map.
+
+`FIRE_START_STEP`: the simulation step the fire is lit at. Step 0 is the state the model is built in, so a fire lit at step 0 is already burning before the first step is taken.
+
+| Value      | Meaning                                                            |
+|------------|--------------------------------------------------------------------|
+| `0`        | alight from the beginning of the run (the default)                 |
+| an `int`   | exactly that step                                                  |
+| `(a, b)`   | a random step drawn uniformly from the inclusive range `[a, b]`    |
+| `"random"` | a random step anywhere in the run, `[0, BATCH_SIZE)`               |
+
+Until that step nothing burns: the UAVs fly, MR2 accumulates, and MR1 stays at zero because there is nothing to monitor yet. The resolved cell and step are logged when the model is built, shown in the sidebar of the web interface, and recorded in the headless results as `fire_start_pos` and `fire_start_step`.
+
+To try either from the command line, without editing `config.py`:
+
+```bash
+# a random cell, lit somewhere between steps 5 and 20
+python3 headless.py --runs 5 --seed 1 --set FIRE_START_POSITION=random --set 'FIRE_START_STEP=(5, 20)'
+
+# a specific corner, lit at step 10
+python3 headless.py --set 'FIRE_START_POSITION=(3, 3)' --set FIRE_START_STEP=10
+```
+
 ### Wind
 
 `ACTIVATE_WIND`: It sets whether the fire spread is influenced by wind.
@@ -205,6 +259,8 @@ percentage of the grid covered by vegetation.
 `NUM_AGENTS`: It establishes the amount of UAVs that will fly over the forest area (zero indicates the simulator will simulate only the wildfire spread).
 
 `N_ACTIONS`: Specifies the number of possible actions each UAV can take when deciding on a move, which by default is set as `[north, east, west, south]`.
+
+`UAV_SPEED`: The maximum number of cells a UAV can cover in one time step. A policy returns a direction and a speed for each UAV (for example north at speed 3), and the UAV flies up to that many cells along that direction, stopping early at the edge of the grid or in front of another UAV. Set it to `1` for the original one cell per step behaviour, or to `0` to ground the fleet.
 
 `UAV_OBSERVATION_RADIUS`: It sets the observation radius—technically it is not a radius, since observed areas have square shapes.
 

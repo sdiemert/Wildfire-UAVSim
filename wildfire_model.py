@@ -10,7 +10,7 @@ import agents
 
 # imported by name because 'policy' is also the name of the constructor argument and attribute below,
 # which would shadow the module
-from policy import RandomPolicy, build_policy
+from policy import Action, RandomPolicy, build_policy
 
 from config import *
 
@@ -73,6 +73,11 @@ class WildFireModel(mesa.Model):
         # set some Mesa framework management
         self.grid = mesa.space.MultiGrid(HEIGHT, WIDTH, False)
         self.schedule = mesa.time.SimultaneousActivation(self)
+        # where and when the wildfire starts. Both are resolved once per run, before the Fire agents are
+        # created, because the ignition cell has to exist whatever the tree density decides
+        self.fire_start_pos = self.resolve_fire_start_position()
+        self.fire_start_step = self.resolve_fire_start_step()
+        self.fire_started = False
         # set Fire and wind agents (Smoke are created inside Fire agents as well)
         self.set_fire_agents()
         self.wind = agents.Wind()
@@ -112,9 +117,14 @@ class WildFireModel(mesa.Model):
         self.datacollector = mesa.DataCollector()
         self.new_direction = [0 for a in range(0, self.NUM_AGENTS)]
 
-    # function that places the home base, at BASE_POSITION or a quarter into the grid by default. The base
-    # covers a BASE_SIZE footprint, anchored on that position and clipped to the grid.
-    def set_base(self):
+    # function that gives the cells the home base covers, at BASE_POSITION or a quarter into the grid by
+    # default, as a BASE_SIZE footprint anchored on that position and clipped to the grid. It depends on
+    # nothing but the configuration and the grid size, so that it can be consulted before the base agent
+    # exists: a random ignition cell has to know which cells the base will occupy.
+    def base_footprint(self):
+        if not ACTIVATE_FIREFIGHTING:
+            return []
+
         anchor = tuple(BASE_POSITION if BASE_POSITION is not None else (int(HEIGHT / 4), int(WIDTH / 4)))
         if self.grid.out_of_bounds(anchor):
             raise ValueError(f"BASE_POSITION {anchor} is outside the {HEIGHT}x{WIDTH} grid")
@@ -126,6 +136,12 @@ class WildFireModel(mesa.Model):
                 cell = (anchor[0] + dx, anchor[1] + dy)
                 if cell != anchor and not self.grid.out_of_bounds(cell):
                     footprint.append(cell)
+        return footprint
+
+    # function that places the home base over its footprint
+    def set_base(self):
+        footprint = self.base_footprint()
+        anchor = footprint[0]
 
         self.base = agents.Base(self.unique_agents_id, self, cells=footprint)
         self.unique_agents_id += 1
@@ -165,24 +181,93 @@ class WildFireModel(mesa.Model):
                 return agent
         return None
 
+    # function that decides which cell the wildfire starts from, from FIRE_START_POSITION
+    def resolve_fire_start_position(self):
+        setting = FIRE_START_POSITION
+
+        if setting is None:  # the centre of the grid
+            return int(HEIGHT / 2), int(WIDTH / 2)
+
+        if isinstance(setting, str):
+            if setting.lower() != "random":
+                raise ValueError("FIRE_START_POSITION must be None, 'random' or an (x, y) cell, "
+                                 f"got {setting!r}")
+            # the home base is left out of the draw: a fire lit on top of it would have the base alight
+            # from the first step, and BHP would run out before the UAVs could do anything about it
+            reserved = set(self.base_footprint())
+            candidates = [(x, y) for x in range(HEIGHT) for y in range(WIDTH) if (x, y) not in reserved]
+            if not candidates:
+                raise ValueError("no cell is free of the home base to start the fire from")
+            return SYSTEM_RANDOM.choice(candidates)
+
+        cell = tuple(setting)
+        if self.grid.out_of_bounds(cell):
+            raise ValueError(f"FIRE_START_POSITION {cell} is outside the {HEIGHT}x{WIDTH} grid")
+        return cell
+
+    # function that decides which step the wildfire starts at, from FIRE_START_STEP
+    def resolve_fire_start_step(self):
+        setting = FIRE_START_STEP
+
+        # anywhere in the run. BATCH_SIZE is how long a run lasts, so the fire always keeps at least one
+        # step to spread in
+        if setting is None or (isinstance(setting, str) and setting.lower() == "random"):
+            return SYSTEM_RANDOM.randrange(max(1, BATCH_SIZE))
+
+        if isinstance(setting, (tuple, list)):  # a random step inside a range the user gave
+            if len(setting) != 2:
+                raise ValueError(f"FIRE_START_STEP range must be (first, last), got {setting!r}")
+            first, last = max(0, int(setting[0])), max(0, int(setting[1]))
+            if first > last:
+                raise ValueError(f"FIRE_START_STEP range {setting!r} ends before it starts")
+            return SYSTEM_RANDOM.randint(first, last)
+
+        if isinstance(setting, str):
+            raise ValueError("FIRE_START_STEP must be a step, a (first, last) range or 'random', "
+                             f"got {setting!r}")
+
+        return max(0, int(setting))  # one exact step
+
     # function that creates all fire agents in a grid
     def set_fire_agents(self):
-        # obtain center position of the grid
-        x_c = int(HEIGHT / 2)
-        y_c = int(WIDTH / 2)
-        x = [x_c]
-        y = [y_c]
         for i in range(HEIGHT):
             for j in range(WIDTH):
-                # decides to put a "tree" (fire agent) or not, if less than DENSITY_PROB
-                # or if it is in the center of the grid
-                if SYSTEM_RANDOM.random() < DENSITY_PROB or (i in x and j in y):
-                    # only if it is in the center of the grid, Fire agent is set burning at the beginning, otherwise
-                    # it is set to not burning
-                    if i in x and j in y:
-                        self.new_fire_agent(i, j, True)
-                    else:
-                        self.new_fire_agent(i, j, False)
+                # decides to put a "tree" (fire agent) or not, if less than DENSITY_PROB. The ignition cell
+                # always gets one, whatever the density decides, because the fire has to start somewhere
+                ignition_cell = (i, j) == self.fire_start_pos
+                if SYSTEM_RANDOM.random() < DENSITY_PROB or ignition_cell:
+                    # the ignition cell is created already burning when the fire starts at step 0, otherwise
+                    # every cell starts unburnt and start_fire() lights it once the run reaches that step
+                    self.new_fire_agent(i, j, ignition_cell and self.fire_start_step <= 0)
+
+        if self.fire_start_step <= 0:
+            self.fire_started = True
+            self.log.info("fire lit at %s at the start of the run", self.fire_start_pos)
+        else:
+            self.log.info("fire will start at %s at step %d", self.fire_start_pos, self.fire_start_step)
+            if self.fire_start_step >= BATCH_SIZE:
+                self.log.warning("FIRE_START_STEP %d is not reached in a %d step run: nothing will burn",
+                                 self.fire_start_step, BATCH_SIZE)
+
+    # function that lights the initial wildfire on the resolved ignition cell. A delayed ignition is the
+    # same event as a step 0 one: the cell starts burning, and the cells around it see it while they take
+    # the step it was lit in, because every agent steps before any of them advances.
+    def start_fire(self):
+        self.fire_started = True
+        cell = self.fire_agent_at(self.fire_start_pos)
+        if cell is None:  # defensive: set_fire_agents() always creates the ignition cell
+            self.log.error("no Fire agent at %s, the fire cannot start", self.fire_start_pos)
+            return
+        cell.burning = True
+        self.log.info("fire started at %s at step %d (fuel=%d)",
+                      self.fire_start_pos, self.evaluation_timesteps_counter, cell.get_fuel())
+
+    # looks up the Fire agent covering a cell, or None when the density left that cell empty
+    def fire_agent_at(self, position):
+        for agent in self.grid.get_cell_list_contents([position]):
+            if type(agent) is agents.Fire:
+                return agent
+        return None
 
     # function that creates new fire agent in a concrete cell
     def new_fire_agent(self, pos_x, pos_y, burning):
@@ -195,14 +280,17 @@ class WildFireModel(mesa.Model):
         # place agent in the grid
         self.grid.place_agent(source_fire, tuple([pos_x, pos_y]))
 
-    # manage directions obtained from the new_direction attribute, and make the UAV team move over the forest area
+    # manage actions obtained from the new_direction attribute, and make the UAV team move over the forest area
     def set_drone_dirs(self):
-        # used for selecting the corresponding direction from new_direction attribute, for each UAV
+        # used for selecting the corresponding action from new_direction attribute, for each UAV
         self.new_direction_counter = 0
-        # searches for all UAV agents in scheduler, and set their new directions
+        # searches for all UAV agents in scheduler, and set their new direction and speed. What the policy
+        # returned is coerced into an Action, so a policy that only gives a direction still works.
         for agent in self.schedule.agents:
             if type(agent) is agents.UAV:
-                agent.selected_dir = self.new_direction[self.new_direction_counter]
+                action = Action.coerce(self.new_direction[self.new_direction_counter])
+                agent.selected_dir = action.direction
+                agent.selected_speed = action.speed
                 self.new_direction_counter += 1
 
     # this method obtains effective wildfire monitoring metric (MR1) for time step t
@@ -296,6 +384,13 @@ class WildFireModel(mesa.Model):
             self.set_drone_dirs()
 
         self.evaluation_timesteps_counter += 1
+
+        # the wildfire starts at its own step, which lets a run begin before there is anything to monitor.
+        # It is lit before the schedule runs, so that the cells around it already see it burning while they
+        # take this step, exactly as they do for a fire lit at step 0.
+        if not self.fire_started and self.evaluation_timesteps_counter >= self.fire_start_step:
+            self.start_fire()
+
         # execute each agent step() method
         self.schedule.step()
 

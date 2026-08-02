@@ -10,13 +10,15 @@ import pytest
 
 # own python modules
 
-from config import ACTION_STAY, N_ACTIONS
+import config
+
+from config import ACTION_DUMP_WATER, ACTION_STAY, N_ACTIONS
 
 import policy as policy_pkg
 
-from policy import POLICIES, REGISTERED, Policy, build_policy
+from policy import POLICIES, REGISTERED, Action, Policy, build_policy
 
-VALID_ACTIONS = set(range(N_ACTIONS)) | {ACTION_STAY}
+VALID_DIRECTIONS = set(range(N_ACTIONS)) | {ACTION_STAY, ACTION_DUMP_WATER}
 
 
 # --- the abstract interface -------------------------------------------------
@@ -75,7 +77,7 @@ def test_build_policy_rejects_unknown_names():
 
 
 def test_package_exports_the_public_api():
-    for name in ("Policy", "Observation", "POLICIES", "build_policy"):
+    for name in ("Policy", "Action", "Observation", "POLICIES", "build_policy"):
         assert hasattr(policy_pkg, name)
 
 
@@ -101,15 +103,68 @@ def test_every_policy_returns_one_action_per_uav(any_policy, observation):
     assert len(any_policy.select_actions(observations)) == len(observations)
 
 
-def test_every_policy_returns_valid_actions(any_policy, observation):
-    scenarios = [
+@pytest.fixture
+def scenarios(observation):
+    return [
         observation(pos=(5, 5)),                                  # sees nothing
         observation(pos=(5, 5), unburnt=[(4, 5), (6, 5)]),        # sees only vegetation
         observation(pos=(5, 5), burning=[(6, 5)]),                # sees fire
         observation(pos=(5, 5), burning=[(5, 5)]),                # is over the fire
     ]
-    assert set(any_policy.select_actions(scenarios)) <= VALID_ACTIONS
+
+
+def test_every_policy_returns_valid_actions(any_policy, scenarios):
+    actions = any_policy.select_actions(scenarios)
+    assert all(isinstance(action, Action) for action in actions)
+    assert {action.direction for action in actions} <= VALID_DIRECTIONS
+
+
+def test_no_policy_asks_for_more_speed_than_a_uav_has(any_policy, scenarios, uav_speed):
+    # a policy may not know how fast a UAV is, but none of the ones shipped here overshoots it
+    for speed in (0, 1, 3):
+        uav_speed(speed)
+        actions = any_policy.select_actions(scenarios)
+        assert all(0 <= action.speed <= speed for action in actions), any_policy.name
+
+
+def test_actions_that_do_not_move_carry_no_speed(any_policy, scenarios):
+    for action in any_policy.select_actions(scenarios):
+        if action.direction in (ACTION_STAY, ACTION_DUMP_WATER):
+            assert action.speed == 0
 
 
 def test_every_policy_handles_no_uavs(any_policy):
     assert any_policy.select_actions([]) == []
+
+
+# --- the Action a policy returns --------------------------------------------
+
+
+def test_a_bare_direction_is_still_accepted():
+    # policies written before speeds existed return a plain action index, which means one cell per step
+    assert Action.coerce(config.ACTION_UP) == Action(config.ACTION_UP, 1)
+
+
+def test_a_bare_direction_that_does_not_move_carries_no_speed():
+    assert Action.coerce(ACTION_STAY) == Action(ACTION_STAY, 0)
+    assert Action.coerce(ACTION_DUMP_WATER) == Action(ACTION_DUMP_WATER, 0)
+
+
+def test_a_direction_and_speed_pair_is_accepted():
+    assert Action.coerce((config.ACTION_LEFT, 4)) == Action(config.ACTION_LEFT, 4)
+
+
+def test_an_action_is_left_alone():
+    action = Action(config.ACTION_DOWN, 2)
+    assert Action.coerce(action) is action
+
+
+def test_a_malformed_pair_is_rejected():
+    with pytest.raises(ValueError, match="direction, speed"):
+        Action.coerce((config.ACTION_DOWN, 2, 7))
+
+
+def test_actions_describe_themselves_for_the_log():
+    assert str(Action(config.ACTION_UP, 3)) == "up at speed 3"
+    assert str(Action.stay()) == "stay"
+    assert str(Action.dump()) == "dump water"

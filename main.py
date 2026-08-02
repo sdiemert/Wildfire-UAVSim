@@ -5,6 +5,7 @@ import logging
 import mesa
 
 from Canvas_Grid_Visualization import CanvasGrid
+from Fps_Topbar import FpsTopbar
 from Status_Sidebar import StatusSidebar
 
 # own python modules
@@ -92,8 +93,10 @@ def main():
     grid = CanvasGrid(agent_portrayal, WIDTH, HEIGHT, 10 * WIDTH, 10 * HEIGHT)
     # live status panel, rendered in the sidebar next to the grid
     sidebar = StatusSidebar()
+    # moves the frames per second slider up into the top bar, beside the run controls
+    fps = FpsTopbar()
     # initialize Modular server for mesa Python visualization
-    server = mesa.visualization.ModularServer(wildfire_model.WildFireModel, [grid, sidebar],
+    server = mesa.visualization.ModularServer(wildfire_model.WildFireModel, [grid, sidebar, fps],
                                               "WildFire Model", model_params())
     server.port = 8521  # default port, others can be set
     server.launch()

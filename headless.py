@@ -74,6 +74,9 @@ class RunResult:
     mr2: int = 0
     burning_cells_final: int = 0
     burned_out_cells_final: int = 0
+    # where and when the fire was lit; worth recording because both can be randomised in config.py
+    fire_start_pos: list[int] = field(default_factory=list)
+    fire_start_step: int = 0
     # firefighting extension; all zero/false when it is switched off
     water_drops: int = 0
     cells_extinguished: int = 0
@@ -276,6 +279,8 @@ def run_simulation(config: RunConfig) -> RunResult:
             mr2=model.MR2_VALUE,
             burning_cells_final=burning,
             burned_out_cells_final=burned_out,
+            fire_start_pos=list(model.fire_start_pos),
+            fire_start_step=model.fire_start_step,
             water_drops=model.water_drops,
             cells_extinguished=model.cells_extinguished,
             refills=model.refills,
@@ -284,8 +289,10 @@ def run_simulation(config: RunConfig) -> RunResult:
             lost=model.lost,
         )
         log.info(
-            "finished in %.2fs | MR1_total=%.4f MR2=%d burning=%d",
+            "finished in %.2fs | fire at %s from step %d | MR1_total=%.4f MR2=%d burning=%d",
             elapsed,
+            tuple(result.fire_start_pos),
+            result.fire_start_step,
             result.mr1_total,
             result.mr2,
             result.burning_cells_final,

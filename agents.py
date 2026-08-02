@@ -250,7 +250,10 @@ class UAV(mesa.Agent):
     def __init__(self, unique_id, model):
         super().__init__(unique_id, model)
         self.moore = True
+        # the order for the next step, set by the model from what the policy returned: a direction, and how
+        # many cells to cover along it. One cell is what a UAV flew before speeds existed.
         self.selected_dir = 0
+        self.selected_speed = 1
         # firefighting extension: UAVs leave the base with a full load of water
         self.water = UAV_WATER_CAPACITY if ACTIVATE_FIREFIGHTING else 0
 
@@ -331,37 +334,50 @@ class UAV(mesa.Agent):
         # obtains each fire cell state, in a list (1 if its burning, 0 if it isn't)
         return self.observe().flat_states()
 
-    # function for moving UAV over the grid area
+    # function for moving UAV over the grid area, up to selected_speed cells along selected_dir. Returns the
+    # number of cells actually covered, which is less than the speed asked for when the UAV runs into the
+    # edge of the grid or into another UAV.
     def move(self):
         # vectors for moving to different positions, based on 4 directions = [0, 1, 2, 3] = [right, down, left, up].
         # For example, if direction 1 is chosen, then the UAV moves 0 cells in x-axis, and -1 cell in y-axis
         move_x = [1, 0, -1, 0]
         move_y = [0, -1, 0, 1]
-        moved = False
         previous_pos = self.pos
 
         # policies may hold position instead of moving; there is no movement vector for that
         if self.selected_dir == ACTION_STAY:
             self.model.log.debug("UAV %d holding position at %s", self.unique_id, self.pos)
-            return False
+            return 0
 
-        # it calculates the position the corresponding UAV will move to
-        pos_to_move = (self.pos[0] + move_x[self.selected_dir], self.pos[1] + move_y[self.selected_dir])
-        # checks if the position to move is inside the grid bounds, and that the UAV doesn't have other UAV nearby. If
-        # so, the UAV moves
-        if not self.model.grid.out_of_bounds(pos_to_move) and self.not_UAV_adjacent(pos_to_move):
+        # a UAV covers at most UAV_SPEED cells per step, whatever speed the policy asked for
+        speed = max(0, min(int(self.selected_speed), UAV_SPEED))
+        if speed == 0:
+            self.model.log.debug("UAV %d ordered to move at zero speed, stayed at %s",
+                                 self.unique_id, self.pos)
+            return 0
+
+        # the cells are crossed one at a time, so that the UAV stops at the edge of the grid or in front of
+        # another UAV rather than jumping over it
+        cells_moved = 0
+        for _ in range(speed):
+            pos_to_move = (self.pos[0] + move_x[self.selected_dir], self.pos[1] + move_y[self.selected_dir])
+            # checks if the position to move is inside the grid bounds, and that the UAV doesn't have other UAV
+            # nearby. If so, the UAV moves
+            if self.model.grid.out_of_bounds(pos_to_move) or not self.not_UAV_adjacent(pos_to_move):
+                break
             self.model.grid.move_agent(self, tuple(pos_to_move))
-            moved = True
+            cells_moved += 1
 
         # run scoped logger, set by the runner (see headless.py); silent when nothing configured it
-        if moved:
-            self.model.log.debug("UAV %d moved %s -> %s (dir=%d)",
-                                 self.unique_id, previous_pos, self.pos, self.selected_dir)
+        if cells_moved:
+            self.model.log.debug("UAV %d moved %s -> %s (dir=%d, %d/%d cells)",
+                                 self.unique_id, previous_pos, self.pos, self.selected_dir,
+                                 cells_moved, speed)
         else:
-            self.model.log.debug("UAV %d blocked, stayed at %s (dir=%d)",
-                                 self.unique_id, self.pos, self.selected_dir)
+            self.model.log.debug("UAV %d blocked, stayed at %s (dir=%d, speed=%d)",
+                                 self.unique_id, self.pos, self.selected_dir, speed)
 
-        return moved
+        return cells_moved
 
     # Mesa framework native method, which is overwritten, necessary for executing changes made in step() method
     # (as it can be seen, in this case UAVs don't need to update anything in step() method, so it isn't overwritten).

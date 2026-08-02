@@ -17,14 +17,28 @@ PROBABILITY_MAP = False
 # model params specifications
 
 BATCH_SIZE = 90
-WIDTH = 50  # in python [height, width] for grid, in js [width, heigh]
-HEIGHT = 50
+WIDTH = 60  # in python [height, width] for grid, in js [width, heigh]
+HEIGHT = 60
 BURNING_RATE = 1
-FIRE_SPREAD_SPEED = 2
+FIRE_SPREAD_SPEED = 1
 FUEL_UPPER_LIMIT = 10
-FUEL_BOTTOM_LIMIT = 2
+FUEL_BOTTOM_LIMIT = 7
 
 DENSITY_PROB = 1  # Tree density (Float number in the interval [0, 1])
+
+# ignition of the initial wildfire
+#
+# where the fire starts:
+#   None      -> the centre of the grid
+#   "random"  -> a uniformly random cell, avoiding the home base footprint
+#   (x, y)    -> that exact cell
+FIRE_START_POSITION = "random"
+# when the fire starts, counted in simulation steps. Step 0 is the state the model is built in, so a fire
+# lit at step 0 is already burning before the first step is taken:
+#   an int    -> exactly that step
+#   (a, b)    -> a random step drawn uniformly from the inclusive range [a, b]
+#   "random"  -> a random step anywhere in the run, [0, BATCH_SIZE)
+FIRE_START_STEP = (10,20)
 
 WIND_DIRECTION = 'south'
 # if FIXED_WIND == False (compose wind), then variables inside the if statement are set to be used in the project
@@ -52,6 +66,10 @@ ACTION_UP = 3
 ACTION_STAY = 4
 # dumping water is part of the firefighting extension below, and is likewise outside N_ACTIONS
 ACTION_DUMP_WATER = 5
+# how far a UAV can fly in one time step, in cells. A policy asks for a direction and a speed, and the UAV
+# covers up to this many cells along that direction, stopping early at the edge of the grid or in front of
+# another UAV. Set it to 1 for the original one cell per step behaviour, or to 0 to ground the fleet.
+UAV_SPEED = 5
 UAV_OBSERVATION_RADIUS = 4
 side = ((UAV_OBSERVATION_RADIUS * 2) + 1)
 N_OBSERVATIONS = side * side

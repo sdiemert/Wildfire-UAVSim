@@ -1,7 +1,8 @@
 """UAV policies.
 
-A policy receives one Observation per UAV, describing only what that UAV can see, and returns one action per
-UAV. WildFireModel calls it once per time step, in step().
+A policy receives one Observation per UAV, describing only what that UAV can see, and returns one Action per
+UAV: a direction and a speed, for example Action(ACTION_UP, 3) to fly three cells north. WildFireModel calls
+it once per time step, in step().
 
 To add your own policy:
 
@@ -15,6 +16,7 @@ interface without any further change.
 
 # own python modules
 
+from .action import Action
 from .base import Policy, nearest, step_towards
 from .observation import Observation
 from .firefighter import FirefighterPolicy
@@ -39,5 +41,5 @@ def build_policy(name):
     return POLICIES[name]()
 
 
-__all__ = ["Policy", "Observation", "RandomPolicy", "FollowFirePolicy", "FirefighterPolicy", "POLICIES",
-           "REGISTERED", "build_policy", "nearest", "step_towards"]
+__all__ = ["Action", "Policy", "Observation", "RandomPolicy", "FollowFirePolicy", "FirefighterPolicy",
+           "POLICIES", "REGISTERED", "build_policy", "nearest", "step_towards"]

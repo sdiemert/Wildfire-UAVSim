@@ -5,8 +5,7 @@
 # see the note in random_policy.py about importing config as a module
 import config
 
-from config import ACTION_DUMP_WATER, ACTION_STAY
-
+from .action import Action
 from .base import Policy, nearest, step_towards
 
 
@@ -40,7 +39,7 @@ class FirefighterPolicy(Policy):
         burning = observation.burning_positions()
         target = nearest(observation.pos, burning)
         if target is None:  # nothing to put out in view
-            return ACTION_STAY
+            return Action.stay()
 
         # a building already on fire, or a fire next to one, is worth more than open vegetation
         threatened = self.threatened_building(observation, burning)
@@ -48,14 +47,14 @@ class FirefighterPolicy(Policy):
             target = threatened
 
         if self.within_drop_range(observation.pos, target):
-            return ACTION_DUMP_WATER
+            return Action.dump()
         return step_towards(observation.pos, target)
 
     # flies back to the home base, where refilling happens by itself
     def return_to_base(self, observation):
         if observation.base_pos is None or observation.at_base():
             # already there, or the extension is off and there is no base to go to
-            return ACTION_STAY
+            return Action.stay()
         return step_towards(observation.pos, observation.base_pos)
 
     # checks whether the drop would reach the target from the given position

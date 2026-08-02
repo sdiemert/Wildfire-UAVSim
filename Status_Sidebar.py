@@ -93,6 +93,14 @@ class StatusSidebar(VisualizationElement):
             for index, score in enumerate(model.MR1_LIST):
                 html.append(self.row(f"&nbsp;&nbsp;UAV {index}", f"{score:.3f}"))
         html.append(self.row("MR2 (collisions)", model.MR2_VALUE))
+        # the ignition can be randomised in config.py, so it is shown here: without it a run that has not
+        # caught fire yet looks like a broken simulation
+        if model.fire_started:
+            html.append(self.row("Fire at", f"{model.fire_start_pos}"))
+        else:
+            html.append(self.row("Fire at", f"{model.fire_start_pos} in "
+                                            f"{model.fire_start_step - model.evaluation_timesteps_counter} "
+                                            f"step(s)", "muted"))
         return "".join(html)
 
     # the health of the home base

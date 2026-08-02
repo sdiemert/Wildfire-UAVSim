@@ -87,7 +87,11 @@ def make_model(sim_config):
     """
 
     def _make(policy=None, **overrides):
-        settings = {"WIDTH": 9, "HEIGHT": 9, "NUM_AGENTS": 1, "BATCH_SIZE": 10_000}
+        # the ignition is pinned to the centre of the grid at step 0, so that the tests do not depend on
+        # whatever FIRE_START_POSITION and FIRE_START_STEP happen to be set to in config.py. Tests about
+        # the ignition itself override them.
+        settings = {"WIDTH": 9, "HEIGHT": 9, "NUM_AGENTS": 1, "BATCH_SIZE": 10_000,
+                    "FIRE_START_POSITION": None, "FIRE_START_STEP": 0}
         settings.update(overrides)
         sim_config(**settings)
 
@@ -96,6 +100,24 @@ def make_model(sim_config):
         return wildfire_model.WildFireModel(policy=policy)
 
     return _make
+
+
+@pytest.fixture
+def uav_speed():
+    """Set config.UAV_SPEED for one test, restored afterwards.
+
+    Policies read config.UAV_SPEED when they run, so patching the attribute here is enough to pin how far
+    they ask a UAV to fly. UAV.move() reads the constant star-imported into agents.py instead, so tests
+    about the movement itself go through sim_config.
+    """
+    original = config.UAV_SPEED
+
+    def _set(speed):
+        config.UAV_SPEED = speed
+        return speed
+
+    yield _set
+    config.UAV_SPEED = original
 
 
 @pytest.fixture
