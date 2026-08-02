@@ -74,6 +74,13 @@ class RunResult:
     mr2: int = 0
     burning_cells_final: int = 0
     burned_out_cells_final: int = 0
+    # firefighting extension; all zero/false when it is switched off
+    water_drops: int = 0
+    cells_extinguished: int = 0
+    refills: int = 0
+    buildings_lost: int = 0
+    base_burning_steps: int = 0
+    lost: bool = False
     error: str | None = None
 
     @property
@@ -269,6 +276,12 @@ def run_simulation(config: RunConfig) -> RunResult:
             mr2=model.MR2_VALUE,
             burning_cells_final=burning,
             burned_out_cells_final=burned_out,
+            water_drops=model.water_drops,
+            cells_extinguished=model.cells_extinguished,
+            refills=model.refills,
+            buildings_lost=model.buildings_lost,
+            base_burning_steps=model.base.burning_steps if model.base is not None else 0,
+            lost=model.lost,
         )
         log.info(
             "finished in %.2fs | MR1_total=%.4f MR2=%d burning=%d",
@@ -277,6 +290,14 @@ def run_simulation(config: RunConfig) -> RunResult:
             result.mr2,
             result.burning_cells_final,
         )
+        if cfg.ACTIVATE_FIREFIGHTING:
+            log.info(
+                "firefighting | drops=%d extinguished=%d refills=%d buildings_lost=%d/%d base=%d/%d%s",
+                result.water_drops, result.cells_extinguished, result.refills,
+                result.buildings_lost, len(model.out_buildings),
+                result.base_burning_steps, cfg.BHP,
+                " | RUN LOST" if result.lost else "",
+            )
         return result
 
     except Exception as exc:  # noqa: BLE001 - a failed run must not kill the batch

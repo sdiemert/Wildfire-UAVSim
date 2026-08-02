@@ -22,7 +22,7 @@ HEIGHT = 50
 BURNING_RATE = 1
 FIRE_SPREAD_SPEED = 2
 FUEL_UPPER_LIMIT = 10
-FUEL_BOTTOM_LIMIT = 7
+FUEL_BOTTOM_LIMIT = 2
 
 DENSITY_PROB = 1  # Tree density (Float number in the interval [0, 1])
 
@@ -50,12 +50,57 @@ ACTION_UP = 3
 # original 4 movement actions. Policies that want it emit ACTION_STAY explicitly. Raise N_ACTIONS to 5 if
 # you want a learning algorithm to treat holding position as part of the action space.
 ACTION_STAY = 4
+# dumping water is part of the firefighting extension below, and is likewise outside N_ACTIONS
+ACTION_DUMP_WATER = 5
 UAV_OBSERVATION_RADIUS = 4
 side = ((UAV_OBSERVATION_RADIUS * 2) + 1)
 N_OBSERVATIONS = side * side
 SECURITY_DISTANCE = 10
 
+# FIREFIGHTING EXTENSION
+#
+# Optional. When ACTIVATE_FIREFIGHTING is False every variable below is ignored and the simulation behaves
+# exactly as it did before the extension existed. When it is True the simulation gains a home base, water
+# carrying UAVs, extinguishing, re-ignition and out buildings.
+
+ACTIVATE_FIREFIGHTING = True
+
+# home base. UAVs start here and come back to refill.
+# (x, y) cell, or None to place the base a quarter of the way into the grid. The default deliberately
+# avoids the centre, because that is where set_fire_agents() lights the initial fire: a base on top of the
+# ignition cell would be alight from step 1 and the UAVs would put the wildfire out before it ever spread.
+BASE_POSITION = None
+# footprint of the base, in cells, as (width, height). BASE_POSITION is its bottom left corner. The whole
+# footprint is drawn blue, burns, and can be refilled from.
+BASE_SIZE = (2, 2)
+BHP = 5  # base health points: the run is lost once the base has burned for this many steps
+BASE_REFILL_STEPS = 1  # steps a UAV must spend at the base to take on a load of water
+BASE_CAPACITY = 1  # UAVs that can refill at the same time (the requirement is one)
+
+# water carried by each UAV
+UAV_WATER_CAPACITY = 1  # loads a UAV can carry at once
+
+# water drops. A drop extinguishes the target cell and its surroundings, with a probability that falls off
+# linearly with the distance from the centre of the drop.
+WATER_DROP_RADIUS = 2  # cells around the drop position that are affected
+WATER_EXTINGUISH_PROB_CENTRE = 0.95  # probability of extinguishing the cell the water is dumped on
+WATER_EXTINGUISH_PROB_EDGE = 0.35  # probability of extinguishing a cell at WATER_DROP_RADIUS
+
+# re-ignition of extinguished cells
+REIGNITION_DELAY = 8  # steps an extinguished cell is immune; afterwards nearby fire can light it again
+SPONTANEOUS_REIGNITION_PROB = 0.005  # per step chance an extinguished cell relights on its own
+
+# out buildings scattered over the map, which burn and are worth protecting
+NUM_OUT_BUILDINGS = 4
+OUT_BUILDING_HP = 5  # steps an out building survives while its cell burns
+
 # colors
+
+BASE_COLOR = "#1f6fff"  # blue, as the home base is shown on the map
+BASE_BURNING_COLOR = "#7c3aed"
+OUT_BUILDING_COLOR = "#8b5a2b"
+OUT_BUILDING_DESTROYED_COLOR = "#3b3b3b"
+EXTINGUISHED_COLOR = "#5fd0e8"  # cells that were recently hit by water
 
 VEGETATION_COLORS = ["#414141", "#9eff89", "#85e370", "#72d05c", "#62c14c", "#459f30",
                      "#389023", "#2f831b", "#236f11", "#1c630b", "#175808", "#124b05"]
@@ -87,6 +132,19 @@ def euclidean_distance(x1, y1, x2, y2):
     b = numpy.array((x2, y2))
     dist = numpy.linalg.norm(a - b)
     return dist
+
+
+# function that gives the probability of a water drop centred on drop_pos extinguishing the cell at
+# cell_pos. It is WATER_EXTINGUISH_PROB_CENTRE right under the drop, falls off linearly with the distance,
+# reaches WATER_EXTINGUISH_PROB_EDGE at WATER_DROP_RADIUS, and is zero beyond it.
+def extinguish_probability(drop_pos, cell_pos):
+    distance = euclidean_distance(drop_pos[0], drop_pos[1], cell_pos[0], cell_pos[1])
+    if distance > WATER_DROP_RADIUS:
+        return 0.0
+    if WATER_DROP_RADIUS == 0:
+        return WATER_EXTINGUISH_PROB_CENTRE
+    ratio = distance / WATER_DROP_RADIUS
+    return WATER_EXTINGUISH_PROB_CENTRE + ratio * (WATER_EXTINGUISH_PROB_EDGE - WATER_EXTINGUISH_PROB_CENTRE)
 
 
 # function that calculates the grade of influence of cell s' over cell s, based on a distance_limit

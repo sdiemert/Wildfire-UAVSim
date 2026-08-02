@@ -15,8 +15,9 @@ interface without any further change.
 
 # own python modules
 
-from .base import Policy
+from .base import Policy, nearest, step_towards
 from .observation import Observation
+from .firefighter import FirefighterPolicy
 from .follow_fire import FollowFirePolicy
 from .random_policy import RandomPolicy
 
@@ -24,6 +25,7 @@ from .random_policy import RandomPolicy
 REGISTERED = (
     RandomPolicy,
     FollowFirePolicy,
+    FirefighterPolicy,
 )
 
 # name -> class, used by the --policy option and the web interface dropdown
@@ -37,5 +39,5 @@ def build_policy(name):
     return POLICIES[name]()
 
 
-__all__ = ["Policy", "Observation", "RandomPolicy", "FollowFirePolicy", "POLICIES", "REGISTERED",
-           "build_policy"]
+__all__ = ["Policy", "Observation", "RandomPolicy", "FollowFirePolicy", "FirefighterPolicy", "POLICIES",
+           "REGISTERED", "build_policy", "nearest", "step_towards"]

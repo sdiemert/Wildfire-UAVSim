@@ -83,17 +83,87 @@ class WildFireModel(mesa.Model):
         self.new_direction_counter = 0
         self.evaluation_timesteps_counter = 0
 
+        # firefighting extension: place the home base and the out buildings before the UAVs, because the
+        # UAVs start from the base
+        self.base = None
+        self.out_buildings = []
+        self.water_drops = 0
+        self.cells_extinguished = 0
+        self.refills = 0
+        self.buildings_lost = 0
+        self.lost = False
+        if ACTIVATE_FIREFIGHTING:
+            self.set_base()
+            self.set_out_buildings()
+
         # create and configure UAV agents in the grid
         for a in range(0, self.NUM_AGENTS):
             aux_UAV = agents.UAV(self.unique_agents_id, self)
-            y_center += a if a % 2 == 0 else -a
-            self.grid.place_agent(aux_UAV, (x_center, y_center + 1))
+            if ACTIVATE_FIREFIGHTING:
+                # every UAV starts from the home base, with a full load of water
+                self.grid.place_agent(aux_UAV, self.base.pos)
+            else:
+                y_center += a if a % 2 == 0 else -a
+                self.grid.place_agent(aux_UAV, (x_center, y_center + 1))
             self.schedule.add(aux_UAV)
             self.unique_agents_id += 1
 
         # set Mesa framework management
         self.datacollector = mesa.DataCollector()
         self.new_direction = [0 for a in range(0, self.NUM_AGENTS)]
+
+    # function that places the home base, at BASE_POSITION or a quarter into the grid by default. The base
+    # covers a BASE_SIZE footprint, anchored on that position and clipped to the grid.
+    def set_base(self):
+        anchor = tuple(BASE_POSITION if BASE_POSITION is not None else (int(HEIGHT / 4), int(WIDTH / 4)))
+        if self.grid.out_of_bounds(anchor):
+            raise ValueError(f"BASE_POSITION {anchor} is outside the {HEIGHT}x{WIDTH} grid")
+
+        # the anchor comes first, so that it stays the cell the Base agent itself sits on
+        footprint = [anchor]
+        for dx in range(BASE_SIZE[0]):
+            for dy in range(BASE_SIZE[1]):
+                cell = (anchor[0] + dx, anchor[1] + dy)
+                if cell != anchor and not self.grid.out_of_bounds(cell):
+                    footprint.append(cell)
+
+        self.base = agents.Base(self.unique_agents_id, self, cells=footprint)
+        self.unique_agents_id += 1
+        self.schedule.add(self.base)
+        self.grid.place_agent(self.base, anchor)
+
+        # the remaining cells of the footprint only need to be drawn, so they get a tile each
+        for cell in footprint[1:]:
+            tile = agents.BaseTile(self.unique_agents_id, self, self.base)
+            self.unique_agents_id += 1
+            self.grid.place_agent(tile, cell)
+
+        self.log.info("home base placed at %s covering %d cell(s), surviving %d burning steps",
+                      anchor, len(footprint), BHP)
+
+    # function that scatters the out buildings randomly over the grid, avoiding the base cell and any cell
+    # that already holds a building
+    def set_out_buildings(self):
+        taken = set(self.base.cells) if self.base is not None else set()
+        candidates = [(x, y) for x in range(HEIGHT) for y in range(WIDTH) if (x, y) not in taken]
+        # more buildings than free cells cannot be placed; ask for what fits
+        wanted = min(NUM_OUT_BUILDINGS, len(candidates))
+        for position in SYSTEM_RANDOM.sample(candidates, wanted):
+            building = agents.OutBuilding(self.unique_agents_id, self)
+            self.unique_agents_id += 1
+            self.schedule.add(building)
+            self.grid.place_agent(building, position)
+            self.out_buildings.append(building)
+        if wanted:
+            self.log.info("%d out building(s) placed at %s", wanted,
+                          [building.pos for building in self.out_buildings])
+
+    # looks a UAV up by its unique id, used by the base to check who is still standing on it
+    def uav_by_id(self, uav_id):
+        for agent in self.schedule.agents:
+            if type(agent) is agents.UAV and agent.unique_id == uav_id:
+                return agent
+        return None
 
     # function that creates all fire agents in a grid
     def set_fire_agents(self):
@@ -228,3 +298,10 @@ class WildFireModel(mesa.Model):
         self.evaluation_timesteps_counter += 1
         # execute each agent step() method
         self.schedule.step()
+
+        # firefighting extension: losing the home base ends the run immediately
+        if ACTIVATE_FIREFIGHTING and self.base is not None and self.base.is_destroyed() and not self.lost:
+            self.lost = True
+            self.running = False
+            self.log.warning("home base destroyed after burning for %d steps: run lost at step %d",
+                             self.base.burning_steps, self.evaluation_timesteps_counter)

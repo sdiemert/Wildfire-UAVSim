@@ -25,12 +25,33 @@ class Fire(mesa.Agent):
         self.steps_counter = 0
         self.cell_prob = 0.0
 
+        # firefighting extension: a cell that has been hit by water is immune for a while, and stays
+        # flagged afterwards so that it can relight spontaneously
+        self.immunity_counter = 0
+        self.was_extinguished = False
+
         # smoke
         self.smoke = Smoke(fire_cell_fuel=self.fuel)
 
     # checks if the corresponding Fire agent is burning | True if burning, False if not
     def is_burning(self):
         return self.burning
+
+    # checks whether this cell is currently immune to catching fire, after being hit by water
+    def is_immune(self):
+        return self.immunity_counter > 0
+
+    # puts the fire in this cell out, and makes it immune for REIGNITION_DELAY steps. Returns True when
+    # this call actually extinguished a burning cell, so that the caller can count it.
+    def extinguish(self):
+        was_burning = self.burning
+        self.burning = False
+        self.next_burning_state = False
+        self.immunity_counter = REIGNITION_DELAY
+        self.was_extinguished = True
+        if ACTIVATE_SMOKE:
+            self.smoke.smoke = False
+        return was_burning
 
     # get the corresponding Fire agent remaining fuel | Integer value
     def get_fuel(self):
@@ -77,6 +98,12 @@ class Fire(mesa.Agent):
     # Mesa framework native method, which is overwritten, necessary for setting next state of the simulation
     def step(self):
         self.steps_counter += 1
+        # the immunity left by a water drop is counted in simulation steps, not in fire updates, so it is
+        # handled outside the FIRE_SPREAD_SPEED gate below. It is read before being decremented, so that a
+        # drop with REIGNITION_DELAY = n protects the cell for n full steps.
+        immune = ACTIVATE_FIREFIGHTING and self.immunity_counter > 0
+        if immune:
+            self.immunity_counter -= 1
         # make fire spread slower
         if self.steps_counter % FIRE_SPREAD_SPEED == 0:
             # if self.steps_counter == 26: # to model how the wind can suddenly change direction
@@ -88,6 +115,15 @@ class Fire(mesa.Agent):
                 self.next_burning_state = True
             else:
                 self.next_burning_state = False
+            # firefighting extension: a cell just hit by water cannot catch fire again yet. Once that wears
+            # off it burns normally again, and may also relight on its own with a small probability.
+            if ACTIVATE_FIREFIGHTING:
+                if immune:
+                    self.next_burning_state = False
+                elif (self.was_extinguished and self.fuel > 0
+                      and not self.next_burning_state
+                      and random.random() < SPONTANEOUS_REIGNITION_PROB):
+                    self.next_burning_state = True
             # if possible, subtract BURNING_RATE from fuel of the corresponding cell
             if self.burning and self.fuel > 0:
                 self.fuel = self.fuel - BURNING_RATE
@@ -215,6 +251,41 @@ class UAV(mesa.Agent):
         super().__init__(unique_id, model)
         self.moore = True
         self.selected_dir = 0
+        # firefighting extension: UAVs leave the base with a full load of water
+        self.water = UAV_WATER_CAPACITY if ACTIVATE_FIREFIGHTING else 0
+
+    # checks whether this UAV still carries water to dump | True if it does, False if it is empty
+    def has_water(self):
+        return self.water > 0
+
+    # refills this UAV, which the home base does once a refill has taken BASE_REFILL_STEPS steps
+    def refill(self):
+        self.water = UAV_WATER_CAPACITY
+
+    # dumps one load of water on the cell the UAV is over. The drop extinguishes cells within
+    # WATER_DROP_RADIUS with a probability that falls off with distance from the centre of the drop.
+    # Returns the number of burning cells actually put out.
+    def dump_water(self):
+        if not self.has_water():
+            self.model.log.debug("UAV %d cannot dump, it is empty", self.unique_id)
+            return 0
+
+        self.water -= 1
+        extinguished = 0
+        affected_cells = self.model.grid.get_neighborhood(
+            self.pos, moore=self.moore, include_center=True, radius=WATER_DROP_RADIUS
+        )
+        for cell in affected_cells:
+            probability = extinguish_probability(self.pos, cell)
+            if SYSTEM_RANDOM.random() >= probability:
+                continue
+            for agent in self.model.grid.get_cell_list_contents([cell]):
+                if type(agent) is Fire and agent.extinguish():
+                    extinguished += 1
+
+        self.model.log.debug("UAV %d dumped water at %s, put out %d cell(s)",
+                             self.unique_id, self.pos, extinguished)
+        return extinguished
 
     # function that checks if an UAV in a certain position (pos), has another UAV nearby. If so, it can't move,
     # otherwise it will be possible to move.
@@ -235,12 +306,25 @@ class UAV(mesa.Agent):
         adjacent_cells = self.model.grid.get_neighborhood(
             self.pos, moore=self.moore, include_center=True, radius=UAV_OBSERVATION_RADIUS
         )
-        # records (position, burning) for every observed cell that holds vegetation
+        # records (position, burning) for every observed cell that holds vegetation, and the positions of the
+        # out buildings in view, which a policy may want to defend
+        buildings = []
         for cell in adjacent_cells:
             for agent in self.model.grid.get_cell_list_contents([cell]):
                 if type(agent) is Fire:
                     cells.append((cell, int(agent.is_burning() is True)))
-        return Observation(uav_id=self.unique_id, pos=self.pos, cells=cells)
+                elif type(agent) is OutBuilding and not agent.destroyed:
+                    buildings.append(cell)
+
+        # the extension fields stay at their defaults when the extension is off, so that policies written
+        # against the plain simulation keep working unchanged
+        if not ACTIVATE_FIREFIGHTING:
+            return Observation(uav_id=self.unique_id, pos=self.pos, cells=cells)
+
+        return Observation(uav_id=self.unique_id, pos=self.pos, cells=cells,
+                           has_water=self.has_water(),
+                           base_pos=self.model.base.pos if self.model.base else None,
+                           building_positions=buildings)
 
     # function for obtaining observed cells for the corresponding UAV
     def surrounding_states(self):
@@ -282,4 +366,127 @@ class UAV(mesa.Agent):
     # Mesa framework native method, which is overwritten, necessary for executing changes made in step() method
     # (as it can be seen, in this case UAVs don't need to update anything in step() method, so it isn't overwritten).
     def advance(self):
+        # dumping water takes the whole step, so the UAV does not move as well
+        if ACTIVATE_FIREFIGHTING and self.selected_dir == ACTION_DUMP_WATER:
+            self.model.water_drops += 1
+            self.model.cells_extinguished += self.dump_water()
+            return
+
         self.move()
+
+        # refilling is not an action: a UAV standing on the base with an empty tank starts refilling, and
+        # the base itself decides whether it is free to serve it
+        if ACTIVATE_FIREFIGHTING and self.model.base is not None:
+            self.model.base.serve(self)
+
+
+# Class Base holds the home base the UAVs start from and refill at. It is part of the firefighting
+# extension, and is only placed on the grid when ACTIVATE_FIREFIGHTING is True.
+class Base(mesa.Agent):
+
+    # constructor. 'cells' is the footprint the base covers, its first entry being the anchor cell the
+    # agent itself is placed on.
+    def __init__(self, unique_id, model, cells=None):
+        super().__init__(unique_id, model)
+        self.cells = [tuple(cell) for cell in cells] if cells else []
+        # damage taken so far, counted in steps during which any base cell was burning
+        self.burning_steps = 0
+        # unique_id of the UAV currently refilling, and how many steps it still has to wait. Only
+        # BASE_CAPACITY UAVs can be served at a time, which the requirement sets to one.
+        self.serving = {}
+
+    # checks whether a position is part of the base footprint
+    def covers(self, position):
+        return tuple(position) in self.cells
+
+    # checks whether any cell of the base is burning right now
+    def is_burning(self):
+        for cell in self.cells:
+            for agent in self.model.grid.get_cell_list_contents([cell]):
+                if type(agent) is Fire and agent.is_burning():
+                    return True
+        return False
+
+    # checks whether the base has taken all the damage it can survive
+    def is_destroyed(self):
+        return self.burning_steps >= BHP
+
+    # serves one UAV standing on the base cell, if there is a free refilling slot. A refill takes
+    # BASE_REFILL_STEPS steps, during which the slot stays taken.
+    def serve(self, uav):
+        if not self.covers(uav.pos) or uav.has_water():
+            # a UAV that leaves, or that is already full, gives its slot back
+            self.serving.pop(uav.unique_id, None)
+            return False
+
+        if uav.unique_id not in self.serving:
+            if len(self.serving) >= BASE_CAPACITY:  # somebody else is refilling
+                self.model.log.debug("UAV %d is waiting for the base to be free", uav.unique_id)
+                return False
+            self.serving[uav.unique_id] = BASE_REFILL_STEPS
+            self.model.log.debug("UAV %d started refilling at the base", uav.unique_id)
+
+        self.serving[uav.unique_id] -= 1
+        if self.serving[uav.unique_id] <= 0:
+            uav.refill()
+            self.model.refills += 1
+            self.model.log.debug("UAV %d refilled at the base", uav.unique_id)
+            # the slot is not released here: it stays taken until the next step, so that no more than
+            # BASE_CAPACITY UAVs can be served within one simulation step
+            return True
+        return False
+
+    # Mesa framework native method. The base accumulates damage while its cell burns, and frees the
+    # refilling slots taken during the previous step.
+    def step(self):
+        if self.is_burning():
+            self.burning_steps += 1
+            self.model.log.info("home base is burning: %d/%d", self.burning_steps, BHP)
+
+        for uav_id in list(self.serving):
+            uav = self.model.uav_by_id(uav_id)
+            # release the slot of a finished refill, and of a UAV that flew away mid refill, so that a
+            # queued UAV is not blocked forever
+            if self.serving[uav_id] <= 0 or uav is None or not self.covers(uav.pos):
+                del self.serving[uav_id]
+
+
+# Class BaseTile covers one cell of the home base footprint other than the anchor one. It carries no state
+# of its own: it exists so that the whole footprint is drawn on the map, and the base it belongs to holds
+# the damage and the refilling queue for all of its cells.
+class BaseTile(mesa.Agent):
+
+    # constructor
+    def __init__(self, unique_id, model, base):
+        super().__init__(unique_id, model)
+        self.base = base
+
+
+# Class OutBuilding holds the buildings scattered over the map that burn and are worth protecting. Part of
+# the firefighting extension, only placed when ACTIVATE_FIREFIGHTING is True.
+class OutBuilding(mesa.Agent):
+
+    # constructor
+    def __init__(self, unique_id, model):
+        super().__init__(unique_id, model)
+        self.burning_steps = 0
+        self.destroyed = False
+
+    # checks whether the cell this building stands on is burning
+    def is_burning(self):
+        for agent in self.model.grid.get_cell_list_contents([self.pos]):
+            if type(agent) is Fire:
+                return agent.is_burning()
+        return False
+
+    # Mesa framework native method. The building accumulates damage while its cell burns, and is lost once
+    # it has burned for OUT_BUILDING_HP steps.
+    def step(self):
+        if self.destroyed or not self.is_burning():
+            return
+
+        self.burning_steps += 1
+        if self.burning_steps >= OUT_BUILDING_HP:
+            self.destroyed = True
+            self.model.buildings_lost += 1
+            self.model.log.info("out building at %s destroyed", self.pos)

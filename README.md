@@ -210,6 +210,53 @@ percentage of the grid covered by vegetation.
 
 `SECURITY_DISTANCE`: It establishes the minimum distance that UAVs should be separated from each other for avoiding collisions.
 
+### Firefighting extension
+
+An optional extension that turns the simulation into a firefighting scenario. It is switched off by default; with `ACTIVATE_FIREFIGHTING = False` every variable in this section is ignored and the simulator behaves exactly as it did before the extension existed.
+
+When it is switched on:
+
+<ul>
+  <li>a <b>home base</b> is placed on the map, drawn in blue, and every UAV starts from it;</li>
+  <li>each UAV carries one <b>load of water</b>, and is drawn as a smaller dark blue square while it still has it;</li>
+  <li>a UAV can <b>dump its water</b>, extinguishing the fire under it and around it;</li>
+  <li>extinguished cells are drawn in light blue, are immune for a while, and can then <b>re-ignite</b>;</li>
+  <li><b>out buildings</b> are scattered over the map, drawn in brown, and turn dark grey once they burn down;</li>
+  <li>the run is <b>lost</b> if the home base burns for too long.</li>
+</ul>
+
+`ACTIVATE_FIREFIGHTING`: Master switch for the whole extension.
+
+`BASE_POSITION`: Cell the home base is placed on, as an `(x, y)` tuple, or `None` to place it a quarter of the way into the grid. Note that the initial fire is lit at the centre of the grid, so putting the base there means it burns from the first step.
+
+`BHP`: Base health points. The run is lost once the base cell has burned for this many steps. The damage is cumulative rather than consecutive, because a burning cell goes out for a step when none of its neighbours are alight yet, so the base collects its damage over several visits from the fire.
+
+`BASE_REFILL_STEPS`: Steps a UAV has to spend on the base to take on a load of water. Refilling is not an action: a UAV with an empty tank standing on the base starts refilling by itself.
+
+`BASE_CAPACITY`: How many UAVs can refill at the same time. The default of `1` means UAVs arriving together have to queue.
+
+`UAV_WATER_CAPACITY`: Loads of water a UAV can carry at once.
+
+`WATER_DROP_RADIUS`: How far a water drop reaches around the cell it is dumped on. The drop covers a disc, so the corners of the surrounding square are outside it.
+
+`WATER_EXTINGUISH_PROB_CENTRE` and `WATER_EXTINGUISH_PROB_EDGE`: Probability of a drop extinguishing the cell right under it, and a cell at `WATER_DROP_RADIUS`. In between, the probability falls off linearly with the distance; beyond the radius it is zero.
+
+`REIGNITION_DELAY`: Steps an extinguished cell is immune to catching fire again. Once the delay has passed, nearby fire can light it as usual.
+
+`SPONTANEOUS_REIGNITION_PROB`: Per step probability that a cell which was extinguished at some point relights on its own, with no fire nearby. Keep it low.
+
+`NUM_OUT_BUILDINGS`: Number of out buildings scattered randomly over the map. They are never placed on the home base, and if more are asked for than there are free cells, only what fits is placed.
+
+`OUT_BUILDING_HP`: Steps an out building survives while its cell is burning, before it is destroyed.
+
+The `firefighter` policy in `policy/firefighter.py` is written for this extension: it carries water to the fire, prefers fires that threaten an out building, dumps its load once in range, and flies back to the base to refill. The other policies still run with the extension switched on, but never dump water, since `ACTION_DUMP_WATER` sits outside `N_ACTIONS` and is only emitted by policies that opt in.
+
+To try it from the command line, without editing `config.py`:
+
+```bash
+python3 headless.py --policy firefighter --set ACTIVATE_FIREFIGHTING=True
+```
+
 ## Configuration examples
 
 Six default examples of how different variables can be configured to develop distinct scenarios, can be seen below. All scenarios shown are captured in `time step = 20`, in different time steps scenarios might look different.

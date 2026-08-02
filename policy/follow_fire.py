@@ -2,12 +2,9 @@
 
 # own python modules
 
-# see the note in random_policy.py about importing config as a module
-import config
+from config import ACTION_STAY
 
-from config import ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_STAY, ACTION_UP
-
-from .base import Policy
+from .base import Policy, nearest, step_towards
 
 
 class FollowFirePolicy(Policy):
@@ -28,21 +25,9 @@ class FollowFirePolicy(Policy):
 
     # decides the action for a single UAV
     def action_for(self, observation):
-        burning = observation.burning_positions()
-        if not burning:  # nothing visible, hold position
+        # nearest burning cell in view, by squared Euclidean distance
+        target = nearest(observation.pos, observation.burning_positions())
+        if target is None:  # nothing visible, hold position
             return ACTION_STAY
-
-        x, y = observation.pos
-        # nearest burning cell, by squared Euclidean distance (no need for the square root to rank)
-        target = min(burning, key=lambda position: (position[0] - x) ** 2 + (position[1] - y) ** 2)
-        dx = target[0] - x
-        dy = target[1] - y
-
-        if dx == 0 and dy == 0:  # already above the fire, stay and keep watching it
-            return ACTION_STAY
-
-        # close the larger gap first; break ties randomly so UAVs don't all bias the same way
-        prefer_x = abs(dx) > abs(dy) or (abs(dx) == abs(dy) and config.SYSTEM_RANDOM.random() < 0.5)
-        if prefer_x:
-            return ACTION_RIGHT if dx > 0 else ACTION_LEFT
-        return ACTION_UP if dy > 0 else ACTION_DOWN
+        # step_towards() returns ACTION_STAY when the UAV is already above the fire
+        return step_towards(observation.pos, target)

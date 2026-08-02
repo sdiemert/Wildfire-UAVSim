@@ -17,9 +17,18 @@ class Observation:
     pos: tuple
     cells: list = field(default_factory=list)
 
+    # the fields below belong to the firefighting extension and keep their defaults when it is switched off
+    has_water: bool = False
+    base_pos: tuple = None
+    building_positions: list = field(default_factory=list)
+
     # positions of the cells that are on fire right now
     def burning_positions(self):
         return [position for position, burning in self.cells if burning]
+
+    # whether this UAV is currently standing on the home base
+    def at_base(self):
+        return self.base_pos is not None and tuple(self.pos) == tuple(self.base_pos)
 
     # the flat 0/1 list the rest of the model already expects, in observation order
     def flat_states(self):

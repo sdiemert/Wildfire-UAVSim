@@ -24,8 +24,21 @@ def agent_portrayal(agent):
         if type(agent) is agents.Fire:
             idx = int(round(agent.get_prob(), 1) * 10)
             portrayal.update({"Color": BLACK_AND_WHITE_COLORS[idx], "Layer": 0})
+        else:
+            # nothing else is drawn on the probability map, and returning a portrayal without a "Layer"
+            # would throw a KeyError in the canvas
+            return None
     else:
-        if type(agent) is agents.Fire:  # showing smoke
+        if type(agent) is agents.Base or type(agent) is agents.BaseTile:
+            # showing the home base, drawn above the vegetation. Every cell of its footprint is drawn, so
+            # the base appears as a solid BASE_SIZE block.
+            base = agent if type(agent) is agents.Base else agent.base
+            color = BASE_BURNING_COLOR if base.is_burning() else BASE_COLOR
+            portrayal.update({"Color": color, "Layer": 1})
+        elif type(agent) is agents.OutBuilding:  # showing an out building
+            color = OUT_BUILDING_DESTROYED_COLOR if agent.destroyed else OUT_BUILDING_COLOR
+            portrayal.update({"Color": color, "Layer": 1, "h": 0.7, "w": 0.7})
+        elif type(agent) is agents.Fire:  # showing smoke
             if agent.smoke.is_smoke_active():
                 # the two following lines of code could be used to set the normalized index for different smoke colors.
                 # only one color is used by default.
@@ -36,11 +49,16 @@ def agent_portrayal(agent):
                 if agent.is_burning():  # showing fire
                     idx = normalize_fuel_values(agent.get_fuel(), FUEL_UPPER_LIMIT)
                     portrayal.update({"Color": FIRE_COLORS[idx], "Layer": 0})
+                elif ACTIVATE_FIREFIGHTING and agent.is_immune():  # showing a cell just hit by water
+                    portrayal.update({"Color": EXTINGUISHED_COLOR, "Layer": 0})
                 else:  # showing vegetation
                     idx = normalize_fuel_values(agent.get_fuel(), FUEL_UPPER_LIMIT)
                     portrayal.update({"Color": VEGETATION_COLORS[idx], "Layer": 0})
-        elif type(agent) is agents.UAV:  # showing UAV
-            portrayal.update({"Color": "Black", "Layer": 1, "h": 0.8, "w": 0.8})
+        elif type(agent) is agents.UAV:  # showing UAV, above the base so that it stays visible over it
+            # a UAV still carrying water is drawn hollow, so that its load is visible on the map
+            portrayal.update({"Color": "Black", "Layer": 2, "h": 0.8, "w": 0.8})
+            if ACTIVATE_FIREFIGHTING and agent.has_water():
+                portrayal.update({"Color": "#00306b", "h": 0.5, "w": 0.5})
     return portrayal
 
 
