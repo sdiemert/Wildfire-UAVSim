@@ -16,15 +16,21 @@ PROBABILITY_MAP = False
 
 # model params specifications
 
-BATCH_SIZE = 90
+BATCH_SIZE = 100
 WIDTH = 60  # in python [height, width] for grid, in js [width, heigh]
 HEIGHT = 60
 BURNING_RATE = 1
-FIRE_SPREAD_SPEED = 1
+# Simulation steps between fire updates, so larger means slower spread. Everything else (UAVs, water drops,
+#
+# the immunity countdown) still runs every step.
+# Must be a positive integer: 1 is the minimum and the
+# fastest spread available, 0 raises ZeroDivisionError, and a fraction never satisfies the integer modulo
+# in Fire.step(), which freezes the fire entirely.
+FIRE_SPREAD_SPEED = 2
 FUEL_UPPER_LIMIT = 10
 FUEL_BOTTOM_LIMIT = 7
 
-DENSITY_PROB = 1  # Tree density (Float number in the interval [0, 1])
+DENSITY_PROB = 0.9  # Tree density (Float number in the interval [0, 1])
 
 # ignition of the initial wildfire
 #
