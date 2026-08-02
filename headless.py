@@ -185,16 +185,16 @@ class _LogWriter:
         self._buffer = ""
 
 
-def _count_fire_cells(model, agents_module) -> tuple[int, int]:
+def _count_fire_cells(model) -> tuple[int, int]:
     """Return (burning cells, burned out cells) for the current grid state."""
     burning = 0
     burned_out = 0
-    for agent in model.schedule.agents:
-        if type(agent) is agents_module.Fire:
-            if agent.is_burning():
-                burning += 1
-            if agent.get_fuel() <= 0:
-                burned_out += 1
+    # model.fire_list is every Fire agent, which saves picking them back out of the scheduler
+    for agent in model.fire_list:
+        if agent.is_burning():
+            burning += 1
+        if agent.get_fuel() <= 0:
+            burned_out += 1
     return burning, burned_out
 
 
@@ -255,7 +255,7 @@ def run_simulation(config: RunConfig) -> RunResult:
                 break
 
             if config.log_every and step % config.log_every == 0:
-                burning, burned_out = _count_fire_cells(model, agents)
+                burning, burned_out = _count_fire_cells(model)
                 log.info(
                     "step %3d/%d | burning=%4d burned_out=%4d | MR1_mean=%.4f MR2=%d",
                     step,
@@ -266,7 +266,7 @@ def run_simulation(config: RunConfig) -> RunResult:
                     model.MR2_VALUE,
                 )
 
-        burning, burned_out = _count_fire_cells(model, agents)
+        burning, burned_out = _count_fire_cells(model)
         elapsed = time.perf_counter() - started
 
         result = RunResult(

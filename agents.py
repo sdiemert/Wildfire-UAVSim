@@ -61,7 +61,14 @@ class Fire(mesa.Agent):
     def get_prob(self):
         return self.cell_prob
 
-    # function that calculates probability of cell s being burned in next time step (p_t+1(s))
+    # function that calculates probability of cell s being burned in next time step (p_t+1(s)),
+    # one cell at a time.
+    #
+    # The simulation does not call this any more: WildFireModel.update_fire_probabilities() works the
+    # same quantity out for every cell of the grid at once (see fire_spread.py), which is what
+    # step() reads below. It is kept because it is the readable definition of the spread rule, and
+    # because tests/test_fire_spread.py checks the vectorized version against it cell by cell. Change
+    # the spread rule here and in fire_spread.py together, and that test will hold you to it.
     def probability_of_fire(self):
         probs = []
         # if at least cell s has some fuel remaining
@@ -108,7 +115,9 @@ class Fire(mesa.Agent):
         if self.steps_counter % FIRE_SPREAD_SPEED == 0:
             # if self.steps_counter == 26: # to model how the wind can suddenly change direction
             #     self.model.wind.wind_direction = 'south'
-            self.cell_prob = self.probability_of_fire()
+            # worked out for the whole grid before the schedule ran, so this is a lookup. The fuel
+            # gate stays here, which keeps the model from having to mirror the fuel of every cell.
+            self.cell_prob = 0.0 if self.fuel <= 0 else self.model.fire_prob[self.pos]
             generated = random.random()
             # set next burning state
             if generated < self.cell_prob:

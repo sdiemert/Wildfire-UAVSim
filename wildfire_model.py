@@ -3,10 +3,12 @@
 import logging
 import mesa
 import matplotlib.pyplot as plt
+import numpy
 
 # own python modules
 
 import agents
+import fire_spread
 
 # imported by name because 'policy' is also the name of the constructor argument and attribute below,
 # which would shadow the module
@@ -78,8 +80,24 @@ class WildFireModel(mesa.Model):
         self.fire_start_pos = self.resolve_fire_start_position()
         self.fire_start_step = self.resolve_fire_start_step()
         self.fire_started = False
+        # the Fire agents, in creation order, and their positions split into index arrays. Together
+        # they turn the burning state of the whole grid into a single array assignment each step,
+        # which is what feeds the vectorized spread calculation below. Set up before
+        # set_fire_agents(), because new_fire_agent() appends to them.
+        self.fire_list = []
+        self.fire_xs = []
+        self.fire_ys = []
+        # burning mask and ignition probabilities of the whole grid, indexed [x, y] to match the
+        # Mesa grid positions, whose x runs over HEIGHT (see the MultiGrid call above)
+        self.burning = numpy.zeros((HEIGHT, WIDTH), dtype=bool)
+        self.fire_prob = numpy.zeros((HEIGHT, WIDTH))
+        # rebuilt per reset, so that a runner overriding the wind settings is picked up
+        self.fire_spread = fire_spread.FireSpread(HEIGHT, WIDTH)
         # set Fire and wind agents (Smoke are created inside Fire agents as well)
         self.set_fire_agents()
+        self.fire_xs = numpy.array(self.fire_xs, dtype=int)
+        self.fire_ys = numpy.array(self.fire_ys, dtype=int)
+        self.fire_spread.assert_matches(self.fire_list)
         self.wind = agents.Wind()
 
         x_center = int(HEIGHT / 2)
@@ -101,6 +119,13 @@ class WildFireModel(mesa.Model):
             self.set_base()
             self.set_out_buildings()
 
+        # the UAV team, in the order it was created. The scheduler holds one entry per cell of the
+        # forest as well, so picking the UAVs back out of it means walking thousands of Fire agents
+        # to find a handful; everything that needs the team iterates this list instead. The order is
+        # the order they are added to the scheduler, which is what observations() and
+        # set_drone_dirs() rely on to line actions up with the UAVs they belong to.
+        self.uavs = []
+
         # create and configure UAV agents in the grid
         for a in range(0, self.NUM_AGENTS):
             aux_UAV = agents.UAV(self.unique_agents_id, self)
@@ -111,6 +136,7 @@ class WildFireModel(mesa.Model):
                 y_center += a if a % 2 == 0 else -a
                 self.grid.place_agent(aux_UAV, (x_center, y_center + 1))
             self.schedule.add(aux_UAV)
+            self.uavs.append(aux_UAV)
             self.unique_agents_id += 1
 
         # set Mesa framework management
@@ -176,9 +202,9 @@ class WildFireModel(mesa.Model):
 
     # looks a UAV up by its unique id, used by the base to check who is still standing on it
     def uav_by_id(self, uav_id):
-        for agent in self.schedule.agents:
-            if type(agent) is agents.UAV and agent.unique_id == uav_id:
-                return agent
+        for uav in self.uavs:
+            if uav.unique_id == uav_id:
+                return uav
         return None
 
     # function that decides which cell the wildfire starts from, from FIRE_START_POSITION
@@ -262,6 +288,16 @@ class WildFireModel(mesa.Model):
         self.log.info("fire started at %s at step %d (fuel=%d)",
                       self.fire_start_pos, self.evaluation_timesteps_counter, cell.get_fuel())
 
+    # refreshes the burning mask from the Fire agents and works out the ignition probability of every
+    # cell in one convolution (see fire_spread.py). Fire.step() then reads its own cell out of
+    # self.fire_prob instead of walking its neighbourhood, which is what the per cell version spent
+    # over 99% of the run time doing.
+    def update_fire_probabilities(self):
+        if not self.fire_list:  # a density low enough to leave the grid bare
+            return
+        self.burning[self.fire_xs, self.fire_ys] = [fire.burning for fire in self.fire_list]
+        self.fire_prob = self.fire_spread.probability_field(self.burning)
+
     # looks up the Fire agent covering a cell, or None when the density left that cell empty
     def fire_agent_at(self, position):
         for agent in self.grid.get_cell_list_contents([position]):
@@ -279,19 +315,24 @@ class WildFireModel(mesa.Model):
         self.schedule.add(source_fire)
         # place agent in the grid
         self.grid.place_agent(source_fire, tuple([pos_x, pos_y]))
+        # remember it for the vectorized spread calculation, which reads the burning state of every
+        # Fire agent once per step through these parallel lists
+        self.fire_list.append(source_fire)
+        self.fire_xs.append(pos_x)
+        self.fire_ys.append(pos_y)
 
     # manage actions obtained from the new_direction attribute, and make the UAV team move over the forest area
     def set_drone_dirs(self):
         # used for selecting the corresponding action from new_direction attribute, for each UAV
         self.new_direction_counter = 0
-        # searches for all UAV agents in scheduler, and set their new direction and speed. What the policy
-        # returned is coerced into an Action, so a policy that only gives a direction still works.
-        for agent in self.schedule.agents:
-            if type(agent) is agents.UAV:
-                action = Action.coerce(self.new_direction[self.new_direction_counter])
-                agent.selected_dir = action.direction
-                agent.selected_speed = action.speed
-                self.new_direction_counter += 1
+        # walks the UAV team in the same order observations() reported it, so that entry i of what the
+        # policy returned belongs to UAV i. What the policy returned is coerced into an Action, so a
+        # policy that only gives a direction still works.
+        for uav in self.uavs:
+            action = Action.coerce(self.new_direction[self.new_direction_counter])
+            uav.selected_dir = action.direction
+            uav.selected_speed = action.speed
+            self.new_direction_counter += 1
 
     # this method obtains effective wildfire monitoring metric (MR1) for time step t
     def MR1(self, state):
@@ -305,8 +346,8 @@ class WildFireModel(mesa.Model):
     # this method obtains collision risk avoidance metric (MR2) for time step t
     def MR2(self):
         counter = 0
-        # get UAV agents from scheduler
-        UAV_agents = [agent for agent in self.schedule.agents if type(agent) is agents.UAV]
+        # the UAV team, copied because the loop below deletes from its copy
+        UAV_agents = list(self.uavs)
 
         # checks number of interactions for each UAV with others
         for idx, agent in enumerate(UAV_agents):
@@ -326,10 +367,10 @@ class WildFireModel(mesa.Model):
                     counter += 1
         self.MR2_VALUE += counter // 2  # remove duplicate interactions
 
-    # method for collecting the partial view of every UAV, in scheduler order. This is the order
-    # set_drone_dirs() uses as well, so a policy can return one action per entry of this list.
+    # method for collecting the partial view of every UAV, in the order the team was created. This is
+    # the order set_drone_dirs() uses as well, so a policy can return one action per entry of this list.
     def observations(self):
-        return [agent.observe() for agent in self.schedule.agents if type(agent) is agents.UAV]
+        return [uav.observe() for uav in self.uavs]
 
     # method for obtaining each UAV partial observation. 'observations' can be passed in to avoid querying
     # the grid a second time when the caller already collected them.
@@ -364,7 +405,7 @@ class WildFireModel(mesa.Model):
             self.running = False
             return
 
-        if sum(isinstance(i, agents.UAV) for i in self.schedule.agents) > 0:
+        if self.uavs:
             # what each UAV can see at time t; keeps cell positions, so a policy can decide where to fly
             observations = self.observations()
             state = self.state(observations)  # s_t
@@ -390,6 +431,12 @@ class WildFireModel(mesa.Model):
         # take this step, exactly as they do for a fire lit at step 0.
         if not self.fire_started and self.evaluation_timesteps_counter >= self.fire_start_step:
             self.start_fire()
+
+        # ignition probability of every cell, worked out for the whole grid in one go. It has to
+        # happen after start_fire() and before the schedule runs, because SimultaneousActivation
+        # executes every step() before any advance(), so every cell reads one and the same burning
+        # snapshot, taken before anything moves.
+        self.update_fire_probabilities()
 
         # execute each agent step() method
         self.schedule.step()

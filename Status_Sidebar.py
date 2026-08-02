@@ -141,7 +141,7 @@ class StatusSidebar(VisualizationElement):
 
     # the water status of each UAV
     def uavs(self, model):
-        crew = [agent for agent in model.schedule.agents if type(agent) is agents.UAV]
+        crew = model.uavs
         html = ["<h4>UAVs</h4>"]
         if not crew:
             return "".join(html + [self.note("none flying")])

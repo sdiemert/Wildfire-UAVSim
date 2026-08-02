@@ -17,6 +17,27 @@ This python file holds the logic for managing elements such as Fire, Smoke, Wind
 
 This python file holds the logic for managing the wildfire simulation, by utilizing elements from `agents.py` file.
 
+### `fire_spread.py`
+
+This python file works out how likely every cell of the grid is to catch fire, for the whole grid at
+once, and is by far the largest influence on how fast a simulation runs.
+
+The rule itself is unchanged, and is still written out cell by cell in `Fire.probability_of_fire()`
+in `agents.py`. That version asks each cell to walk its neighbourhood, which repeats the same
+distance calculation millions of times per run and used to account for over 99% of the run time.
+Because a cell's influence on its neighbour depends only on the offset between them, the same
+quantity can be obtained for every cell in a single pass over the grid, which is what this file does.
+A full 90 step run of the default configuration went from about 16 seconds to about 0.8 seconds.
+
+Both versions are kept, and `tests/test_fire_spread.py` checks them against each other cell by cell,
+under each wind setting, at the edges of the grid and with sparse vegetation. **If you change how the
+fire spreads, change it in both places**, or that test will fail.
+
+One caveat on reproducibility. With the wind switched off or with `FIXED_WIND = True`, seeded runs
+give exactly the results they gave before this file existed. With composed wind (`FIXED_WIND =
+False`) the wind direction is drawn per cell in one go rather than one cell at a time, so runs are
+statistically the same but a given seed no longer reproduces older results.
+
 ### `main.py`
 
 This python file allows to execute the wildfire simulation built in `widlfire_model.py` file.
