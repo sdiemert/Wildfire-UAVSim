@@ -5,8 +5,9 @@ import logging
 import mesa
 
 from Canvas_Grid_Visualization import CanvasGrid
-from Fps_Topbar import FpsTopbar
+from Policy_Selector import PolicySelector
 from Status_Sidebar import StatusSidebar
+from Top_Bar import TopBar
 
 # own python modules
 
@@ -57,15 +58,21 @@ def agent_portrayal(agent):
                     idx = normalize_fuel_values(agent.get_fuel(), FUEL_UPPER_LIMIT)
                     portrayal.update({"Color": VEGETATION_COLORS[idx], "Layer": 0})
         elif type(agent) is agents.UAV:  # showing UAV, above the base so that it stays visible over it
-            # a UAV still carrying water is drawn hollow, so that its load is visible on the map
-            portrayal.update({"Color": "Black", "Layer": 2, "h": 0.8, "w": 0.8})
-            if ACTIVATE_FIREFIGHTING and agent.has_water():
-                portrayal.update({"Color": "#00306b", "h": 0.5, "w": 0.5})
+            # every UAV is drawn in the same near black, whatever it is carrying, because that is what
+            # keeps it findable over the light map. The outline is what gives it an edge over the base
+            # and over burnt ground, the only two things on the map anywhere near as dark as it is.
+            portrayal.update({"Color": UAV_COLOR, "stroke_color": UAV_OUTLINE_COLOR,
+                              "Layer": 2, "h": 0.85, "w": 0.85})
+            # the water a UAV carries is shown by size rather than by colour: a UAV drawn full is
+            # carrying its load, and a smaller one has dropped it and is on its way back to the base
+            if ACTIVATE_FIREFIGHTING and not agent.has_water():
+                portrayal.update({"h": 0.55, "w": 0.55})
     return portrayal
 
 
-# builds the settings shown on the left hand side of the web page. Mesa passes the current value of each
-# one to WildFireModel as a keyword argument, both on start up and every time Reset is pressed.
+# builds the settings of the web page. Mesa passes the current value of each one to WildFireModel as a
+# keyword argument, both on start up and every time Reset is pressed. Mesa renders them into the left hand
+# sidebar; PolicySelector then carries the policy control over to the strip above the grid.
 def model_params():
     policy_names = sorted(POLICIES)
     return {
@@ -93,10 +100,12 @@ def main():
     grid = CanvasGrid(agent_portrayal, WIDTH, HEIGHT, 10 * WIDTH, 10 * HEIGHT)
     # live status panel, rendered in the sidebar next to the grid
     sidebar = StatusSidebar()
-    # moves the frames per second slider up into the top bar, beside the run controls
-    fps = FpsTopbar()
+    # gathers the speed slider, the step counter and the run buttons into the bar along the top
+    topbar = TopBar()
+    # moves the UAV policy dropdown over to the right hand side, above the grid
+    policy = PolicySelector("policy")
     # initialize Modular server for mesa Python visualization
-    server = mesa.visualization.ModularServer(wildfire_model.WildFireModel, [grid, sidebar, fps],
+    server = mesa.visualization.ModularServer(wildfire_model.WildFireModel, [grid, sidebar, topbar, policy],
                                               "WildFire Model", model_params())
     server.port = 8521  # default port, others can be set
     server.launch()

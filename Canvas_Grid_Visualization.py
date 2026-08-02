@@ -5,7 +5,7 @@ Modular Canvas Rendering
 Module for visualizing model objects in grid cells.
 """
 from agents import UAV
-from config import UAV_OBSERVATION_RADIUS
+from config import UAV_OBSERVATION_COLOR, UAV_OBSERVATION_RADIUS
 from collections import defaultdict
 
 from mesa.visualization.ModularVisualization import VisualizationElement
@@ -117,7 +117,11 @@ class CanvasGrid(VisualizationElement):
                                             portrayal_aux = self.portrayal_method(obj)
                                             portrayal_aux["x"] = x + i
                                             portrayal_aux["y"] = y + j
-                                            portrayal_aux["Color"] = "Black"
+                                            # the UAV itself is outlined to keep it visible over dark
+                                            # ground; the marks of its observation window are thin bars
+                                            # that would only be blurred by an outline of another colour
+                                            portrayal_aux["Color"] = UAV_OBSERVATION_COLOR
+                                            portrayal_aux["stroke_color"] = UAV_OBSERVATION_COLOR
                                             if i == -limit or i == limit:
                                                 portrayal_aux["h"] = "1"
                                                 portrayal_aux["w"] = "0.2"

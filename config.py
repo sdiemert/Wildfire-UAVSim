@@ -1,170 +1,389 @@
+# =====================================================================================================
+# # Wildfire-UAVSim configuration
+#
+# Every simulation setting lives in this file. Each entry below is written as
+#
+#     ### `NAME` -- what it does
+#     **Bounds:** which values are legal
+#
+# and the sections follow the order a run is built up in: the environment first, then the forest, the
+# ignition, the wind and the smoke, the UAVs, the optional firefighting extension, and finally the
+# drawing colours and the shared helper functions.
+#
+# Any of these can also be overridden for a single run from the command line, without editing this file:
+#
+#     python3 headless.py --set DENSITY_PROB=0.6 --set 'FIRE_START_POSITION=(3, 3)'
+#
+# The bounds are stated but hardly ever enforced: a value outside them usually still runs, and quietly
+# gives nonsense. The few that raise are called out individually.
+# =====================================================================================================
+
 import random
 import numpy
 
-# COMMON VARIABLES
+# =====================================================================================================
+# ## Random number source
+# =====================================================================================================
 
-SYSTEM_RANDOM = random.SystemRandom()  # ... Not available on all systems ... (Python official doc)
+# ### `SYSTEM_RANDOM` -- the generator every stochastic decision in the simulator draws from.
+# Replacing it with a seeded generator, as `headless.py --seed` and the test fixtures do, makes a run
+# reproducible.
+# **Bounds:** a `random.Random` instance. `random.SystemRandom()` is not available on all systems.
+SYSTEM_RANDOM = random.SystemRandom()
 
-# simulator activators (environment conditions)
+# =====================================================================================================
+# ## Environment switches
+#
+# What the simulated world contains. Read all over the project, so best left alone once a run has begun.
+# =====================================================================================================
 
-FIXED_WIND = False
-ACTIVATE_SMOKE = False
+# ### `ACTIVATE_WIND` -- whether wind skews the direction the fire spreads in.
+# With it off, `MU`, `WIND_DIRECTION` and the composed wind settings are ignored.
+# **Bounds:** `True` / `False`.
 ACTIVATE_WIND = False
-# To avoid throwing "KeyError: 'Layer'" when prob burning maps are shown (so UAV won't get its "Layer" attribute in the
-# "portrayal_method(obj)"), NUM_AGENTS must be set to 0.
+
+# ### `FIXED_WIND` -- whether the wind blows from one direction or two.
+# `True` uses `WIND_DIRECTION` alone; `False` composes `FIRST_DIR` and `SECOND_DIR`.
+# **Bounds:** `True` / `False`.
+FIXED_WIND = False
+
+# ### `ACTIVATE_SMOKE` -- whether burning cells raise smoke, hiding what is underneath.
+# **Bounds:** `True` / `False`.
+ACTIVATE_SMOKE = False
+
+# ### `PROBABILITY_MAP` -- draw each cell's probability of catching fire instead of the forest.
+# **Bounds:** `True` / `False`. Requires `NUM_AGENTS = 0`: nothing but the fire is drawn on the
+# probability map, so a UAV would get a portrayal with no "Layer" attribute out of `portrayal_method(obj)`
+# and the canvas would throw `KeyError: 'Layer'`.
 PROBABILITY_MAP = False
 
-# model params specifications
+# =====================================================================================================
+# ## Forest area
+#
+# How large the map is, and how much there is to burn on it.
+# =====================================================================================================
 
+# ### `BATCH_SIZE` -- how long a run lasts, in simulation steps.
+# The web interface shows `Done` once it is reached; `headless.py --steps` overrides it.
+# **Bounds:** integer `>= 1`.
 BATCH_SIZE = 100
+
+# ### `WIDTH`, `HEIGHT` -- grid size (forest area size), in cells.
+# The web canvas is drawn at 10 pixels per cell, so a grid much past ~100 stops fitting on screen.
+# **Bounds:** integers `>= 1`. Run time grows with `WIDTH * HEIGHT`.
 WIDTH = 60  # in python [height, width] for grid, in js [width, heigh]
 HEIGHT = 60
-BURNING_RATE = 1
-# Simulation steps between fire updates, so larger means slower spread. Everything else (UAVs, water drops,
-#
-# the immunity countdown) still runs every step.
-# Must be a positive integer: 1 is the minimum and the
-# fastest spread available, 0 raises ZeroDivisionError, and a fraction never satisfies the integer modulo
-# in Fire.step(), which freezes the fire entirely.
-FIRE_SPREAD_SPEED = 2
+
+# ### `FUEL_UPPER_LIMIT`, `FUEL_BOTTOM_LIMIT` -- burnable fuel each cell starts with.
+# Every cell draws uniformly from the inclusive range, and burns for that many fire updates.
+# **Bounds:** integers, `1 <= FUEL_BOTTOM_LIMIT <= FUEL_UPPER_LIMIT`. `FUEL_UPPER_LIMIT` also scales the
+# vegetation and fire colour ramps, so it must stay `> 0`.
 FUEL_UPPER_LIMIT = 10
 FUEL_BOTTOM_LIMIT = 7
 
-DENSITY_PROB = 0.9  # Tree density (Float number in the interval [0, 1])
+# ### `BURNING_RATE` -- fuel a burning cell loses per fire update.
+# Larger means cells burn out sooner, so the fire front is thinner and moves on faster.
+# **Bounds:** integer `>= 1`. Anything past `FUEL_UPPER_LIMIT` burns every cell out in a single update.
+BURNING_RATE = 1
 
-# ignition of the initial wildfire
+# ### `FIRE_SPREAD_SPEED` -- simulation steps between fire updates, so larger means slower spread.
+# Everything else (UAVs, water drops, the immunity countdown) still runs every step.
+# **Bounds:** integer `>= 1`, where `1` is the fastest spread available. `0` raises `ZeroDivisionError`,
+# and a fraction never satisfies the integer modulo in `Fire.step()`, which freezes the fire entirely.
+FIRE_SPREAD_SPEED = 2
+
+# ### `DENSITY_PROB` -- share of the grid covered by vegetation (tree density).
+# Each cell independently gets a Fire agent with this probability; a cell without one never burns.
+# **Bounds:** float in `[0, 1]`. `1` is a fully wooded map, `0` an empty one bar the ignition cell.
+DENSITY_PROB = 0.9
+
+# =====================================================================================================
+# ## Ignition
 #
-# where the fire starts:
+# Where and when the initial wildfire starts; either can be fixed or randomised. The cell and step that
+# get resolved are logged when the model is built, shown in the sidebar of the web interface, and
+# recorded by `headless.py` as `fire_start_pos` and `fire_start_step`.
+# =====================================================================================================
+
+# ### `FIRE_START_POSITION` -- the cell the fire starts from.
+# The ignition cell always holds a Fire agent whatever `DENSITY_PROB` decides, so the fire has somewhere
+# to start even on a sparse map.
+# **Bounds:** one of
 #   None      -> the centre of the grid
 #   "random"  -> a uniformly random cell, avoiding the home base footprint
-#   (x, y)    -> that exact cell
+#   (x, y)    -> that exact cell, which must lie inside the grid
 FIRE_START_POSITION = "random"
-# when the fire starts, counted in simulation steps. Step 0 is the state the model is built in, so a fire
-# lit at step 0 is already burning before the first step is taken:
-#   an int    -> exactly that step
-#   (a, b)    -> a random step drawn uniformly from the inclusive range [a, b]
+
+# ### `FIRE_START_STEP` -- the simulation step the fire is lit at.
+# Step 0 is the state the model is built in, so a fire lit at step 0 is already burning before the first
+# step is taken. Until that step nothing burns: the UAVs fly, MR2 accumulates, and MR1 stays at zero.
+# **Bounds:** one of
+#   an int    -> exactly that step, >= 0. A value >= BATCH_SIZE is warned about and never lights
+#   (a, b)    -> a random step drawn uniformly from the inclusive range [a, b], with 0 <= a <= b
 #   "random"  -> a random step anywhere in the run, [0, BATCH_SIZE)
-FIRE_START_STEP = (10,20)
+FIRE_START_STEP = (10, 20)
 
+# =====================================================================================================
+# ## Wind
+#
+# Ignored unless `ACTIVATE_WIND` is True. Wind raises the chance of spreading downwind and lowers it
+# upwind, by a fraction `MU` of the probability that is left.
+# =====================================================================================================
+
+# ### `WIND_DIRECTION` -- the single direction the wind blows, used when `FIXED_WIND` is True.
+# **Bounds:** one of 'north', 'south', 'east', 'west'. Anything else raises `ValueError` in
+# `fire_spread.build_kernel()`.
 WIND_DIRECTION = 'south'
-# if FIXED_WIND == False (compose wind), then variables inside the if statement are set to be used in the project
-if not FIXED_WIND:
-    # Possible mixed wind directions: NW, NE, SW, SE"
-    FIRST_DIR = 'south'  # Introduce first wind direction (north, south, east, west):
-    SECOND_DIR = 'east'  # Introduce second wind direction (probability calculated based on first one),
-    FIRST_DIR_PROB = 0.8  # Introduce first wind probability [0, 1]
-MU = 0.9  # Wind velocity (Float number in the interval [0, 1])
 
+# Composed wind. These three exist only when `FIXED_WIND` is False, which is also the only time anything
+# reads them. Mixing two perpendicular directions gives a diagonal wind: NW, NE, SW or SE.
+if not FIXED_WIND:
+    # ### `FIRST_DIR` -- the predominant wind direction.
+    # **Bounds:** one of 'north', 'south', 'east', 'west'.
+    FIRST_DIR = 'south'
+
+    # ### `SECOND_DIR` -- the other direction, blown whenever the first one is not.
+    # **Bounds:** one of 'north', 'south', 'east', 'west'.
+    SECOND_DIR = 'east'
+
+    # ### `FIRST_DIR_PROB` -- how far `FIRST_DIR` predominates, drawn afresh per cell per update.
+    # **Bounds:** float in `[0, 1]`. `1` collapses onto `FIRST_DIR`, `0` onto `SECOND_DIR`, and `0.5`
+    # splits the wind evenly between the two.
+    FIRST_DIR_PROB = 0.8
+
+# ### `MU` -- wind strength (wind velocity).
+# The fraction of the remaining probability that blowing downwind adds, and blowing upwind takes away.
+# **Bounds:** float in `[0, 1]`. `0` makes the wind irrelevant, `1` makes it absolute.
+MU = 0.9
+
+# =====================================================================================================
+# ## Smoke
+#
+# Ignored unless `ACTIVATE_SMOKE` is True. A cell raises smoke a while after it catches fire, and that
+# smoke then hangs about for as many steps as the cell had fuel.
+# =====================================================================================================
+
+# ### `SMOKE_PRE_DISPELLING_COUNTER` -- steps between a cell catching fire and its smoke appearing.
+# The smoke then lasts for the cell's initial fuel, set as `self.dispelling_counter_start_value` in
+# `Smoke.__init__()` in `agents.py`. Keep the sum of the two above `FUEL_UPPER_LIMIT`, or the smoke
+# clears before the cell has finished burning.
+# **Bounds:** integer `>= 0`, where `0` raises smoke the moment the cell ignites.
 SMOKE_PRE_DISPELLING_COUNTER = 2
 
-# UAVs params
+# =====================================================================================================
+# ## UAVs
+#
+# The team that flies over the forest area. `NUM_AGENTS = 0` simulates the wildfire on its own.
+# =====================================================================================================
 
+# ### `NUM_AGENTS` -- how many UAVs fly over the forest area.
+# **Bounds:** integer `>= 0`, and no larger than `WIDTH * HEIGHT`, since the team launches unstacked.
+# Must be `0` when `PROBABILITY_MAP` is True.
 NUM_AGENTS = 10
+
+# ### `N_ACTIONS` -- size of the movement action space a policy draws from.
+# The four movement directions below are indices 0..3. Holding position and dumping water sit outside
+# the space on purpose, so that the random baseline keeps drawing from the original four.
+# **Bounds:** `4` (the default), or `5` to bring `ACTION_STAY` into the action space of a learning
+# algorithm. `ACTION_DUMP_WATER` is only ever emitted by policies that opt into it.
 N_ACTIONS = 4
-# action indices, used to index the movement vectors in UAV.move()
+
+# ### Action indices -- fixed constants, not tuning parameters. Do not renumber.
+# They index the movement vectors in `UAV.move()`, and are what a policy returns from `select_actions()`.
 ACTION_RIGHT = 0
 ACTION_DOWN = 1
 ACTION_LEFT = 2
 ACTION_UP = 3
-# "hold position" is deliberately outside N_ACTIONS, so that the random baseline keeps drawing from the
-# original 4 movement actions. Policies that want it emit ACTION_STAY explicitly. Raise N_ACTIONS to 5 if
-# you want a learning algorithm to treat holding position as part of the action space.
-ACTION_STAY = 4
-# dumping water is part of the firefighting extension below, and is likewise outside N_ACTIONS
-ACTION_DUMP_WATER = 5
-# how far one cell of movement takes a UAV, per direction. UAV.move() flies along these, and a policy that
-# has to work out where an action would land it reads the same table, so the two cannot drift apart.
+ACTION_STAY = 4         # hold position; deliberately outside N_ACTIONS
+ACTION_DUMP_WATER = 5   # firefighting extension only; likewise outside N_ACTIONS
+
+# ### `MOVEMENT_VECTORS` -- how far one cell of movement takes a UAV, per direction.
+# `UAV.move()` flies along these, and a policy that has to work out where an action would land it reads
+# the same table, so the two cannot drift apart. Fixed constants, not tuning parameters.
 MOVEMENT_VECTORS = {
     ACTION_RIGHT: (1, 0),
     ACTION_DOWN: (0, -1),
     ACTION_LEFT: (-1, 0),
     ACTION_UP: (0, 1),
 }
-# how far a UAV can fly in one time step, in cells. A policy asks for a direction and a speed, and the UAV
-# covers up to this many cells along that direction, stopping early at the edge of the grid or in front of
-# another UAV. Set it to 1 for the original one cell per step behaviour, or to 0 to ground the fleet.
+
+# ### `UAV_SPEED` -- the most cells a UAV can cover in one time step.
+# A policy asks for a direction and a speed, and the UAV covers up to this many cells along that
+# direction, stopping early at the edge of the grid or in front of another UAV.
+# **Bounds:** integer `>= 0`. `1` gives the original one cell per step behaviour, `0` grounds the fleet.
 UAV_SPEED = 5
+
+# ### `UAV_OBSERVATION_RADIUS` -- how far a UAV sees, in cells.
+# Not really a radius: the observed area is the square of side `2 * radius + 1` centred on the UAV.
+# **Bounds:** integer `>= 0`. A radius below `UAV_SPEED` lets a UAV fly past what it can see, and so into
+# teammates it was never told were there.
 UAV_OBSERVATION_RADIUS = 4
+
+# derived from the radius above; headless.py recomputes both when it overrides it
 side = ((UAV_OBSERVATION_RADIUS * 2) + 1)
 N_OBSERVATIONS = side * side
-# minimum separation, in cells, that the UAV team is meant to keep. It is a scoring heuristic only: MR2
-# counts the pairs of UAVs that end a step closer than this to each other, which is a proxy for how much
-# collision risk a policy accepts. It does not stop a UAV from flying anywhere, and it is not what decides
-# whether two UAVs collided -- that is a matter of sharing a cell, see UAV_HP below.
+
+# ### `SECURITY_DISTANCE` -- the separation, in cells, that the UAV team is meant to keep.
+# A **scoring heuristic only**: MR2 counts the pairs of UAVs that end a step closer than this to each
+# other, which is a proxy for how much collision risk a policy accepts. It does not stop a UAV from
+# flying anywhere, and it is not what decides whether two UAVs collided -- that is a matter of sharing a
+# cell, see `UAV_HP` below.
+# **Bounds:** number `>= 0`. `0` never scores; more than the grid diagonal scores every pair every step.
 SECURITY_DISTANCE = 10
 
-# health points each UAV starts the run with. Two or more UAVs that end a step on the same cell have
-# collided, and each of them rolls for damage; a UAV whose health points reach zero is destroyed and takes
-# no further part in the run. The home base is the one exception: any number of UAVs can sit on its
-# footprint without colliding, which is what lets the whole team start and refill there.
-# Set UAV_HP high enough that collisions cost a policy something without ending its run outright, or to a
-# very large number to study a fleet that cannot be destroyed.
+# ### `UAV_HP` -- health points each UAV starts the run with.
+# Two or more UAVs that end a step on the same cell have collided, and each of them rolls for damage; a
+# UAV whose health points reach zero is destroyed and takes no further part in the run. The home base is
+# the one exception: any number of UAVs can sit on its footprint without colliding, which is what lets
+# the whole team start and refill there.
+# **Bounds:** integer `>= 1`. Set it high enough that collisions cost a policy something without ending
+# its run outright, or to a very large number to study a fleet that cannot be destroyed.
 UAV_HP = 3
-# average health points a UAV loses for a step spent sharing a cell with another one. The damage is rolled
-# once per UAV per collision and is either a whole health point or nothing at all, so health points stay
-# whole numbers while the expected cost of a collision is this value:
+
+# ### `UAV_COLLISION_DAMAGE_MEAN` -- average health points a collision costs one UAV.
+# The damage is rolled once per UAV per collision and is either a whole health point or nothing at all,
+# so health points stay whole numbers while the expected cost of a collision is this value:
 #   1.0  -> a full health point every time, which is the default
 #   0.25 -> one health point in four collisions on average, and three that do no harm
 #   0.0  -> collisions are still counted and logged, but never damage anybody
-# Anything outside [0, 1] is clamped, because a collision can never cost more than one health point.
+# **Bounds:** float in `[0, 1]`. Anything outside it is clamped by `roll_collision_damage()`, because a
+# collision can never cost more than one health point.
 UAV_COLLISION_DAMAGE_MEAN = 1.0
 
-# FIREFIGHTING EXTENSION
+# =====================================================================================================
+# ## Firefighting extension
 #
-# Optional. When ACTIVATE_FIREFIGHTING is False every variable below is ignored and the simulation behaves
-# exactly as it did before the extension existed. When it is True the simulation gains a home base, water
-# carrying UAVs, extinguishing, re-ignition and out buildings.
+# Optional. When `ACTIVATE_FIREFIGHTING` is False every variable in this section is ignored and the
+# simulation behaves exactly as it did before the extension existed. When it is True the simulation
+# gains a home base, water carrying UAVs, extinguishing, re-ignition and out buildings.
+# =====================================================================================================
 
+# ### `ACTIVATE_FIREFIGHTING` -- master switch for the whole extension.
+# **Bounds:** `True` / `False`.
 ACTIVATE_FIREFIGHTING = True
 
-# home base. UAVs start here and come back to refill.
-# (x, y) cell, or None to place the base a quarter of the way into the grid. The default deliberately
-# avoids the centre, because that is where set_fire_agents() lights the initial fire: a base on top of the
-# ignition cell would be alight from step 1 and the UAVs would put the wildfire out before it ever spread.
+# ### `BASE_POSITION` -- the cell the home base is anchored on, its bottom left corner.
+# UAVs start here and come back to refill. The default deliberately avoids the centre, because that is
+# where `set_fire_agents()` lights the initial fire by default: a base on top of the ignition cell would
+# be alight from step 1 and the UAVs would put the wildfire out before it ever spread.
+# **Bounds:** an `(x, y)` cell inside the grid, or `None` to place the base a quarter of the way in. A
+# position outside the grid raises `ValueError`.
 BASE_POSITION = None
-# footprint of the base, in cells, as (width, height). BASE_POSITION is its bottom left corner. The whole
-# footprint is drawn blue, burns, and can be refilled from.
+
+# ### `BASE_SIZE` -- footprint of the base, in cells, as `(width, height)`.
+# The whole footprint is drawn blue, burns, and can be refilled from. The team is spread over it at the
+# start of a run, one UAV per cell in order, so the fleet is visible from the first step and does not
+# launch on top of itself; a team that outnumbers the footprint spills into the rings around the base.
+# **Bounds:** a pair of integers `>= 1`, clipped to the grid at the edges.
 BASE_SIZE = (2, 2)
-BHP = 5  # base health points: the run is lost once the base has burned for this many steps
-BASE_REFILL_STEPS = 1  # steps a UAV must spend at the base to take on a load of water
-BASE_CAPACITY = 1  # UAVs that can refill at the same time (the requirement is one)
 
-# water carried by each UAV
-UAV_WATER_CAPACITY = 1  # loads a UAV can carry at once
+# ### `BHP` -- base health points: the run is lost once the base has burned for this many steps.
+# The damage is cumulative rather than consecutive, because a burning cell goes out for a step when none
+# of its neighbours are alight yet, so the base collects its damage over several visits from the fire.
+# **Bounds:** integer `>= 1`.
+BHP = 5
 
-# water drops. A drop extinguishes the target cell and its surroundings, with a probability that falls off
-# linearly with the distance from the centre of the drop.
-WATER_DROP_RADIUS = 2  # cells around the drop position that are affected
-WATER_EXTINGUISH_PROB_CENTRE = 0.95  # probability of extinguishing the cell the water is dumped on
-WATER_EXTINGUISH_PROB_EDGE = 0.60  # probability of extinguishing a cell at WATER_DROP_RADIUS
+# ### `BASE_REFILL_STEPS` -- steps a UAV must spend at the base to take on a load of water.
+# Refilling is not an action: a UAV with an empty tank standing on the base starts refilling by itself.
+# **Bounds:** integer `>= 1`. `0` behaves the same as `1`, as a refill still takes the step it starts on.
+BASE_REFILL_STEPS = 1
 
-# re-ignition of extinguished cells
-REIGNITION_DELAY = 8  # steps an extinguished cell is immune; afterwards nearby fire can light it again
-SPONTANEOUS_REIGNITION_PROB = 0.005  # per step chance an extinguished cell relights on its own
+# ### `BASE_CAPACITY` -- how many UAVs can refill at the same time.
+# **Bounds:** integer `>= 1`. The default of `1` (which is the requirement) makes arrivals queue.
+BASE_CAPACITY = 1
 
-# out buildings scattered over the map, which burn and are worth protecting
+# ### `UAV_WATER_CAPACITY` -- loads of water a UAV can carry at once.
+# **Bounds:** integer `>= 1`.
+UAV_WATER_CAPACITY = 1
+
+# ### `WATER_DROP_RADIUS` -- how far a water drop reaches around the cell it is dumped on, in cells.
+# The drop covers a disc, so the corners of the surrounding square fall outside it.
+# **Bounds:** integer `>= 0`, where `0` wets only the target cell.
+WATER_DROP_RADIUS = 2
+
+# ### `WATER_EXTINGUISH_PROB_CENTRE`, `WATER_EXTINGUISH_PROB_EDGE` -- how well a drop puts a fire out.
+# The chance of extinguishing the cell the water is dumped on, and one at `WATER_DROP_RADIUS`. In between
+# the probability falls off linearly with the distance; beyond the radius it is zero.
+# **Bounds:** floats in `[0, 1]`, normally with centre `>=` edge. The reverse is allowed, and simply
+# makes the drop stronger at its rim than under itself.
+WATER_EXTINGUISH_PROB_CENTRE = 0.95
+WATER_EXTINGUISH_PROB_EDGE = 0.60
+
+# ### `REIGNITION_DELAY` -- steps an extinguished cell is immune to catching fire again.
+# Once the delay has passed, nearby fire can light the cell as usual.
+# **Bounds:** integer `>= 0`, where `0` lets a cell relight the step after it was doused.
+REIGNITION_DELAY = 8
+
+# ### `SPONTANEOUS_REIGNITION_PROB` -- per step chance an extinguished cell relights on its own.
+# Applies with no fire nearby, to any cell that was extinguished at some point and still has fuel.
+# **Bounds:** float in `[0, 1]`. Keep it low: it is rolled for every such cell on every step.
+SPONTANEOUS_REIGNITION_PROB = 0.005
+
+# ### `NUM_OUT_BUILDINGS` -- out buildings scattered over the map, which burn and are worth protecting.
+# Never placed on the home base. If more are asked for than there are free cells, only what fits is placed.
+# **Bounds:** integer `>= 0`.
 NUM_OUT_BUILDINGS = 0
-OUT_BUILDING_HP = 5  # steps an out building survives while its cell burns
 
-# colors
+# ### `OUT_BUILDING_HP` -- steps an out building survives while its cell burns, before it is destroyed.
+# **Bounds:** integer `>= 1`.
+OUT_BUILDING_HP = 5
 
-BASE_COLOR = "#1f6fff"  # blue, as the home base is shown on the map
-BASE_BURNING_COLOR = "#7c3aed"
-OUT_BUILDING_COLOR = "#8b5a2b"
+# =====================================================================================================
+# ## Colours
+#
+# Presentation only: these change what the web interface draws, never what the simulation does.
+# **Bounds:** CSS colour strings, "#rrggbb".
+#
+# The map is kept light on purpose. Everything that has to be found at a glance -- the UAVs, the home base,
+# the out buildings -- is drawn dark and small over a background of vegetation that covers most of the
+# grid, so the darker that background is the harder those things are to pick out. The vegetation therefore
+# runs from near white to a mid green rather than down into the near blacks it used to reach, and the fire
+# runs from pale yellow to a bright red orange, which keeps it the most saturated thing on the map without
+# it going dark either.
+
+BASE_COLOR = "#1d4ed8"  # blue, as the home base is shown on the map
+BASE_BURNING_COLOR = "#6d28d9"
+# UAVs are always drawn in the same near black, which is what keeps them findable over the light map. The
+# water a UAV carries is shown by how big it is drawn rather than by another colour: colouring the load in
+# would mean drawing a loaded UAV in something lighter, which is what made it hard to find in the first
+# place. See agent_portrayal() in main.py.
+UAV_COLOR = "#111827"  # near black, the darkest thing on the map
+# hairline drawn around a UAV, so that it keeps an edge over the base and over burnt ground, which are the
+# only two things on the map anywhere near as dark as it is
+UAV_OUTLINE_COLOR = "#f8fafc"
+# the square marking what a UAV can see, drawn in Canvas_Grid_Visualization.py. It is deliberately lighter
+# than UAV_COLOR: with a team of any size these squares cover much of the map, and drawn as dark as the
+# UAVs themselves they hide the very things they are meant to be drawn around.
+UAV_OBSERVATION_COLOR = "#64748b"
+OUT_BUILDING_COLOR = "#7c4a21"
 OUT_BUILDING_DESTROYED_COLOR = "#3b3b3b"
-EXTINGUISHED_COLOR = "#5fd0e8"  # cells that were recently hit by water
+EXTINGUISHED_COLOR = "#1f9fc7"  # cells that were recently hit by water
 
-VEGETATION_COLORS = ["#414141", "#9eff89", "#85e370", "#72d05c", "#62c14c", "#459f30",
-                     "#389023", "#2f831b", "#236f11", "#1c630b", "#175808", "#124b05"]
-FIRE_COLORS = ["#414141", "#d8d675", "#eae740", "#fefa01", "#fed401", "#feaa01",
-               "#fe7001", "#fe5501", "#fe3e01", "#fe2f01", "#fe2301", "#fe0101"]
-SMOKE_COLORS = ["#ababab"]
+# index 0 of both ramps is a burnt out cell, which is why the two share it. It is a mid grey rather than
+# the near black it was, so that a UAV flying over ground the fire has already been through is still
+# visible, and warm enough not to be taken for smoke.
+BURNT_COLOR = "#8a8078"
+
+# ramps indexed by the fuel a cell has left, burnt out first. VEGETATION_COLORS and FIRE_COLORS must be
+# the same length, which COLORS_LEN takes from the first of them.
+VEGETATION_COLORS = [BURNT_COLOR, "#f1f9e8", "#e4f4d8", "#d8eec9", "#cce9ba", "#bfe4aa",
+                     "#b3df9b", "#a6d98b", "#9ad47c", "#8dcf6c", "#81c95d", "#74c44d"]
+FIRE_COLORS = [BURNT_COLOR, "#ffeeaa", "#ffdc8c", "#ffcb6e", "#ffb950", "#ffa832",
+               "#ff9614", "#fb8414", "#f67113", "#f25f13", "#ed4c12", "#e93a12"]
+# a neutral grey, dark enough to read against the vegetation and light enough not to be taken for
+# burnt ground. Smoke is meant to hide what is under it, so it does not fight for attention.
+SMOKE_COLORS = ["#a8b0bd"]  # only the first entry is used
+# ramp for PROBABILITY_MAP, indexed by the probability rounded to one decimal, so it needs 11 entries
 BLACK_AND_WHITE_COLORS = ["#ffffff", "#e6e6e6", "#c9c9c9", "#b1b1b1", "#a1a1a1", "#818181",
                           "#636363", "#474747", "#303030", "#1a1a1a", "#000000"]
 COLORS_LEN = len(VEGETATION_COLORS)
 
 
-# functions
+# =====================================================================================================
+# ## Helper functions
+#
+# Shared maths, kept here so the model, the agents and the interface all use the same definitions.
+# =====================================================================================================
 
 # function that normalize fuel values to fit them with vegetation and fire colors
 def normalize_fuel_values(fuel, limit):

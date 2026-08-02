@@ -100,9 +100,6 @@ class WildFireModel(mesa.Model):
         self.fire_spread.assert_matches(self.fire_list)
         self.wind = agents.Wind()
 
-        x_center = int(HEIGHT / 2)
-        y_center = int(WIDTH / 2)
-
         self.new_direction_counter = 0
         self.evaluation_timesteps_counter = 0
 
@@ -130,16 +127,13 @@ class WildFireModel(mesa.Model):
         # set_drone_dirs() rely on to line actions up with the UAVs they belong to.
         self.uavs = []
 
-        # create and configure UAV agents in the grid
+        # create and configure UAV agents in the grid. A cell each, resolved in one go, so that no two
+        # UAVs are launched stacked however large the team is
+        launch_positions = self.launch_positions(self.NUM_AGENTS)
+
         for a in range(0, self.NUM_AGENTS):
             aux_UAV = agents.UAV(self.unique_agents_id, self)
-            if ACTIVATE_FIREFIGHTING:
-                # every UAV starts from the home base, with a full load of water, spread over its
-                # footprint so that the team is not launched stacked on one cell
-                self.grid.place_agent(aux_UAV, self.launch_position(a))
-            else:
-                y_center += a if a % 2 == 0 else -a
-                self.grid.place_agent(aux_UAV, (x_center, y_center + 1))
+            self.grid.place_agent(aux_UAV, launch_positions[a])
             self.schedule.add(aux_UAV)
             self.uavs.append(aux_UAV)
             self.unique_agents_id += 1
@@ -188,14 +182,49 @@ class WildFireModel(mesa.Model):
         self.log.info("home base placed at %s covering %d cell(s), surviving %d burning steps",
                       anchor, len(footprint), BHP)
 
-    # function that gives the cell UAV number 'index' of the team starts the run from: one cell of the home
-    # base footprint each, in the order base_footprint() lists them, so that UAV 0 keeps the anchor and a
-    # team no larger than the base is not launched stacked on a single cell. A team that outnumbers the
-    # footprint wraps back round it, which is safe: the base is shared airspace, and UAVs that share a cell
-    # there neither collide nor lose health points until they fly off it.
-    def launch_position(self, index):
-        footprint = self.base.cells
-        return footprint[index % len(footprint)]
+    # function that gives the cell each UAV of the team starts the run from, in team order and one distinct
+    # cell each, so that nobody is launched stacked. The home base footprint is handed out first, in the
+    # order base_footprint() lists it, so that UAV 0 keeps the anchor; a team that outnumbers the footprint
+    # spills over into the cells around the base, nearest ones first, taken at random within each ring so
+    # that the overflow is not always laid out the same way. With the firefighting extension off there is no
+    # base, and the centre of the grid stands in for it as the cell the team gathers round.
+    def launch_positions(self, count):
+        if count <= 0:
+            return []
+
+        home = list(self.base.cells) if self.base is not None else [(int(HEIGHT / 2), int(WIDTH / 2))]
+        positions = home[:count]
+
+        # the box the rings grow out of. Both the base footprint and the lone centre cell are rectangles,
+        # so their bounding box is exactly the set of cells already handed out above
+        box = (min(x for x, _ in home), min(y for _, y in home),
+               max(x for x, _ in home), max(y for _, y in home))
+
+        distance = 1
+        while len(positions) < count:
+            ring = self.launch_ring(box, distance)
+            # a ring falling entirely outside the grid means the whole map has been handed out already
+            if not ring:
+                raise ValueError(f"{count} UAVs do not fit on the {HEIGHT}x{WIDTH} grid: "
+                                 f"lower NUM_AGENTS or enlarge the grid")
+            SYSTEM_RANDOM.shuffle(ring)
+            positions.extend(ring[:count - len(positions)])
+            distance += 1
+
+        return positions
+
+    # the cells exactly 'distance' cells away from the (x0, y0, x1, y1) box, that is the border of the box
+    # grown by 'distance', clipped to the grid. Distance is counted the way the UAVs fly, diagonals
+    # included, so the rings are square.
+    def launch_ring(self, box, distance):
+        x0, y0, x1, y1 = box
+        ring = []
+        for x in range(x0 - distance, x1 + distance + 1):
+            for y in range(y0 - distance, y1 + distance + 1):
+                on_border = x in (x0 - distance, x1 + distance) or y in (y0 - distance, y1 + distance)
+                if on_border and not self.grid.out_of_bounds((x, y)):
+                    ring.append((x, y))
+        return ring
 
     # function that scatters the out buildings randomly over the grid, avoiding the base cell and any cell
     # that already holds a building

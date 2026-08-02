@@ -15,6 +15,11 @@ from config import *
 # panel into the "#sidebar" column instead, which is the one the simulation controls already live in, so
 # the status shows up beside the map rather than below it. The panel is inserted before the controls, and
 # only its own contents are replaced on each step, leaving the controls untouched.
+#
+# Vertical space in that column is the scarce resource: the whole run has to be readable without scrolling
+# while the map is being watched. So the panel is laid out as a two column grid of label/value pairs, one
+# line per fact, and the health of a thing is carried by the colour of its numbers rather than by a bar of
+# its own.
 class StatusSidebar(VisualizationElement):
 
     package_includes = []
@@ -36,11 +41,9 @@ class StatusSidebar(VisualizationElement):
     def render(self, model):
         sections = [self.styles(), self.metrics(model)]
         if ACTIVATE_FIREFIGHTING:
-            sections.append(self.base(model))
             sections.append(self.out_buildings(model))
         else:
-            sections.append(self.note("Firefighting extension off: set ACTIVATE_FIREFIGHTING in config.py "
-                                      "to see the base, the out buildings and the UAV water."))
+            sections.append(self.note("Firefighting off: see ACTIVATE_FIREFIGHTING in config.py"))
         # the UAV health points exist whether or not the extension is on, so the team is always reported
         sections.append(self.uavs(model))
         return "".join(sections)
@@ -49,125 +52,156 @@ class StatusSidebar(VisualizationElement):
     def styles(self):
         return """
         <style>
-          #status-sidebar { font-size: 0.85rem; line-height: 1.35; margin-bottom: 1rem; }
-          #status-sidebar h4 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;
-                               color: #6c757d; margin: 0.9rem 0 0.35rem; font-weight: 600; }
-          #status-sidebar .row { display: flex; justify-content: space-between; align-items: baseline;
-                                 gap: 0.5rem; padding: 0.1rem 0; }
-          #status-sidebar .name { color: #343a40; }
-          #status-sidebar .value { font-variant-numeric: tabular-nums; font-weight: 600; color: #212529; }
-          #status-sidebar .bar { height: 6px; border-radius: 3px; background: #e9ecef; overflow: hidden;
-                                 margin: 0.15rem 0 0.4rem; }
-          #status-sidebar .bar span { display: block; height: 100%; }
+          /* the grid canvas is positioned absolutely and reaches to the edge of this column, so the panel
+             keeps a margin clear of it rather than letting its values disappear underneath */
+          #status-sidebar { font-size: 0.75rem; line-height: 1.2; margin-bottom: 0.5rem;
+                            max-width: 20rem; padding-right: 1rem; }
+          #status-sidebar h4 { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em;
+                               color: #6c757d; font-weight: 600; margin: 0.5rem 0 0.15rem;
+                               border-bottom: 1px solid #e9ecef; padding-bottom: 0.1rem; }
+          #status-sidebar h4:first-of-type { margin-top: 0; }
+          #status-sidebar h4 .count { float: right; text-transform: none; letter-spacing: 0; }
+          /* facts are paired up two to a line, so a section costs half the height it used to */
+          #status-sidebar .grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 0.6rem; }
+          #status-sidebar .cell { display: flex; justify-content: space-between; align-items: baseline;
+                                  gap: 0.3rem; padding: 0.05rem 0; min-width: 0; }
+          #status-sidebar .name { color: #495057; white-space: nowrap; overflow: hidden;
+                                  text-overflow: ellipsis; }
+          #status-sidebar .value { font-variant-numeric: tabular-nums; font-weight: 600; color: #212529;
+                                   white-space: nowrap; }
+          /* one line per UAV: index and position, then health, water and score on the right */
+          #status-sidebar .unit { display: flex; align-items: baseline; gap: 0.35rem; padding: 0.05rem 0;
+                                  white-space: nowrap; }
+          #status-sidebar .unit .who { color: #495057; flex: 1 1 auto; overflow: hidden;
+                                       text-overflow: ellipsis; }
+          #status-sidebar .unit .num { font-variant-numeric: tabular-nums; font-weight: 600; }
+          #status-sidebar .ok { color: #2f9e44; }
+          #status-sidebar .warn { color: #f08c00; }
           #status-sidebar .muted { color: #868e96; font-style: italic; }
-          #status-sidebar .alert { color: #c92a2a; font-weight: 700; }
-          #status-sidebar .scroll { max-height: 11rem; overflow-y: auto; }
+          #status-sidebar .crit { color: #c92a2a; font-weight: 700; }
+          #status-sidebar .scroll { max-height: 8rem; overflow-y: auto; }
         </style>
         """
 
-    # a line with a label on the left and a value on the right
-    def row(self, name, value, value_class="value"):
-        return f'<div class="row"><span class="name">{name}</span>' \
+    # a label and its value, one of the two that share a line
+    def cell(self, name, value, value_class="value"):
+        return f'<div class="cell"><span class="name">{name}</span>' \
                f'<span class="{value_class}">{value}</span></div>'
 
-    # a proportional bar, coloured green through amber to red as the remaining share drops
-    def bar(self, remaining, total):
-        share = 0 if total <= 0 else max(0.0, min(1.0, remaining / total))
-        if share > 0.6:
-            color = "#2f9e44"
-        elif share > 0.3:
-            color = "#f08c00"
-        else:
-            color = "#c92a2a"
-        return f'<div class="bar"><span style="width:{share * 100:.0f}%;background:{color};"></span></div>'
+    # lays cells out two to a line
+    def grid(self, cells):
+        return f'<div class="grid">{"".join(cells)}</div>'
+
+    # a section heading, with an optional summary parked on the right of the same line
+    def heading(self, title, count=None):
+        tail = "" if count is None else f'<span class="count">{count}</span>'
+        return f"<h4>{title}{tail}</h4>"
 
     def note(self, text):
         return f'<div class="muted">{text}</div>'
 
-    # the monitoring metrics, which exist whether or not the extension is on
+    # class that colours a remaining/total pair green through amber to red as it is used up
+    def health_class(self, remaining, total):
+        share = 0 if total <= 0 else max(0.0, min(1.0, remaining / total))
+        if share > 0.6:
+            return "num ok"
+        if share > 0.3:
+            return "num warn"
+        return "num crit"
+
+    # the monitoring metrics, plus the state of the home base, which is a single fact once its health is
+    # carried by the colour of the numbers
     def metrics(self, model):
         mr1_total = sum(model.MR1_LIST) if model.MR1_LIST else 0.0
-        html = ["<h4>Metrics</h4>"]
-        html.append(self.row("MR1 (total)", f"{mr1_total:.3f}"))
-        # MR1 is accumulated per UAV, so the individual scores are worth showing when there are several
-        if len(model.MR1_LIST) > 1:
-            for index, score in enumerate(model.MR1_LIST):
-                html.append(self.row(f"&nbsp;&nbsp;UAV {index}", f"{score:.3f}"))
+        cells = [self.cell("MR1", f"{mr1_total:.3f}")]
         # MR2 counts how often UAVs flew closer to each other than SECURITY_DISTANCE, which is a risk
-        # heuristic; the collisions below are the UAVs that actually shared a cell and paid for it
-        html.append(self.row(f"MR2 (within {SECURITY_DISTANCE} cells)", model.MR2_VALUE))
-        html.append(self.row("Collisions", model.collisions,
-                             "alert" if model.collisions else "value"))
+        # heuristic; the collisions beside it are the UAVs that actually shared a cell and paid for it
+        cells.append(self.cell(f"MR2 &lt;{SECURITY_DISTANCE}", model.MR2_VALUE))
+        cells.append(self.cell("Collisions", model.collisions,
+                               "value crit" if model.collisions else "value"))
         # the ignition can be randomised in config.py, so it is shown here: without it a run that has not
         # caught fire yet looks like a broken simulation
         if model.fire_started:
-            html.append(self.row("Fire at", f"{model.fire_start_pos}"))
+            cells.append(self.cell("Fire", f"{model.fire_start_pos}"))
         else:
-            html.append(self.row("Fire at", f"{model.fire_start_pos} in "
-                                            f"{model.fire_start_step - model.evaluation_timesteps_counter} "
-                                            f"step(s)", "muted"))
-        return "".join(html)
+            countdown = model.fire_start_step - model.evaluation_timesteps_counter
+            cells.append(self.cell("Fire in", f"{countdown} step(s)", "value muted"))
+        if ACTIVATE_FIREFIGHTING:
+            cells.extend(self.base_cells(model))
+        return self.heading("Status", f"step {model.evaluation_timesteps_counter}") + self.grid(cells)
 
-    # the health of the home base
-    def base(self, model):
-        html = ["<h4>Home base</h4>"]
+    # the home base, as the two cells it takes up in the metrics grid
+    def base_cells(self, model):
         if model.base is None:
-            return "".join(html + [self.note("no base placed")])
+            return [self.cell("Base", "none", "value muted")]
 
         remaining = max(0, BHP - model.base.burning_steps)
-        html.append(self.row("Health", f"{remaining} / {BHP}"))
-        html.append(self.bar(remaining, BHP))
+        cells = [self.cell("Base", f"{remaining} / {BHP}", self.health_class(remaining, BHP))]
         if model.lost:
-            html.append(self.row("Status", "DESTROYED &mdash; run lost", "alert"))
+            cells.append(self.cell("&nbsp;", "LOST", "value crit"))
         elif model.base.is_burning():
-            html.append(self.row("Status", "BURNING", "alert"))
+            cells.append(self.cell("&nbsp;", "BURNING", "value crit"))
         else:
-            html.append(self.row("Status", "safe"))
-        return "".join(html)
+            cells.append(self.cell("&nbsp;", "safe", "value ok"))
+        return cells
 
-    # the health of each out building
+    # the out buildings. The count in the heading covers the ones that are untouched, so only the buildings
+    # that are burning or gone are worth a line of their own.
     def out_buildings(self, model):
-        html = [f"<h4>Out buildings ({len(model.out_buildings) - model.buildings_lost}"
-                f"/{len(model.out_buildings)} standing)</h4>"]
         if not model.out_buildings:
-            return "".join(html + [self.note("none placed")])
+            return ""
+
+        standing = len(model.out_buildings) - model.buildings_lost
+        html = [self.heading("Out buildings", f"{standing}/{len(model.out_buildings)} standing")]
+        damaged = [building for building in model.out_buildings
+                   if building.destroyed or building.burning_steps]
+        if not damaged:
+            return "".join(html + [self.note("all untouched")])
 
         html.append('<div class="scroll">')
-        for building in model.out_buildings:
+        for building in damaged:
             remaining = max(0, OUT_BUILDING_HP - building.burning_steps)
+            html.append('<div class="unit">')
+            html.append(f'<span class="who">{building.pos}'
+                        f'{" &#128293;" if building.is_burning() else ""}</span>')
             if building.destroyed:
-                html.append(self.row(f"{building.pos}", "destroyed", "alert"))
+                html.append('<span class="num crit">destroyed</span>')
             else:
-                label = f"{building.pos}" + (" &#128293;" if building.is_burning() else "")
-                html.append(self.row(label, f"{remaining} / {OUT_BUILDING_HP}"))
-            html.append(self.bar(remaining, OUT_BUILDING_HP))
+                html.append(f'<span class="{self.health_class(remaining, OUT_BUILDING_HP)}">'
+                            f'{remaining}/{OUT_BUILDING_HP}</span>')
+            html.append("</div>")
         html.append("</div>")
         return "".join(html)
 
-    # the health, and with the extension on the water, of each UAV
+    # the team, one line each: where the UAV is, what health it has left, whether it is carrying water and
+    # what it has scored. The per UAV MR1 lives here rather than in the metrics, which keeps every fact
+    # about a UAV on its own line.
     def uavs(self, model):
         crew = model.uavs
         flying = sum(1 for uav in crew if uav.is_alive())
-        html = [f"<h4>UAVs ({flying}/{len(crew)} flying)</h4>"]
+        html = [self.heading("UAVs", f"{flying}/{len(crew)} flying")]
         if not crew:
             return "".join(html + [self.note("none flying")])
 
         html.append('<div class="scroll">')
         # numbered by their position in the team rather than by unique_id, which starts after every Fire
-        # agent has been created. This is the same numbering the MR1 scores above use.
+        # agent has been created. This is the same numbering the MR1 scores use.
         for index, uav in enumerate(crew):
+            score = model.MR1_LIST[index] if index < len(model.MR1_LIST) else 0.0
+            html.append('<div class="unit">')
             # a destroyed UAV has been taken off the grid, so it has no position left to report
             if not uav.is_alive():
-                html.append(self.row(f"UAV {index}", "DESTROYED", "alert"))
-                html.append(self.bar(0, UAV_HP))
-                continue
-
-            html.append(self.row(f"UAV {index} at {uav.pos}", f"{uav.hp} / {UAV_HP} HP"))
-            html.append(self.bar(uav.hp, UAV_HP))
-            if ACTIVATE_FIREFIGHTING:
-                if uav.has_water():
-                    html.append(self.row("&nbsp;&nbsp;water", f"{uav.water}/{UAV_WATER_CAPACITY}"))
-                else:
-                    html.append(self.row("&nbsp;&nbsp;water", "empty", "muted"))
+                html.append(f'<span class="who">{index}</span>'
+                            f'<span class="num crit">destroyed</span>')
+            else:
+                html.append(f'<span class="who">{index} {uav.pos}</span>')
+                html.append(f'<span class="{self.health_class(uav.hp, UAV_HP)}">'
+                            f'{uav.hp}/{UAV_HP}</span>')
+                if ACTIVATE_FIREFIGHTING:
+                    # the water is a load count, so it is shown as a drop that is either lit or greyed out
+                    water = f"&#128167;{uav.water}" if uav.has_water() else "&#128167;&ndash;"
+                    html.append(f'<span class="num{"" if uav.has_water() else " muted"}">{water}</span>')
+            html.append(f'<span class="num">{score:.2f}</span>')
+            html.append("</div>")
         html.append("</div>")
         return "".join(html)
