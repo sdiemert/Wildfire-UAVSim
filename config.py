@@ -91,7 +91,7 @@ REIGNITION_DELAY = 8  # steps an extinguished cell is immune; afterwards nearby 
 SPONTANEOUS_REIGNITION_PROB = 0.005  # per step chance an extinguished cell relights on its own
 
 # out buildings scattered over the map, which burn and are worth protecting
-NUM_OUT_BUILDINGS = 4
+NUM_OUT_BUILDINGS = 0
 OUT_BUILDING_HP = 5  # steps an out building survives while its cell burns
 
 # colors

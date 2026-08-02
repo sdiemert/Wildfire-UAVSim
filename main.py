@@ -5,6 +5,7 @@ import logging
 import mesa
 
 from Canvas_Grid_Visualization import CanvasGrid
+from Status_Sidebar import StatusSidebar
 
 # own python modules
 
@@ -89,9 +90,11 @@ def main():
 
     # initialize CanvasGrid
     grid = CanvasGrid(agent_portrayal, WIDTH, HEIGHT, 10 * WIDTH, 10 * HEIGHT)
+    # live status panel, rendered in the sidebar next to the grid
+    sidebar = StatusSidebar()
     # initialize Modular server for mesa Python visualization
-    server = mesa.visualization.ModularServer(wildfire_model.WildFireModel, [grid], "WildFire Model",
-                                              model_params())
+    server = mesa.visualization.ModularServer(wildfire_model.WildFireModel, [grid, sidebar],
+                                              "WildFire Model", model_params())
     server.port = 8521  # default port, others can be set
     server.launch()
 
