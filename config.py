@@ -59,7 +59,7 @@ SMOKE_PRE_DISPELLING_COUNTER = 2
 
 # UAVs params
 
-NUM_AGENTS = 4
+NUM_AGENTS = 10
 N_ACTIONS = 4
 # action indices, used to index the movement vectors in UAV.move()
 ACTION_RIGHT = 0
@@ -94,13 +94,20 @@ N_OBSERVATIONS = side * side
 SECURITY_DISTANCE = 10
 
 # health points each UAV starts the run with. Two or more UAVs that end a step on the same cell have
-# collided, and each of them loses UAV_COLLISION_DAMAGE of them; a UAV whose health points reach zero is
-# destroyed and takes no further part in the run. The home base is the one exception: any number of UAVs
-# can sit on its footprint without colliding, which is what lets the whole team start and refill there.
+# collided, and each of them rolls for damage; a UAV whose health points reach zero is destroyed and takes
+# no further part in the run. The home base is the one exception: any number of UAVs can sit on its
+# footprint without colliding, which is what lets the whole team start and refill there.
 # Set UAV_HP high enough that collisions cost a policy something without ending its run outright, or to a
 # very large number to study a fleet that cannot be destroyed.
 UAV_HP = 3
-UAV_COLLISION_DAMAGE = 1  # health points lost per step spent sharing a cell with another UAV
+# average health points a UAV loses for a step spent sharing a cell with another one. The damage is rolled
+# once per UAV per collision and is either a whole health point or nothing at all, so health points stay
+# whole numbers while the expected cost of a collision is this value:
+#   1.0  -> a full health point every time, which is the default
+#   0.25 -> one health point in four collisions on average, and three that do no harm
+#   0.0  -> collisions are still counted and logged, but never damage anybody
+# Anything outside [0, 1] is clamped, because a collision can never cost more than one health point.
+UAV_COLLISION_DAMAGE_MEAN = 1.0
 
 # FIREFIGHTING EXTENSION
 #
@@ -190,6 +197,15 @@ def extinguish_probability(drop_pos, cell_pos):
         return WATER_EXTINGUISH_PROB_CENTRE
     ratio = distance / WATER_DROP_RADIUS
     return WATER_EXTINGUISH_PROB_CENTRE + ratio * (WATER_EXTINGUISH_PROB_EDGE - WATER_EXTINGUISH_PROB_CENTRE)
+
+
+# function that rolls the health points one collision takes off one UAV. The result is a whole health
+# point with probability UAV_COLLISION_DAMAGE_MEAN and nothing at all otherwise, so the damage is bounded
+# to a single point however the mean is set, and averages out at the mean over many collisions. A mean of
+# 1.0 always costs the point, because random() never reaches 1, and a mean of 0.0 never does.
+def roll_collision_damage():
+    chance = min(1.0, max(0.0, UAV_COLLISION_DAMAGE_MEAN))
+    return 1 if SYSTEM_RANDOM.random() < chance else 0
 
 
 # function that calculates the grade of influence of cell s' over cell s, based on a distance_limit

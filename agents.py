@@ -263,8 +263,8 @@ class UAV(mesa.Agent):
         # many cells to cover along it. One cell is what a UAV flew before speeds existed.
         self.selected_dir = 0
         self.selected_speed = 1
-        # health points. Sharing a cell with another UAV costs UAV_COLLISION_DAMAGE of them per step, and
-        # a UAV that runs out is destroyed. WildFireModel.resolve_collisions() is what charges the damage,
+        # health points. Sharing a cell with another UAV costs a rolled amount of them per step, and a UAV
+        # that runs out is destroyed. WildFireModel.resolve_collisions() is what charges the damage,
         # because whether two UAVs share a cell is a property of the grid rather than of either of them.
         self.hp = UAV_HP
         # firefighting extension: UAVs leave the base with a full load of water
@@ -275,16 +275,22 @@ class UAV(mesa.Agent):
         return self.hp > 0
 
     # takes health points off this UAV, never below zero. Returns the points actually lost, so that a
-    # caller can tell a hit that landed from one on a UAV that was already down. The default is read when
-    # the call is made rather than when the class is defined, so that overriding the constant works.
-    def take_damage(self, amount=None):
+    # caller can tell a hit that landed from one on a UAV that was already down.
+    def take_damage(self, amount=1):
         if not self.is_alive():
             return 0
-        lost = min(self.hp, max(0, int(UAV_COLLISION_DAMAGE if amount is None else amount)))
+        lost = min(self.hp, max(0, int(amount)))
         self.hp -= lost
         self.model.log.debug("UAV %d took %d damage at %s, %d HP left",
                              self.unique_id, lost, self.pos, self.hp)
         return lost
+
+    # rolls the damage of one collision and takes it off this UAV. The loss is a whole health point or
+    # nothing at all, with UAV_COLLISION_DAMAGE_MEAN as its average, so health points stay whole numbers
+    # while a collision can be made to cost less than a certain point. Returns the points lost, which is
+    # zero for a roll that did no harm as well as for a UAV that was already down.
+    def take_collision_damage(self):
+        return self.take_damage(roll_collision_damage())
 
     # checks whether this UAV still carries water to dump | True if it does, False if it is empty
     def has_water(self):

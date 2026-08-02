@@ -398,8 +398,12 @@ class WildFireModel(mesa.Model):
         self.MR2_VALUE += counter // 2  # remove duplicate interactions
 
     # method that settles the collisions of the step just taken. Two or more UAVs left on the same cell
-    # have collided, and each of them loses UAV_COLLISION_DAMAGE health points; one whose health points run
-    # out is destroyed. The home base is left out, because any number of UAVs may sit on its footprint.
+    # have collided, and each of them rolls for damage: a whole health point or nothing at all, averaging
+    # out at UAV_COLLISION_DAMAGE_MEAN. One whose health points run out is destroyed. The home base is left
+    # out, because any number of UAVs may sit on its footprint.
+    #
+    # self.collisions counts the collisions themselves rather than the damage they did, so a run with a low
+    # UAV_COLLISION_DAMAGE_MEAN still reports how often the team flew into itself.
     #
     # It is settled once per step, from where the UAVs ended up, rather than while they fly: that way the
     # damage does not depend on the order the scheduler happened to move them in, and two UAVs left stacked
@@ -415,10 +419,10 @@ class WildFireModel(mesa.Model):
             if len(crowd) < 2:
                 continue
             self.collisions += 1
-            self.log.info("collision at %s between UAVs %s",
-                          position, [uav.unique_id for uav in crowd])
+            damage = {uav.unique_id: uav.take_collision_damage() for uav in crowd}
+            self.log.info("collision at %s between UAVs %s, health points lost: %s",
+                          position, [uav.unique_id for uav in crowd], damage)
             for uav in crowd:
-                uav.take_damage(UAV_COLLISION_DAMAGE)
                 if not uav.is_alive():
                     self.destroy_uav(uav)
 

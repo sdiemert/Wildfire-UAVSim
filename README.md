@@ -305,7 +305,7 @@ python3 headless.py --set 'FIRE_START_POSITION=(3, 3)' --set FIRE_START_STEP=10
 
 #### Health points and collisions
 
-Two or more UAVs that end a time step **on the same cell** have collided. Each of them loses `UAV_COLLISION_DAMAGE` health points, and a UAV whose health points reach zero is destroyed: it is taken off the grid and out of the scheduler, stops observing, acting and scoring `MR1`, and takes no further part in the run. The rest of the team carries on, and the run itself continues even if the whole fleet is lost.
+Two or more UAVs that end a time step **on the same cell** have collided. Each of them then rolls for damage, and a UAV whose health points reach zero is destroyed: it is taken off the grid and out of the scheduler, stops observing, acting and scoring `MR1`, and takes no further part in the run. The rest of the team carries on, and the run itself continues even if the whole fleet is lost.
 
 The **home base is shared airspace**: any number of UAVs can sit on its footprint without colliding, which is what lets the whole team start there and queue on it to refill. Flying over the base does not stop a UAV either. Everywhere else, a UAV that flies into an occupied cell takes that cell and its flight ends there, rather than passing over it.
 
@@ -313,7 +313,22 @@ Collisions are settled once per step, from where the UAVs ended up, so the damag
 
 `UAV_HP`: Health points each UAV starts the run with. Set it high enough that collisions cost a policy something without ending its run outright, or to a very large number to study a fleet that cannot be destroyed.
 
-`UAV_COLLISION_DAMAGE`: Health points lost per step spent sharing a cell with another UAV. With `UAV_HP = 1` and a damage of `1`, any collision destroys everybody involved in it.
+`UAV_COLLISION_DAMAGE_MEAN`: **Average** health points a UAV loses for a step spent sharing a cell with another one. The damage is rolled once per UAV per collision and is either a whole health point or nothing at all, so health points stay whole numbers while the expected cost of a collision is this value:
+
+| value | effect |
+| --- | --- |
+| `1.0` | a full health point every time — the default, and a certain loss |
+| `0.5` | half the collisions cost a point, half do no harm |
+| `0.25` | one health point in four collisions on average |
+| `0.0` | collisions are still counted and logged, but never damage anybody |
+
+Anything outside `[0, 1]` is clamped, because a collision can never cost more than one health point. The roll is `config.roll_collision_damage()`, and it draws from `SYSTEM_RANDOM`, so a seeded run reproduces it exactly.
+
+Two UAVs involved in one collision roll independently: one can be destroyed while the other walks away. The `Collisions` counter reports the collisions themselves rather than the damage they did, so a run with a low mean still shows how often the team flew into itself; the log records what each UAV actually lost:
+
+```
+collision at (24, 2) between UAVs [3235, 3236], health points lost: {3235: 1, 3236: 0}
+```
 
 The graphical interface reports the health of every UAV on its own line of the sidebar, in figures that turn amber and then red as it drops, and marks a destroyed one as `destroyed`. The `Collisions` counter beside the metrics is how many times a cell was found holding more than one UAV; `headless.py` records the same as `collisions` and `uavs_lost` in its results.
 
