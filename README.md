@@ -7,7 +7,7 @@ the evaluation of diverse adaptation strategies. Among its many configuration pa
 
 ## Files structure
 
-5 Python files compose the project structure, namely:
+The project structure is composed of the following Python files and packages:
 
 ### `agents.py`
 
@@ -28,6 +28,18 @@ This python file holds the variables used to set the simulation execution config
 ### `Canvas_Grid_Visualization.py`
 
 This python file contains a Mesa class, modified for making UAV observation areas visible on the graphical web interface. It is not really necessary to change this file.
+
+### `policy/`
+
+This python package holds the policies that decide which direction each UAV flies. `policy/base.py` defines the abstract `Policy` interface, `policy/observation.py` defines the `Observation` a UAV receives, and every concrete policy lives in its own file (`policy/random_policy.py`, `policy/follow_fire.py`). The policy in use can be picked from the dropdown on the web interface, or with the `--policy` option of `headless.py`.
+
+### `headless.py`
+
+This python file runs simulations without the graphical interface, with logging and optional parallel execution. Run `python3 headless.py --help` for the available options.
+
+### `tests/`
+
+This directory holds the unit tests. See [Running the tests](#running-the-tests).
 
 # Installation setup
 
@@ -55,12 +67,70 @@ other dependencies may be needed to be installed. On the same Pycharm configurat
   <li>Mesa (v.1.2.1)</li>
   <li>numpy (v1.24.2)</li>
   <li>matplotlib (v3.7.1)</li>
+  <li>pytest (only needed to run the unit tests)</li>
 </ul>
+
+Alternatively, all of them can be installed from the command line with:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
 
 ## Execution of the project
 
 Once project is opened, and dependencies were installed, `main.py` can be executed by selecting the file, right mouse click, and clicking on `Run 'main'` (shortcut should be `Ctrl+Mayus+F10`).
 A web page interface should appear, with the wildfire grid, and buttons for configuring the simulation.
+
+# Running the tests
+
+The unit tests live in the `tests/` directory and are run with [pytest](https://docs.pytest.org/). They cover the UAV policies in the `policy/` package, and need neither a grid nor the Mesa framework, so the whole suite finishes in well under a second.
+
+## From the command line
+
+From the root of the project:
+
+```bash
+python3 -m pytest
+```
+
+Useful variations:
+
+```bash
+python3 -m pytest tests/test_follow_fire_policy.py   # a single file
+python3 -m pytest -k "holds_position"                # tests whose name matches a pattern
+python3 -m pytest -q                                 # quiet, one line per file
+python3 -m pytest -x                                 # stop at the first failure
+```
+
+Test discovery is configured in `pytest.ini`, which also puts the project root on the import path so that `import policy` and `import config` work from inside `tests/`.
+
+## From Pycharm
+
+Right mouse click on the `tests` directory and select `Run 'pytest in tests'`. Individual tests can also be run with the green arrow shown next to each test function.
+
+## Writing tests for a new policy
+
+Policies only ever receive `Observation` objects, so a test can describe exactly what a UAV sees without building a grid. The `observation` fixture in `tests/conftest.py` creates them:
+
+```python
+def test_moves_toward_a_fire_on_its_right(observation):
+    policy = MyPolicy()
+    obs = observation(pos=(5, 5), burning=[(8, 5)], unburnt=[(4, 5)])
+    assert policy.select_actions([obs]) == [ACTION_RIGHT]
+```
+
+`pos` is where the UAV is, `burning` and `unburnt` are the cells it can see; cells outside its observation radius are simply left out. For a policy that makes random choices, the `seed_rng` fixture replaces `config.SYSTEM_RANDOM` with a seeded generator so the result is reproducible:
+
+```python
+def test_is_reproducible(observation, seed_rng):
+    policy = MyPolicy()
+    seed_rng(42)
+    first = policy.select_actions([observation(pos=(5, 5))])
+    seed_rng(42)
+    assert policy.select_actions([observation(pos=(5, 5))]) == first
+```
+
+The contract tests in `tests/test_policy_interface.py` are parametrised over every policy in the registry, so a newly registered policy is automatically checked for returning one valid action per UAV, handling an empty view, and having a usable name.
 
 # Graphical interface functionalities
 

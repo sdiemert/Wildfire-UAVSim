@@ -17,7 +17,7 @@ PROBABILITY_MAP = False
 # model params specifications
 
 BATCH_SIZE = 90
-WIDTH = 10  # in python [height, width] for grid, in js [width, heigh]
+WIDTH = 50  # in python [height, width] for grid, in js [width, heigh]
 HEIGHT = 50
 BURNING_RATE = 1
 FIRE_SPREAD_SPEED = 2

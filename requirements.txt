@@ -6,3 +6,6 @@
 mesa==1.2.1
 numpy
 matplotlib
+
+# testing: run the suite with `python3 -m pytest`
+pytest
