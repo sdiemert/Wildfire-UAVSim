@@ -134,8 +134,9 @@ class WildFireModel(mesa.Model):
         for a in range(0, self.NUM_AGENTS):
             aux_UAV = agents.UAV(self.unique_agents_id, self)
             if ACTIVATE_FIREFIGHTING:
-                # every UAV starts from the home base, with a full load of water
-                self.grid.place_agent(aux_UAV, self.base.pos)
+                # every UAV starts from the home base, with a full load of water, spread over its
+                # footprint so that the team is not launched stacked on one cell
+                self.grid.place_agent(aux_UAV, self.launch_position(a))
             else:
                 y_center += a if a % 2 == 0 else -a
                 self.grid.place_agent(aux_UAV, (x_center, y_center + 1))
@@ -186,6 +187,15 @@ class WildFireModel(mesa.Model):
 
         self.log.info("home base placed at %s covering %d cell(s), surviving %d burning steps",
                       anchor, len(footprint), BHP)
+
+    # function that gives the cell UAV number 'index' of the team starts the run from: one cell of the home
+    # base footprint each, in the order base_footprint() lists them, so that UAV 0 keeps the anchor and a
+    # team no larger than the base is not launched stacked on a single cell. A team that outnumbers the
+    # footprint wraps back round it, which is safe: the base is shared airspace, and UAVs that share a cell
+    # there neither collide nor lose health points until they fly off it.
+    def launch_position(self, index):
+        footprint = self.base.cells
+        return footprint[index % len(footprint)]
 
     # function that scatters the out buildings randomly over the grid, avoiding the base cell and any cell
     # that already holds a building

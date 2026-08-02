@@ -82,6 +82,8 @@ by_distance(pos, positions)       # positions ordered nearest first, for picking
 
 `FirefighterPolicy` shows the pattern: it claims a fire per UAV so that no two are sent to the same cell, then trims each action with `avoid()` so that no UAV flies into one it can see or lands where a teammate has already been sent. The cells of the home base are deliberately left out of `blocked` — `observation.base_footprint()` reports them — because UAVs do not collide there and must be able to land to refill.
 
+It also never asks a UAV to fly further than `UAV_OBSERVATION_RADIUS`. This matters whenever `UAV_SPEED` is the larger of the two, as it is by default (`5` against `4`): a flight that ends outside the observation window lands on a cell `uav_positions` said nothing about, so the UAV can fly into a teammate it was never told was there. Giving up the last cell of speed is cheaper than the collision.
+
 With the firefighting extension on, an `Observation` also carries `has_water`, `base_pos`, `base_cells` and `building_positions`; `at_base()` is true anywhere on the base footprint.
 
 ### `headless.py`
@@ -313,7 +315,7 @@ Collisions are settled once per step, from where the UAVs ended up, so the damag
 
 `UAV_COLLISION_DAMAGE`: Health points lost per step spent sharing a cell with another UAV. With `UAV_HP = 1` and a damage of `1`, any collision destroys everybody involved in it.
 
-The graphical interface reports the health of every UAV in the sidebar, with a bar that turns amber and then red as it drops, and marks a destroyed one as `DESTROYED`. The `Collisions` counter beside the metrics is how many times a cell was found holding more than one UAV; `headless.py` records the same as `collisions` and `uavs_lost` in its results.
+The graphical interface reports the health of every UAV on its own line of the sidebar, in figures that turn amber and then red as it drops, and marks a destroyed one as `destroyed`. The `Collisions` counter beside the metrics is how many times a cell was found holding more than one UAV; `headless.py` records the same as `collisions` and `uavs_lost` in its results.
 
 ### Firefighting extension
 
@@ -333,6 +335,8 @@ When it is switched on:
 `ACTIVATE_FIREFIGHTING`: Master switch for the whole extension.
 
 `BASE_POSITION`: Cell the home base is placed on, as an `(x, y)` tuple, or `None` to place it a quarter of the way into the grid. Note that the initial fire is lit at the centre of the grid, so putting the base there means it burns from the first step.
+
+`BASE_SIZE`: Footprint of the base, in cells, as `(width, height)`; `BASE_POSITION` is its bottom left corner. The whole footprint is drawn blue, burns, and can be refilled from. The team is spread over it at the start of a run — one UAV per cell, in order, wrapping round when the team outnumbers the footprint — so that a fleet no larger than its base is visible on the map from the first step instead of being stacked on one cell, and does not launch on top of itself.
 
 `BHP`: Base health points. The run is lost once the base cell has burned for this many steps. The damage is cumulative rather than consecutive, because a burning cell goes out for a step when none of its neighbours are alight yet, so the base collects its damage over several visits from the fire.
 

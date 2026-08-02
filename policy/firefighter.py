@@ -31,8 +31,9 @@ class FirefighterPolicy(Policy):
         one cell would be wasted anyway.
       * an action is trimmed so that the UAV neither flies into a UAV it can see nor lands where a teammate
         has already been sent. It gives up speed one cell at a time, and holds position when there is no
-        room at all. The home base is exempt: any number of UAVs may sit on it, which is what lets them
-        queue there to refill.
+        room at all. No UAV is sent further than UAV_OBSERVATION_RADIUS either, because a flight that ends
+        outside the observation window lands on a cell the UAV was told nothing about. The home base is
+        exempt from all of this: any number of UAVs may sit on it, which is what lets them queue to refill.
 
     This policy only makes sense with ACTIVATE_FIREFIGHTING switched on. Without it no UAV ever carries
     water, and it degenerates into flying to the base and holding position there.
@@ -95,9 +96,20 @@ class FirefighterPolicy(Policy):
     # teammate has already been sent through this step. Cells of the home base are left out of it: UAVs do
     # not collide there, and avoiding them would leave a UAV circling its own base instead of refilling.
     def deconflict(self, observation, action, reserved):
+        action = self.within_sight(action)
         shared = set(observation.base_footprint())
         blocked = ({tuple(cell) for cell in observation.uav_positions} | reserved) - shared
         return avoid(observation.pos, action, blocked)
+
+    # keeps a UAV from being sent further than it can see. UAV_SPEED may be larger than
+    # UAV_OBSERVATION_RADIUS, and a flight that ends outside the observation window lands on a cell that
+    # observation.uav_positions says nothing about, so the UAV can fly into a teammate it was never told
+    # was there. Giving up the last cell or two of speed is cheaper than the collision.
+    def within_sight(self, action):
+        if not action.is_movement():
+            return action
+        speed = min(action.speed, config.UAV_OBSERVATION_RADIUS)
+        return Action(action.direction, speed) if speed > 0 else Action.stay()
 
     # checks whether the drop would reach the target from the given position
     def within_drop_range(self, pos, target):
