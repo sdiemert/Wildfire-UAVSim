@@ -84,7 +84,7 @@ UAV_WATER_CAPACITY = 1  # loads a UAV can carry at once
 # linearly with the distance from the centre of the drop.
 WATER_DROP_RADIUS = 2  # cells around the drop position that are affected
 WATER_EXTINGUISH_PROB_CENTRE = 0.95  # probability of extinguishing the cell the water is dumped on
-WATER_EXTINGUISH_PROB_EDGE = 0.35  # probability of extinguishing a cell at WATER_DROP_RADIUS
+WATER_EXTINGUISH_PROB_EDGE = 0.60  # probability of extinguishing a cell at WATER_DROP_RADIUS
 
 # re-ignition of extinguished cells
 REIGNITION_DELAY = 8  # steps an extinguished cell is immune; afterwards nearby fire can light it again
