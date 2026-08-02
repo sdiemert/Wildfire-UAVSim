@@ -17,7 +17,7 @@ interface without any further change.
 # own python modules
 
 from .action import Action
-from .base import Policy, nearest, step_towards
+from .base import Policy, avoid, by_distance, flight_path, nearest, step_towards
 from .observation import Observation
 from .firefighter import FirefighterPolicy
 from .follow_fire import FollowFirePolicy
@@ -42,4 +42,5 @@ def build_policy(name):
 
 
 __all__ = ["Action", "Policy", "Observation", "RandomPolicy", "FollowFirePolicy", "FirefighterPolicy",
-           "POLICIES", "REGISTERED", "build_policy", "nearest", "step_towards"]
+           "POLICIES", "REGISTERED", "build_policy", "avoid", "by_distance", "flight_path", "nearest",
+           "step_towards"]

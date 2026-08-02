@@ -45,6 +45,44 @@ def nearest(pos, positions):
     return min(positions, key=lambda candidate: (candidate[0] - pos[0]) ** 2 + (candidate[1] - pos[1]) ** 2)
 
 
+# helper that returns the positions in 'positions' ordered by how close they are to 'pos', nearest first
+def by_distance(pos, positions):
+    return sorted(positions, key=lambda candidate: (candidate[0] - pos[0]) ** 2 + (candidate[1] - pos[1]) ** 2)
+
+
+# helper that returns the cells an action would take a UAV at 'pos' through, in the order it crosses them,
+# the cell it lands on last. An action that does not move the UAV crosses nothing.
+def flight_path(pos, action):
+    if not action.is_movement():
+        return []
+    step_x, step_y = config.MOVEMENT_VECTORS[action.direction]
+    return [(pos[0] + step_x * covered, pos[1] + step_y * covered)
+            for covered in range(1, action.speed + 1)]
+
+
+# helper that trims an action so that the UAV stops short of a cell it must not enter. Speed is given up
+# one cell at a time, and the UAV holds position when even the first cell of the flight is taken.
+#
+# 'blocked' is the cells to keep out of: the ones other UAVs are standing on, and the ones teammates have
+# already been sent to this step. Two UAVs that end a step on the same cell collide and both lose health
+# points, which is what this is for; the cells of the home base are shared airspace and belong nowhere near
+# 'blocked'.
+def avoid(pos, action, blocked):
+    if not action.is_movement() or not blocked:
+        return action
+
+    blocked = {tuple(cell) for cell in blocked}
+    speed = action.speed
+    for covered, cell in enumerate(flight_path(pos, action), start=1):
+        if cell in blocked:
+            speed = covered - 1
+            break
+
+    if speed <= 0:
+        return Action.stay()
+    return Action(action.direction, speed)
+
+
 class Policy(ABC):
     """Decides which direction each UAV flies at a given time step, and how fast.
 
@@ -70,7 +108,10 @@ class Policy(ABC):
             Action.dump() drops water. All the constants are defined in config.py.
 
             A UAV never covers more than UAV_SPEED cells per step, whatever speed is asked for, and stops
-            early at the edge of the grid or in front of another UAV.
+            early at the edge of the grid. Flying onto a cell another UAV holds ends the flight there and
+            is a collision, which costs both of them health points, so a policy that moves its team about
+            has to keep it apart: observation.uav_positions reports the UAVs in view, and avoid() above
+            trims an action to stay clear of them.
 
             A bare direction index, or a (direction, speed) pair, is accepted as well and is coerced to an
             Action, so policies written before speeds existed keep working at one cell per step.

@@ -68,7 +68,21 @@ class MyPolicy(Policy):
         return [Action(ACTION_UP, 3) for _ in observations]
 ```
 
-`Action.stay()` holds position and `Action.dump()` drops water; both carry a speed of zero. A UAV never covers more than `UAV_SPEED` cells in a step, whatever speed is asked for, and stops early at the edge of the grid or in front of another UAV. A policy may also return a bare direction index, or a `(direction, speed)` pair, which are coerced into an `Action` — a bare direction means one cell per step, as it did before speeds existed.
+`Action.stay()` holds position and `Action.dump()` drops water; both carry a speed of zero. A UAV never covers more than `UAV_SPEED` cells in a step, whatever speed is asked for, and stops early at the edge of the grid. A policy may also return a bare direction index, or a `(direction, speed)` pair, which are coerced into an `Action` — a bare direction means one cell per step, as it did before speeds existed.
+
+An `Observation` reports what one UAV can see: `pos`, the `cells` in view with their burning state, and `uav_positions`, the cells the **other UAVs in view** are standing on. Flying onto one of those is a collision and costs both UAVs health points, so a policy that moves its team about has to keep it apart. Three helpers in `policy/base.py` are there for that:
+
+```python
+from policy import avoid, flight_path, by_distance
+
+flight_path(pos, action)          # the cells the action would take the UAV through, in order
+avoid(pos, action, blocked)       # the same action, trimmed to stop short of any 'blocked' cell
+by_distance(pos, positions)       # positions ordered nearest first, for picking an unclaimed target
+```
+
+`FirefighterPolicy` shows the pattern: it claims a fire per UAV so that no two are sent to the same cell, then trims each action with `avoid()` so that no UAV flies into one it can see or lands where a teammate has already been sent. The cells of the home base are deliberately left out of `blocked` — `observation.base_footprint()` reports them — because UAVs do not collide there and must be able to land to refill.
+
+With the firefighting extension on, an `Observation` also carries `has_water`, `base_pos`, `base_cells` and `building_positions`; `at_base()` is true anywhere on the base footprint.
 
 ### `headless.py`
 
@@ -157,7 +171,7 @@ def test_moves_toward_a_fire_on_its_right(observation, uav_speed):
     assert policy.select_actions([obs]) == [Action(ACTION_RIGHT, 3)]
 ```
 
-`pos` is where the UAV is, `burning` and `unburnt` are the cells it can see; cells outside its observation radius are simply left out. The `uav_speed` fixture pins `UAV_SPEED` for the test, so an expected speed does not depend on what `config.py` is set to. For a policy that makes random choices, the `seed_rng` fixture replaces `config.SYSTEM_RANDOM` with a seeded generator so the result is reproducible:
+`pos` is where the UAV is, `burning` and `unburnt` are the cells it can see; cells outside its observation radius are simply left out. `uavs=[(5, 7)]` puts other UAVs in view, for testing that a policy keeps its team apart. The `uav_speed` fixture pins `UAV_SPEED` for the test, so an expected speed does not depend on what `config.py` is set to. For a policy that makes random choices, the `seed_rng` fixture replaces `config.SYSTEM_RANDOM` with a seeded generator so the result is reproducible:
 
 ```python
 def test_is_reproducible(observation, seed_rng):
@@ -281,11 +295,25 @@ python3 headless.py --set 'FIRE_START_POSITION=(3, 3)' --set FIRE_START_STEP=10
 
 `N_ACTIONS`: Specifies the number of possible actions each UAV can take when deciding on a move, which by default is set as `[north, east, west, south]`.
 
-`UAV_SPEED`: The maximum number of cells a UAV can cover in one time step. A policy returns a direction and a speed for each UAV (for example north at speed 3), and the UAV flies up to that many cells along that direction, stopping early at the edge of the grid or in front of another UAV. Set it to `1` for the original one cell per step behaviour, or to `0` to ground the fleet.
+`UAV_SPEED`: The maximum number of cells a UAV can cover in one time step. A policy returns a direction and a speed for each UAV (for example north at speed 3), and the UAV flies up to that many cells along that direction, stopping early at the edge of the grid, or on the cell of another UAV it has flown into. Set it to `1` for the original one cell per step behaviour, or to `0` to ground the fleet.
 
 `UAV_OBSERVATION_RADIUS`: It sets the observation radius—technically it is not a radius, since observed areas have square shapes.
 
-`SECURITY_DISTANCE`: It establishes the minimum distance that UAVs should be separated from each other for avoiding collisions.
+`SECURITY_DISTANCE`: The minimum separation, in cells, that the UAV team is meant to keep. It is a **scoring heuristic only**: `MR2` counts the pairs of UAVs that are closer than this to each other on each step, which measures how much collision risk a policy accepts. It does not stop a UAV from flying anywhere, and it is not what decides whether two UAVs have collided—see the health points below.
+
+#### Health points and collisions
+
+Two or more UAVs that end a time step **on the same cell** have collided. Each of them loses `UAV_COLLISION_DAMAGE` health points, and a UAV whose health points reach zero is destroyed: it is taken off the grid and out of the scheduler, stops observing, acting and scoring `MR1`, and takes no further part in the run. The rest of the team carries on, and the run itself continues even if the whole fleet is lost.
+
+The **home base is shared airspace**: any number of UAVs can sit on its footprint without colliding, which is what lets the whole team start there and queue on it to refill. Flying over the base does not stop a UAV either. Everywhere else, a UAV that flies into an occupied cell takes that cell and its flight ends there, rather than passing over it.
+
+Collisions are settled once per step, from where the UAVs ended up, so the damage does not depend on the order the scheduler happened to move them in, and two UAVs left stacked on one cell keep paying for it every step until they separate or are destroyed.
+
+`UAV_HP`: Health points each UAV starts the run with. Set it high enough that collisions cost a policy something without ending its run outright, or to a very large number to study a fleet that cannot be destroyed.
+
+`UAV_COLLISION_DAMAGE`: Health points lost per step spent sharing a cell with another UAV. With `UAV_HP = 1` and a damage of `1`, any collision destroys everybody involved in it.
+
+The graphical interface reports the health of every UAV in the sidebar, with a bar that turns amber and then red as it drops, and marks a destroyed one as `DESTROYED`. The `Collisions` counter beside the metrics is how many times a cell was found holding more than one UAV; `headless.py` records the same as `collisions` and `uavs_lost` in its results.
 
 ### Firefighting extension
 
@@ -326,7 +354,7 @@ When it is switched on:
 
 `OUT_BUILDING_HP`: Steps an out building survives while its cell is burning, before it is destroyed.
 
-The `firefighter` policy in `policy/firefighter.py` is written for this extension: it carries water to the fire, prefers fires that threaten an out building, dumps its load once in range, and flies back to the base to refill. The other policies still run with the extension switched on, but never dump water, since `ACTION_DUMP_WATER` sits outside `N_ACTIONS` and is only emitted by policies that opt in.
+The `firefighter` policy in `policy/firefighter.py` is written for this extension: it carries water to the fire, prefers fires that threaten an out building, dumps its load once in range, and flies back to the base to refill. It also keeps its team apart, sending no two UAVs to the same fire or through the same cell, so that it does not destroy its own fleet in collisions. The other policies still run with the extension switched on, but never dump water, since `ACTION_DUMP_WATER` sits outside `N_ACTIONS` and is only emitted by policies that opt in; `random` and `follow-fire` take no care to avoid each other either, so they lose UAVs to collisions.
 
 To try it from the command line, without editing `config.py`:
 

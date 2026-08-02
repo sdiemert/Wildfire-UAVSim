@@ -42,3 +42,59 @@ def test_cells_default_is_not_shared_between_observations():
     second = Observation(uav_id=1, pos=(1, 1))
     first.cells.append(((0, 0), 1))
     assert second.cells == []
+
+
+# --- the other UAVs in view -------------------------------------------------
+
+
+def test_uav_positions_default_to_an_empty_view():
+    obs = Observation(uav_id=0, pos=(5, 5))
+    assert obs.uav_positions == []
+    assert not obs.occupied((5, 5))
+
+
+def test_occupied_finds_the_cells_other_uavs_are_standing_on():
+    obs = Observation(uav_id=0, pos=(5, 5), uav_positions=[(6, 5), (5, 8)])
+    assert obs.occupied((6, 5))
+    assert obs.occupied((5, 8))
+    assert not obs.occupied((4, 5))
+    # a UAV is never reported as standing on itself, so its own cell reads as clear
+    assert not obs.occupied((5, 5))
+
+
+def test_occupied_accepts_a_list_as_well_as_a_tuple():
+    obs = Observation(uav_id=0, pos=(5, 5), uav_positions=[[6, 5]])
+    assert obs.occupied((6, 5))
+
+
+def test_uav_positions_default_is_not_shared_between_observations():
+    first = Observation(uav_id=0, pos=(0, 0))
+    second = Observation(uav_id=1, pos=(1, 1))
+    first.uav_positions.append((2, 2))
+    assert second.uav_positions == []
+
+
+# --- the home base footprint ------------------------------------------------
+
+
+def test_the_footprint_is_empty_without_a_base():
+    obs = Observation(uav_id=0, pos=(5, 5))
+    assert obs.base_footprint() == []
+    assert not obs.at_base()
+
+
+def test_the_anchor_alone_is_the_footprint_when_no_cells_are_given():
+    # how an Observation built by hand, or by a caller that predates the footprint, reports the base
+    obs = Observation(uav_id=0, pos=(1, 1), base_pos=(1, 1))
+    assert obs.base_footprint() == [(1, 1)]
+    assert obs.at_base()
+
+
+def test_a_uav_on_any_cell_of_the_footprint_is_at_the_base():
+    footprint = [(2, 2), (3, 2), (2, 3), (3, 3)]
+    for cell in footprint:
+        obs = Observation(uav_id=0, pos=cell, base_pos=(2, 2), base_cells=footprint)
+        assert obs.at_base(), f"{cell} is part of the base"
+
+    outside = Observation(uav_id=0, pos=(4, 2), base_pos=(2, 2), base_cells=footprint)
+    assert not outside.at_base()

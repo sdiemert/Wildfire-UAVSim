@@ -38,10 +38,11 @@ class StatusSidebar(VisualizationElement):
         if ACTIVATE_FIREFIGHTING:
             sections.append(self.base(model))
             sections.append(self.out_buildings(model))
-            sections.append(self.uavs(model))
         else:
             sections.append(self.note("Firefighting extension off: set ACTIVATE_FIREFIGHTING in config.py "
                                       "to see the base, the out buildings and the UAV water."))
+        # the UAV health points exist whether or not the extension is on, so the team is always reported
+        sections.append(self.uavs(model))
         return "".join(sections)
 
     # the panel is redrawn on every step, so its styles travel with it
@@ -92,7 +93,11 @@ class StatusSidebar(VisualizationElement):
         if len(model.MR1_LIST) > 1:
             for index, score in enumerate(model.MR1_LIST):
                 html.append(self.row(f"&nbsp;&nbsp;UAV {index}", f"{score:.3f}"))
-        html.append(self.row("MR2 (collisions)", model.MR2_VALUE))
+        # MR2 counts how often UAVs flew closer to each other than SECURITY_DISTANCE, which is a risk
+        # heuristic; the collisions below are the UAVs that actually shared a cell and paid for it
+        html.append(self.row(f"MR2 (within {SECURITY_DISTANCE} cells)", model.MR2_VALUE))
+        html.append(self.row("Collisions", model.collisions,
+                             "alert" if model.collisions else "value"))
         # the ignition can be randomised in config.py, so it is shown here: without it a run that has not
         # caught fire yet looks like a broken simulation
         if model.fire_started:
@@ -139,10 +144,11 @@ class StatusSidebar(VisualizationElement):
         html.append("</div>")
         return "".join(html)
 
-    # the water status of each UAV
+    # the health, and with the extension on the water, of each UAV
     def uavs(self, model):
         crew = model.uavs
-        html = ["<h4>UAVs</h4>"]
+        flying = sum(1 for uav in crew if uav.is_alive())
+        html = [f"<h4>UAVs ({flying}/{len(crew)} flying)</h4>"]
         if not crew:
             return "".join(html + [self.note("none flying")])
 
@@ -150,12 +156,18 @@ class StatusSidebar(VisualizationElement):
         # numbered by their position in the team rather than by unique_id, which starts after every Fire
         # agent has been created. This is the same numbering the MR1 scores above use.
         for index, uav in enumerate(crew):
-            if uav.has_water():
-                status = f"water {uav.water}/{UAV_WATER_CAPACITY}"
-                style = "value"
-            else:
-                status = "empty"
-                style = "muted"
-            html.append(self.row(f"UAV {index} at {uav.pos}", status, style))
+            # a destroyed UAV has been taken off the grid, so it has no position left to report
+            if not uav.is_alive():
+                html.append(self.row(f"UAV {index}", "DESTROYED", "alert"))
+                html.append(self.bar(0, UAV_HP))
+                continue
+
+            html.append(self.row(f"UAV {index} at {uav.pos}", f"{uav.hp} / {UAV_HP} HP"))
+            html.append(self.bar(uav.hp, UAV_HP))
+            if ACTIVATE_FIREFIGHTING:
+                if uav.has_water():
+                    html.append(self.row("&nbsp;&nbsp;water", f"{uav.water}/{UAV_WATER_CAPACITY}"))
+                else:
+                    html.append(self.row("&nbsp;&nbsp;water", "empty", "muted"))
         html.append("</div>")
         return "".join(html)

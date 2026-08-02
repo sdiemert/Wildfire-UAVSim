@@ -263,8 +263,28 @@ class UAV(mesa.Agent):
         # many cells to cover along it. One cell is what a UAV flew before speeds existed.
         self.selected_dir = 0
         self.selected_speed = 1
+        # health points. Sharing a cell with another UAV costs UAV_COLLISION_DAMAGE of them per step, and
+        # a UAV that runs out is destroyed. WildFireModel.resolve_collisions() is what charges the damage,
+        # because whether two UAVs share a cell is a property of the grid rather than of either of them.
+        self.hp = UAV_HP
         # firefighting extension: UAVs leave the base with a full load of water
         self.water = UAV_WATER_CAPACITY if ACTIVATE_FIREFIGHTING else 0
+
+    # checks whether this UAV is still flying | True until its health points run out
+    def is_alive(self):
+        return self.hp > 0
+
+    # takes health points off this UAV, never below zero. Returns the points actually lost, so that a
+    # caller can tell a hit that landed from one on a UAV that was already down. The default is read when
+    # the call is made rather than when the class is defined, so that overriding the constant works.
+    def take_damage(self, amount=None):
+        if not self.is_alive():
+            return 0
+        lost = min(self.hp, max(0, int(UAV_COLLISION_DAMAGE if amount is None else amount)))
+        self.hp -= lost
+        self.model.log.debug("UAV %d took %d damage at %s, %d HP left",
+                             self.unique_id, lost, self.pos, self.hp)
+        return lost
 
     # checks whether this UAV still carries water to dump | True if it does, False if it is empty
     def has_water(self):
@@ -299,15 +319,11 @@ class UAV(mesa.Agent):
                              self.unique_id, self.pos, extinguished)
         return extinguished
 
-    # function that checks if an UAV in a certain position (pos), has another UAV nearby. If so, it can't move,
-    # otherwise it will be possible to move.
-    def not_UAV_adjacent(self, pos):
-        can_move = True
-        agents_in_pos = self.model.grid.get_cell_list_contents([pos])
-        for agent in agents_in_pos:
-            if type(agent) is UAV:
-                can_move = False
-        return can_move
+    # function that lists the other UAVs still flying on a given cell. An empty list means the cell is
+    # clear of traffic; anything else means moving there is a collision.
+    def other_uavs_at(self, pos):
+        return [agent for agent in self.model.grid.get_cell_list_contents([pos])
+                if type(agent) is UAV and agent is not self and agent.is_alive()]
 
     # function that obtains what this UAV can currently see, keeping the position of every observed cell.
     # surrounding_states() throws the positions away, which is enough to count burning cells but not enough
@@ -318,24 +334,32 @@ class UAV(mesa.Agent):
         adjacent_cells = self.model.grid.get_neighborhood(
             self.pos, moore=self.moore, include_center=True, radius=UAV_OBSERVATION_RADIUS
         )
-        # records (position, burning) for every observed cell that holds vegetation, and the positions of the
-        # out buildings in view, which a policy may want to defend
+        # records (position, burning) for every observed cell that holds vegetation, the cells the other
+        # UAVs in view are standing on, which a policy needs to keep clear of, and the positions of the out
+        # buildings in view, which a policy may want to defend
         buildings = []
+        neighbours = []
         for cell in adjacent_cells:
             for agent in self.model.grid.get_cell_list_contents([cell]):
                 if type(agent) is Fire:
                     cells.append((cell, int(agent.is_burning() is True)))
+                elif type(agent) is UAV and agent is not self and agent.is_alive():
+                    neighbours.append(cell)
                 elif type(agent) is OutBuilding and not agent.destroyed:
                     buildings.append(cell)
 
         # the extension fields stay at their defaults when the extension is off, so that policies written
-        # against the plain simulation keep working unchanged
+        # against the plain simulation keep working unchanged. The UAVs in view are reported either way,
+        # because collisions do not belong to the extension.
         if not ACTIVATE_FIREFIGHTING:
-            return Observation(uav_id=self.unique_id, pos=self.pos, cells=cells)
+            return Observation(uav_id=self.unique_id, pos=self.pos, cells=cells,
+                               uav_positions=neighbours)
 
         return Observation(uav_id=self.unique_id, pos=self.pos, cells=cells,
+                           uav_positions=neighbours,
                            has_water=self.has_water(),
                            base_pos=self.model.base.pos if self.model.base else None,
+                           base_cells=list(self.model.base.cells) if self.model.base else [],
                            building_positions=buildings)
 
     # function for obtaining observed cells for the corresponding UAV
@@ -345,12 +369,13 @@ class UAV(mesa.Agent):
 
     # function for moving UAV over the grid area, up to selected_speed cells along selected_dir. Returns the
     # number of cells actually covered, which is less than the speed asked for when the UAV runs into the
-    # edge of the grid or into another UAV.
+    # edge of the grid, or into another UAV: it flies onto the cell the other one holds and stops there,
+    # having collided with it. WildFireModel.resolve_collisions() charges both of them for it at the end of
+    # the step.
     def move(self):
-        # vectors for moving to different positions, based on 4 directions = [0, 1, 2, 3] = [right, down, left, up].
-        # For example, if direction 1 is chosen, then the UAV moves 0 cells in x-axis, and -1 cell in y-axis
-        move_x = [1, 0, -1, 0]
-        move_y = [0, -1, 0, 1]
+        # vector for moving to a different position, one per direction = [right, down, left, up]. For
+        # example, if direction 1 is chosen, then the UAV moves 0 cells in x-axis, and -1 cell in y-axis.
+        # The table lives in config.py, because the policies read it to predict where an action lands.
         previous_pos = self.pos
 
         # policies may hold position instead of moving; there is no movement vector for that
@@ -365,17 +390,22 @@ class UAV(mesa.Agent):
                                  self.unique_id, self.pos)
             return 0
 
-        # the cells are crossed one at a time, so that the UAV stops at the edge of the grid or in front of
-        # another UAV rather than jumping over it
+        # the cells are crossed one at a time, so that the UAV stops at the edge of the grid, and so that it
+        # cannot jump over an occupied cell without having been in it
+        move_x, move_y = MOVEMENT_VECTORS[self.selected_dir]
         cells_moved = 0
         for _ in range(speed):
-            pos_to_move = (self.pos[0] + move_x[self.selected_dir], self.pos[1] + move_y[self.selected_dir])
-            # checks if the position to move is inside the grid bounds, and that the UAV doesn't have other UAV
-            # nearby. If so, the UAV moves
-            if self.model.grid.out_of_bounds(pos_to_move) or not self.not_UAV_adjacent(pos_to_move):
+            pos_to_move = (self.pos[0] + move_x, self.pos[1] + move_y)
+            # checks if the position to move is inside the grid bounds. If so, the UAV moves
+            if self.model.grid.out_of_bounds(pos_to_move):
                 break
+            # flying onto a cell another UAV holds is a collision, and the flight ends there. The home base
+            # is shared airspace, so traffic over its footprint neither collides nor stops.
+            blocked = bool(self.other_uavs_at(pos_to_move)) and not self.model.at_base(pos_to_move)
             self.model.grid.move_agent(self, tuple(pos_to_move))
             cells_moved += 1
+            if blocked:
+                break
 
         # run scoped logger, set by the runner (see headless.py); silent when nothing configured it
         if cells_moved:
@@ -391,6 +421,11 @@ class UAV(mesa.Agent):
     # Mesa framework native method, which is overwritten, necessary for executing changes made in step() method
     # (as it can be seen, in this case UAVs don't need to update anything in step() method, so it isn't overwritten).
     def advance(self):
+        # a destroyed UAV is taken off the grid and out of the scheduler, so this is only reached by one
+        # that is still flying. Checked anyway, because a caller may step a UAV directly.
+        if not self.is_alive():
+            return
+
         # dumping water takes the whole step, so the UAV does not move as well
         if ACTIVATE_FIREFIGHTING and self.selected_dir == ACTION_DUMP_WATER:
             self.model.water_drops += 1
@@ -470,9 +505,9 @@ class Base(mesa.Agent):
 
         for uav_id in list(self.serving):
             uav = self.model.uav_by_id(uav_id)
-            # release the slot of a finished refill, and of a UAV that flew away mid refill, so that a
-            # queued UAV is not blocked forever
-            if self.serving[uav_id] <= 0 or uav is None or not self.covers(uav.pos):
+            # release the slot of a finished refill, and of a UAV that flew away mid refill or was
+            # destroyed on the base, so that a queued UAV is not blocked forever
+            if self.serving[uav_id] <= 0 or uav is None or not uav.is_alive() or not self.covers(uav.pos):
                 del self.serving[uav_id]
 
 

@@ -72,6 +72,14 @@ ACTION_UP = 3
 ACTION_STAY = 4
 # dumping water is part of the firefighting extension below, and is likewise outside N_ACTIONS
 ACTION_DUMP_WATER = 5
+# how far one cell of movement takes a UAV, per direction. UAV.move() flies along these, and a policy that
+# has to work out where an action would land it reads the same table, so the two cannot drift apart.
+MOVEMENT_VECTORS = {
+    ACTION_RIGHT: (1, 0),
+    ACTION_DOWN: (0, -1),
+    ACTION_LEFT: (-1, 0),
+    ACTION_UP: (0, 1),
+}
 # how far a UAV can fly in one time step, in cells. A policy asks for a direction and a speed, and the UAV
 # covers up to this many cells along that direction, stopping early at the edge of the grid or in front of
 # another UAV. Set it to 1 for the original one cell per step behaviour, or to 0 to ground the fleet.
@@ -79,7 +87,20 @@ UAV_SPEED = 5
 UAV_OBSERVATION_RADIUS = 4
 side = ((UAV_OBSERVATION_RADIUS * 2) + 1)
 N_OBSERVATIONS = side * side
+# minimum separation, in cells, that the UAV team is meant to keep. It is a scoring heuristic only: MR2
+# counts the pairs of UAVs that end a step closer than this to each other, which is a proxy for how much
+# collision risk a policy accepts. It does not stop a UAV from flying anywhere, and it is not what decides
+# whether two UAVs collided -- that is a matter of sharing a cell, see UAV_HP below.
 SECURITY_DISTANCE = 10
+
+# health points each UAV starts the run with. Two or more UAVs that end a step on the same cell have
+# collided, and each of them loses UAV_COLLISION_DAMAGE of them; a UAV whose health points reach zero is
+# destroyed and takes no further part in the run. The home base is the one exception: any number of UAVs
+# can sit on its footprint without colliding, which is what lets the whole team start and refill there.
+# Set UAV_HP high enough that collisions cost a policy something without ending its run outright, or to a
+# very large number to study a fleet that cannot be destroyed.
+UAV_HP = 3
+UAV_COLLISION_DAMAGE = 1  # health points lost per step spent sharing a cell with another UAV
 
 # FIREFIGHTING EXTENSION
 #

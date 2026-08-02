@@ -72,6 +72,9 @@ class RunResult:
     mr1_per_uav: list[float] = field(default_factory=list)
     mr1_total: float = 0.0
     mr2: int = 0
+    # UAV collisions: cells found holding more than one UAV, and UAVs destroyed by them
+    collisions: int = 0
+    uavs_lost: int = 0
     burning_cells_final: int = 0
     burned_out_cells_final: int = 0
     # where and when the fire was lit; worth recording because both can be randomised in config.py
@@ -277,6 +280,8 @@ def run_simulation(config: RunConfig) -> RunResult:
             mr1_per_uav=[round(value, 6) for value in model.MR1_LIST],
             mr1_total=round(sum(model.MR1_LIST), 6),
             mr2=model.MR2_VALUE,
+            collisions=model.collisions,
+            uavs_lost=model.uavs_lost,
             burning_cells_final=burning,
             burned_out_cells_final=burned_out,
             fire_start_pos=list(model.fire_start_pos),
@@ -289,13 +294,17 @@ def run_simulation(config: RunConfig) -> RunResult:
             lost=model.lost,
         )
         log.info(
-            "finished in %.2fs | fire at %s from step %d | MR1_total=%.4f MR2=%d burning=%d",
+            "finished in %.2fs | fire at %s from step %d | MR1_total=%.4f MR2=%d burning=%d "
+            "| collisions=%d UAVs_lost=%d/%d",
             elapsed,
             tuple(result.fire_start_pos),
             result.fire_start_step,
             result.mr1_total,
             result.mr2,
             result.burning_cells_final,
+            result.collisions,
+            result.uavs_lost,
+            len(model.uavs),
         )
         if cfg.ACTIVATE_FIREFIGHTING:
             log.info(
@@ -440,6 +449,10 @@ def log_summary(results: list[RunResult], elapsed: float, log: logging.Logger) -
         burning = [result.burning_cells_final for result in ok]
         log.info("MR1 total   : mean=%.4f min=%.4f max=%.4f", _mean(mr1), min(mr1), max(mr1))
         log.info("MR2         : mean=%.2f min=%d max=%d", _mean(mr2), min(mr2), max(mr2))
+        collisions = [result.collisions for result in ok]
+        lost = [result.uavs_lost for result in ok]
+        log.info("collisions  : mean=%.2f min=%d max=%d | UAVs lost: mean=%.2f max=%d",
+                 _mean(collisions), min(collisions), max(collisions), _mean(lost), max(lost))
         log.info("burning cells: mean=%.1f min=%d max=%d", _mean(burning), min(burning), max(burning))
         log.info("run time    : mean=%.2fs total=%.2fs",
                  _mean([result.wall_time_s for result in ok]),

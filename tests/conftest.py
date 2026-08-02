@@ -22,22 +22,27 @@ def observation():
     """Factory that builds an Observation without a grid.
 
     Usage:
-        observation(pos=(5, 5), burning=[(7, 5)], unburnt=[(4, 5)])
+        observation(pos=(5, 5), burning=[(7, 5)], unburnt=[(4, 5)], uavs=[(5, 7)])
 
     'burning' and 'unburnt' are cell positions. Cells the UAV cannot see are simply left out, which is how
     the real UAV.observe() reports the edges of the grid.
 
-    'has_water', 'base_pos' and 'building_positions' belong to the firefighting extension, and keep the
-    defaults they have when it is switched off.
+    'uavs' is where the other UAVs in view are standing, which a policy needs to keep its team from
+    colliding. It is reported whether or not the firefighting extension is switched on.
+
+    'has_water', 'base_pos', 'base_cells' and 'building_positions' belong to the firefighting extension,
+    and keep the defaults they have when it is switched off.
     """
 
-    def _make(pos, burning=(), unburnt=(), uav_id=0,
-              has_water=False, base_pos=None, building_positions=()):
+    def _make(pos, burning=(), unburnt=(), uav_id=0, uavs=(),
+              has_water=False, base_pos=None, base_cells=(), building_positions=()):
         cells = [(tuple(cell), 1) for cell in burning]
         cells += [(tuple(cell), 0) for cell in unburnt]
         return Observation(uav_id=uav_id, pos=tuple(pos), cells=cells,
+                           uav_positions=[tuple(cell) for cell in uavs],
                            has_water=has_water,
                            base_pos=None if base_pos is None else tuple(base_pos),
+                           base_cells=[tuple(cell) for cell in base_cells],
                            building_positions=[tuple(cell) for cell in building_positions])
 
     return _make
@@ -89,9 +94,11 @@ def make_model(sim_config):
     def _make(policy=None, **overrides):
         # the ignition is pinned to the centre of the grid at step 0, so that the tests do not depend on
         # whatever FIRE_START_POSITION and FIRE_START_STEP happen to be set to in config.py. Tests about
-        # the ignition itself override them.
+        # the ignition itself override them. The density is pinned as well, so that every cell holds a
+        # Fire agent: at the shipped density a test that lights a named cell fails whenever the draw
+        # happened to leave that cell bare.
         settings = {"WIDTH": 9, "HEIGHT": 9, "NUM_AGENTS": 1, "BATCH_SIZE": 10_000,
-                    "FIRE_START_POSITION": None, "FIRE_START_STEP": 0}
+                    "DENSITY_PROB": 1.0, "FIRE_START_POSITION": None, "FIRE_START_STEP": 0}
         settings.update(overrides)
         sim_config(**settings)
 

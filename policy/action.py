@@ -26,7 +26,7 @@ class Action:
 
     'direction' is one of the action constants in config.py, and 'speed' is how many cells the UAV should
     cover along it. The UAV never flies further than UAV_SPEED, whatever a policy asks for, and stops early
-    at the edge of the grid or in front of another UAV, so a speed is a request rather than a guarantee.
+    at the edge of the grid or on a cell another UAV holds, so a speed is a request rather than a guarantee.
 
     Speed is meaningless for the actions that do not move the UAV, and is zero for both of them.
     """

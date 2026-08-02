@@ -115,6 +115,10 @@ class WildFireModel(mesa.Model):
         self.refills = 0
         self.buildings_lost = 0
         self.lost = False
+        # UAV collisions: how many times a cell was found holding more than one UAV, and how many UAVs
+        # that cost the team. Counted whether or not the firefighting extension is on.
+        self.collisions = 0
+        self.uavs_lost = 0
         if ACTIVATE_FIREFIGHTING:
             self.set_base()
             self.set_out_buildings()
@@ -200,12 +204,24 @@ class WildFireModel(mesa.Model):
             self.log.info("%d out building(s) placed at %s", wanted,
                           [building.pos for building in self.out_buildings])
 
-    # looks a UAV up by its unique id, used by the base to check who is still standing on it
+    # looks a UAV up by its unique id, used by the base to check who is still standing on it. Destroyed
+    # UAVs are found as well, so that a caller can tell one apart from an id that never existed.
     def uav_by_id(self, uav_id):
         for uav in self.uavs:
             if uav.unique_id == uav_id:
                 return uav
         return None
+
+    # the UAVs still flying, in team order. self.uavs keeps the whole team for the run, destroyed ones
+    # included, because the sidebar reports what became of each of them and MR1_LIST is indexed by team
+    # position; everything that acts on the fleet works from this list instead.
+    def active_uavs(self):
+        return [uav for uav in self.uavs if uav.is_alive()]
+
+    # checks whether a position is part of the home base footprint. UAVs neither collide nor stop over the
+    # base, which is what lets the whole team start from it and queue on it to refill.
+    def at_base(self, position):
+        return self.base is not None and self.base.covers(position)
 
     # function that decides which cell the wildfire starts from, from FIRE_START_POSITION
     def resolve_fire_start_position(self):
@@ -325,29 +341,33 @@ class WildFireModel(mesa.Model):
     def set_drone_dirs(self):
         # used for selecting the corresponding action from new_direction attribute, for each UAV
         self.new_direction_counter = 0
-        # walks the UAV team in the same order observations() reported it, so that entry i of what the
-        # policy returned belongs to UAV i. What the policy returned is coerced into an Action, so a
-        # policy that only gives a direction still works.
-        for uav in self.uavs:
+        # walks the UAVs still flying in the same order observations() reported them, so that entry i of
+        # what the policy returned belongs to UAV i. What the policy returned is coerced into an Action, so
+        # a policy that only gives a direction still works.
+        for uav in self.active_uavs():
             action = Action.coerce(self.new_direction[self.new_direction_counter])
             uav.selected_dir = action.direction
             uav.selected_speed = action.speed
             self.new_direction_counter += 1
 
-    # this method obtains effective wildfire monitoring metric (MR1) for time step t
-    def MR1(self, state):
-        # total amount of burning cells from state variable
-        MR1_reward = [sum(aux_state) for aux_state in state]
-        # normalized reward amount for each UAV state
-        reward = [normalize(float(reward), N_OBSERVATIONS, 1, 0) for reward in MR1_reward]
-        # MR1_list with added rewards
-        self.MR1_LIST = [a + b for a, b in zip(self.MR1_LIST, reward)]
+    # this method obtains effective wildfire monitoring metric (MR1) for time step t. 'flying' is the UAV
+    # team the state was collected from, which is what says where in MR1_LIST each score belongs: a UAV
+    # that has been destroyed stops scoring but keeps the total it earned while it flew.
+    def MR1(self, state, flying=None):
+        flying = self.active_uavs() if flying is None else flying
+        for uav, aux_state in zip(flying, state):
+            # normalized reward amount for this UAV state, added to the score of its place in the team
+            reward = normalize(float(sum(aux_state)), N_OBSERVATIONS, 1, 0)
+            self.MR1_LIST[self.uavs.index(uav)] += reward
 
-    # this method obtains collision risk avoidance metric (MR2) for time step t
+    # this method obtains collision risk avoidance metric (MR2) for time step t. It counts the pairs of
+    # UAVs flying closer to each other than SECURITY_DISTANCE, which is a measure of the collision risk a
+    # policy accepts rather than a count of the collisions it caused: a collision is two UAVs sharing one
+    # cell, and resolve_collisions() below is what charges for those.
     def MR2(self):
         counter = 0
-        # the UAV team, copied because the loop below deletes from its copy
-        UAV_agents = list(self.uavs)
+        # the UAVs still flying, copied because the loop below deletes from its copy
+        UAV_agents = self.active_uavs()
 
         # checks number of interactions for each UAV with others
         for idx, agent in enumerate(UAV_agents):
@@ -367,10 +387,48 @@ class WildFireModel(mesa.Model):
                     counter += 1
         self.MR2_VALUE += counter // 2  # remove duplicate interactions
 
-    # method for collecting the partial view of every UAV, in the order the team was created. This is
-    # the order set_drone_dirs() uses as well, so a policy can return one action per entry of this list.
+    # method that settles the collisions of the step just taken. Two or more UAVs left on the same cell
+    # have collided, and each of them loses UAV_COLLISION_DAMAGE health points; one whose health points run
+    # out is destroyed. The home base is left out, because any number of UAVs may sit on its footprint.
+    #
+    # It is settled once per step, from where the UAVs ended up, rather than while they fly: that way the
+    # damage does not depend on the order the scheduler happened to move them in, and two UAVs left stacked
+    # on one cell keep paying for it every step until they separate or are destroyed.
+    def resolve_collisions(self):
+        crowded = {}
+        for uav in self.active_uavs():
+            if self.at_base(uav.pos):
+                continue
+            crowded.setdefault(uav.pos, []).append(uav)
+
+        for position, crowd in crowded.items():
+            if len(crowd) < 2:
+                continue
+            self.collisions += 1
+            self.log.info("collision at %s between UAVs %s",
+                          position, [uav.unique_id for uav in crowd])
+            for uav in crowd:
+                uav.take_damage(UAV_COLLISION_DAMAGE)
+                if not uav.is_alive():
+                    self.destroy_uav(uav)
+
+    # takes a UAV that has run out of health points out of the simulation: off the grid, so that it stops
+    # blocking traffic and being drawn, and out of the scheduler, so that it takes no further steps. It
+    # stays in self.uavs as a record of the team that started the run.
+    def destroy_uav(self, uav):
+        self.uavs_lost += 1
+        self.log.warning("UAV %d destroyed at %s after %d step(s)",
+                         uav.unique_id, uav.pos, self.evaluation_timesteps_counter)
+        # a UAV destroyed while refilling would otherwise hold its slot at the base for good
+        if self.base is not None:
+            self.base.serving.pop(uav.unique_id, None)
+        self.grid.remove_agent(uav)
+        self.schedule.remove(uav)
+
+    # method for collecting the partial view of every UAV still flying, in team order. This is the order
+    # set_drone_dirs() uses as well, so a policy can return one action per entry of this list.
     def observations(self):
-        return [uav.observe() for uav in self.uavs]
+        return [uav.observe() for uav in self.active_uavs()]
 
     # method for obtaining each UAV partial observation. 'observations' can be passed in to avoid querying
     # the grid a second time when the caller already collected them.
@@ -402,10 +460,14 @@ class WildFireModel(mesa.Model):
             self.log.info("%s", self.MR1_LIST)
             self.log.info(" --- MR2 --- ")
             self.log.info("%s", self.MR2_VALUE)
+            self.log.info(" --- collisions --- ")
+            self.log.info("%d, %d UAV(s) lost of %d", self.collisions, self.uavs_lost, len(self.uavs))
             self.running = False
             return
 
-        if self.uavs:
+        # only the UAVs still flying observe, act and score; a destroyed one has left the run
+        flying = self.active_uavs()
+        if flying:
             # what each UAV can see at time t; keeps cell positions, so a policy can decide where to fly
             observations = self.observations()
             state = self.state(observations)  # s_t
@@ -418,7 +480,7 @@ class WildFireModel(mesa.Model):
             # reward = self.algorithm(state) # r_t+1
 
             # TODO: an EXAMPLE can be seen. However, your own implementations can be applied as well.
-            self.MR1(state)
+            self.MR1(state, flying)
             self.MR2()
 
             # It sets new directions for the UAV team
@@ -440,6 +502,11 @@ class WildFireModel(mesa.Model):
 
         # execute each agent step() method
         self.schedule.step()
+
+        # the UAVs have finished moving, so whoever ended up sharing a cell has collided. Settled here
+        # rather than inside UAV.advance(), because sharing a cell is a property of the grid: it is only
+        # known once every UAV has moved, and it costs both of them the same whichever moved first.
+        self.resolve_collisions()
 
         # firefighting extension: losing the home base ends the run immediately
         if ACTIVATE_FIREFIGHTING and self.base is not None and self.base.is_destroyed() and not self.lost:
