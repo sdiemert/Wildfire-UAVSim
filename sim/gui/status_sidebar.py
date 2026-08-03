@@ -6,7 +6,7 @@ from mesa.visualization.ModularVisualization import VisualizationElement
 
 # imported as a module rather than with 'from config import *', so that every setting is looked up when it
 # is used. A star import copies the values into this module's namespace, which is why a runner overriding a
-# constant (see headless.py) used to have to reach into every module that had copied it. Reading through
+# constant (see sim/cli/) used to have to reach into every module that had copied it. Reading through
 # 'config' leaves one copy to patch, the way the policy package has always done it.
 import config
 

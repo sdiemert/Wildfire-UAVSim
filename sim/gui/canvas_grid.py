@@ -4,11 +4,16 @@ Modular Canvas Rendering
 
 Module for visualizing model objects in grid cells.
 """
-from sim.agents import UAV
-from config import UAV_OBSERVATION_COLOR, UAV_OBSERVATION_RADIUS
 from collections import defaultdict
 
 from mesa.visualization.ModularVisualization import VisualizationElement
+
+# imported as a module rather than with 'from config import ...', so that every setting is looked up when
+# it is used. Naming the constants copies their values into this module's namespace, and a run that
+# overrode one of them would go on being drawn with the value this file was imported with.
+import config
+
+from sim.agents import UAV
 
 
 class CanvasGrid(VisualizationElement):
@@ -109,7 +114,7 @@ class CanvasGrid(VisualizationElement):
                         # be set to 0.
                         grid_state[portrayal["Layer"]].append(portrayal)
                         if type(obj) is UAV:
-                            limit = UAV_OBSERVATION_RADIUS + 1
+                            limit = config.UAV_OBSERVATION_RADIUS + 1
                             for i in range (- limit, limit + 1):
                                 for j in range (- limit, limit + 1):
                                     if i == -limit or i == limit or j == -limit or j == limit:
@@ -120,8 +125,8 @@ class CanvasGrid(VisualizationElement):
                                             # the UAV itself is outlined to keep it visible over dark
                                             # ground; the marks of its observation window are thin bars
                                             # that would only be blurred by an outline of another colour
-                                            portrayal_aux["Color"] = UAV_OBSERVATION_COLOR
-                                            portrayal_aux["stroke_color"] = UAV_OBSERVATION_COLOR
+                                            portrayal_aux["Color"] = config.UAV_OBSERVATION_COLOR
+                                            portrayal_aux["stroke_color"] = config.UAV_OBSERVATION_COLOR
                                             if i == -limit or i == limit:
                                                 portrayal_aux["h"] = "1"
                                                 portrayal_aux["w"] = "0.2"
