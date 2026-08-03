@@ -21,6 +21,8 @@ import pytest
 import config
 import fire_spread
 
+from sim import formulas
+
 
 TOLERANCE = 1e-12
 
@@ -91,7 +93,7 @@ def test_kernel_matches_distance_rate_without_wind(radius):
                 # distance_rate() is not defined there: it divides by a distance of zero
                 assert kernel[radius, radius] == 0
                 continue
-            weight = config.distance_rate((0, 0), (dx, dy), radius)
+            weight = formulas.distance_rate((0, 0), (dx, dy), radius)
             entry = kernel[dx + radius, dy + radius]
             if weight <= 0:
                 assert entry == 0, f"offset {(dx, dy)} should not contribute"
@@ -116,7 +118,7 @@ def test_kernel_matches_apply_wind(direction, sim_config):
         for dy in range(-radius, radius + 1):
             if dx == 0 and dy == 0:
                 continue  # see the note in the test above: the centre is never a neighbour
-            weight = config.distance_rate((0, 0), (dx, dy), radius)
+            weight = formulas.distance_rate((0, 0), (dx, dy), radius)
             if weight <= 0:
                 assert kernel[dx + radius, dy + radius] == 0
                 continue

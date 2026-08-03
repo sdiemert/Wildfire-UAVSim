@@ -13,6 +13,8 @@ from sim.policy import Observation
 # 'config' leaves one copy to patch, the way the policy package has always done it.
 import config
 
+from sim import formulas
+
 
 # Class Fire holds methods for managing Fire agents
 class Fire(mesa.Agent):
@@ -92,7 +94,7 @@ class Fire(mesa.Agent):
                     if type(agent) is Fire:
                         adjacent_burning = 1 if agent.is_burning() else 0
                         # calculates partial probability of burning cell s (self.pos), being influenced by adjacent (s')
-                        aux_prob = config.distance_rate(self.pos, adjacent, self.radius) * adjacent_burning
+                        aux_prob = formulas.distance_rate(self.pos, adjacent, self.radius) * adjacent_burning
                         # in this if statement, the wind logic occurs, by biasing the burning cell probability
                         if config.ACTIVATE_WIND and (adjacent_burning == 1):
                             # applies wind to the partial probability
@@ -298,7 +300,7 @@ class UAV(mesa.Agent):
     # while a collision can be made to cost less than a certain point. Returns the points lost, which is
     # zero for a roll that did no harm as well as for a UAV that was already down.
     def take_collision_damage(self):
-        return self.take_damage(config.roll_collision_damage())
+        return self.take_damage(formulas.roll_collision_damage())
 
     # checks whether this UAV has run dry | always False when the fuel extension is switched off, so that
     # nothing downstream has to test the flag itself. WildFireModel.resolve_fuel() is what acts on it.
@@ -316,7 +318,7 @@ class UAV(mesa.Agent):
         if not config.ACTIVATE_FUEL:
             return 0.0
 
-        burned = min(self.fuel, config.fuel_burn_cost(cells_moved, at_base=self.model.at_base(self.pos)))
+        burned = min(self.fuel, formulas.fuel_burn_cost(cells_moved, at_base=self.model.at_base(self.pos)))
         self.fuel -= burned
         self.model.log.debug("UAV %d burned %.2f fuel over %d cell(s), %.2f left",
                              self.unique_id, burned, cells_moved, self.fuel)
@@ -348,7 +350,7 @@ class UAV(mesa.Agent):
             self.pos, moore=self.moore, include_center=True, radius=config.WATER_DROP_RADIUS
         )
         for cell in affected_cells:
-            probability = config.extinguish_probability(self.pos, cell)
+            probability = formulas.extinguish_probability(self.pos, cell)
             if config.SYSTEM_RANDOM.random() >= probability:
                 continue
             for agent in self.model.grid.get_cell_list_contents([cell]):

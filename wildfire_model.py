@@ -11,6 +11,8 @@ import agents
 import config
 import fire_spread
 
+from sim import formulas
+
 # imported by name because 'policy' is also the name of the constructor argument and attribute below,
 # which would shadow the module
 from sim.policy import Action, RandomPolicy, build_policy
@@ -411,7 +413,7 @@ class WildFireModel(mesa.Model):
         for uav, aux_state in zip(flying, state):
             # normalized reward amount for this UAV state, added to the score of its place in the team.
             # self.team_slot maps the UAV to that place directly, rather than scanning the team for it
-            reward = config.normalize(float(sum(aux_state)), config.N_OBSERVATIONS, 1, 0)
+            reward = formulas.normalize(float(sum(aux_state)), config.N_OBSERVATIONS, 1, 0)
             self.MR1_LIST[self.team_slot[uav.unique_id]] += reward
 
     # this method obtains collision risk avoidance metric (MR2) for time step t. It counts the pairs of

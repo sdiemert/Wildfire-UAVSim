@@ -22,6 +22,8 @@ from sim.policy import POLICIES, RandomPolicy
 # 'config' leaves one copy to patch, the way the policy package has always done it.
 import config
 
+from sim import formulas
+
 
 # creates agent dictionary for rendering it on Canvas Gird from Mesa framework
 def agent_portrayal(agent):
@@ -54,12 +56,12 @@ def agent_portrayal(agent):
                 portrayal.update({"Color": config.SMOKE_COLORS[0], "Layer": 0})
             else:
                 if agent.is_burning():  # showing fire
-                    idx = config.normalize_fuel_values(agent.get_fuel(), config.FUEL_UPPER_LIMIT)
+                    idx = formulas.normalize_fuel_values(agent.get_fuel(), config.FUEL_UPPER_LIMIT)
                     portrayal.update({"Color": config.FIRE_COLORS[idx], "Layer": 0})
                 elif config.ACTIVATE_FIREFIGHTING and agent.is_immune():  # showing a cell just hit by water
                     portrayal.update({"Color": config.EXTINGUISHED_COLOR, "Layer": 0})
                 else:  # showing vegetation
-                    idx = config.normalize_fuel_values(agent.get_fuel(), config.FUEL_UPPER_LIMIT)
+                    idx = formulas.normalize_fuel_values(agent.get_fuel(), config.FUEL_UPPER_LIMIT)
                     portrayal.update({"Color": config.VEGETATION_COLORS[idx], "Layer": 0})
         elif type(agent) is agents.UAV:  # showing UAV, above the base so that it stays visible over it
             # every UAV is drawn in the same near black, whatever it is carrying, because that is what

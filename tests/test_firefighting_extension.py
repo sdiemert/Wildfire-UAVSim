@@ -13,6 +13,8 @@ import pytest
 import agents
 import config
 
+from sim import formulas
+
 
 # --- helpers ----------------------------------------------------------------
 
@@ -161,7 +163,7 @@ def test_dumping_water_reaches_the_configured_radius(make_model):
     # the drop covers a disc, not the square Moore neighbourhood: a cell is only reached when its Euclidean
     # distance is within WATER_DROP_RADIUS, so the corners of the square are left burning
     for cell in model.grid.get_neighborhood(uav.pos, moore=True, include_center=True, radius=3):
-        distance = config.euclidean_distance(uav.pos[0], uav.pos[1], cell[0], cell[1])
+        distance = formulas.euclidean_distance(uav.pos[0], uav.pos[1], cell[0], cell[1])
         within_radius = distance <= config.WATER_DROP_RADIUS
         assert fire_at(model, cell).is_burning() is not within_radius, (cell, distance)
 
@@ -178,9 +180,9 @@ def test_an_empty_uav_cannot_dump(make_model):
 
 
 def test_dump_probability_falls_off_with_distance():
-    config_centre = config.extinguish_probability((5, 5), (5, 5))
-    edge = config.extinguish_probability((5, 5), (5, 5 + config.WATER_DROP_RADIUS))
-    beyond = config.extinguish_probability((5, 5), (5, 5 + config.WATER_DROP_RADIUS + 1))
+    config_centre = formulas.extinguish_probability((5, 5), (5, 5))
+    edge = formulas.extinguish_probability((5, 5), (5, 5 + config.WATER_DROP_RADIUS))
+    beyond = formulas.extinguish_probability((5, 5), (5, 5 + config.WATER_DROP_RADIUS + 1))
 
     assert config_centre == pytest.approx(config.WATER_EXTINGUISH_PROB_CENTRE)
     assert edge == pytest.approx(config.WATER_EXTINGUISH_PROB_EDGE)

@@ -24,6 +24,8 @@ import pytest
 
 import config
 
+from sim import formulas
+
 from config import ACTION_LEFT, ACTION_RIGHT, ACTION_STAY
 
 from sim.policy import Action, Policy
@@ -172,20 +174,20 @@ def test_uavs_that_only_pass_close_to_each_other_do_not_collide(fleet):
 def test_the_default_mean_always_costs_a_full_health_point(seed_rng, sim_config):
     sim_config(UAV_COLLISION_DAMAGE_MEAN=1.0)
     seed_rng(0)
-    assert [config.roll_collision_damage() for _ in range(200)] == [1] * 200
+    assert [formulas.roll_collision_damage() for _ in range(200)] == [1] * 200
 
 
 def test_a_mean_of_zero_never_costs_anything(seed_rng, sim_config):
     sim_config(UAV_COLLISION_DAMAGE_MEAN=0.0)
     seed_rng(0)
-    assert [config.roll_collision_damage() for _ in range(200)] == [0] * 200
+    assert [formulas.roll_collision_damage() for _ in range(200)] == [0] * 200
 
 
 @pytest.mark.parametrize("mean", (0.0, 0.25, 0.5, 0.75, 1.0))
 def test_a_roll_is_always_a_whole_health_point_or_nothing(mean, seed_rng, sim_config):
     sim_config(UAV_COLLISION_DAMAGE_MEAN=mean)
     seed_rng(1)
-    assert set(config.roll_collision_damage() for _ in range(500)) <= {0, 1}
+    assert set(formulas.roll_collision_damage() for _ in range(500)) <= {0, 1}
 
 
 @pytest.mark.parametrize("mean", (0.2, 0.5, 0.8))
@@ -193,7 +195,7 @@ def test_the_damage_averages_out_at_the_configured_mean(mean, seed_rng, sim_conf
     sim_config(UAV_COLLISION_DAMAGE_MEAN=mean)
     seed_rng(7)
 
-    rolls = [config.roll_collision_damage() for _ in range(4000)]
+    rolls = [formulas.roll_collision_damage() for _ in range(4000)]
 
     # 4000 draws put the standard error of the mean at under 0.01, so 0.05 is a wide margin
     assert abs(sum(rolls) / len(rolls) - mean) < 0.05
@@ -203,7 +205,7 @@ def test_the_damage_averages_out_at_the_configured_mean(mean, seed_rng, sim_conf
 def test_a_mean_outside_the_unit_interval_is_clamped(mean, expected, seed_rng, sim_config):
     sim_config(UAV_COLLISION_DAMAGE_MEAN=mean)
     seed_rng(2)
-    assert [config.roll_collision_damage() for _ in range(100)] == [expected] * 100
+    assert [formulas.roll_collision_damage() for _ in range(100)] == [expected] * 100
 
 
 def test_a_collision_that_rolls_no_damage_still_counts_as_a_collision(fleet):
