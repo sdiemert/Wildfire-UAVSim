@@ -97,8 +97,10 @@ def test_the_base_burns_when_any_footprint_cell_burns(make_model):
 
 
 def test_a_uav_refills_anywhere_on_the_footprint(make_model):
-    model = make_model(ACTIVATE_FIREFIGHTING=True, BASE_POSITION=(2, 2), BASE_SIZE=(2, 2),
-                       NUM_AGENTS=1, NUM_OUT_BUILDINGS=0, BASE_REFILL_STEPS=1)
+    # fuel off, so that the visit lasts BASE_REFILL_STEPS: with the extension on a visit takes
+    # max(BASE_REFILL_STEPS, BASE_REFUEL_STEPS), and water and fuel are taken on together
+    model = make_model(ACTIVATE_FIREFIGHTING=True, ACTIVATE_FUEL=False, BASE_POSITION=(2, 2),
+                       BASE_SIZE=(2, 2), NUM_AGENTS=1, NUM_OUT_BUILDINGS=0, BASE_REFILL_STEPS=1)
     uav = uavs_of(model)[0]
     uav.water = 0
     model.grid.move_agent(uav, (3, 3))  # a corner of the base, not the anchor
@@ -284,9 +286,10 @@ def test_the_base_survives_while_it_is_not_burning(make_model):
 
 
 def test_only_one_uav_refills_at_a_time(make_model):
-    # three UAVs start stacked on the base, all empty, and compete for the single refilling slot
-    model = make_model(ACTIVATE_FIREFIGHTING=True, BASE_POSITION=(2, 2), NUM_AGENTS=3,
-                       NUM_OUT_BUILDINGS=0, BASE_REFILL_STEPS=1, BASE_CAPACITY=1)
+    # three UAVs start stacked on the base, all empty, and compete for the single refilling slot.
+    # Fuel is off so that one serve() call is a whole visit, see the footprint test above.
+    model = make_model(ACTIVATE_FIREFIGHTING=True, ACTIVATE_FUEL=False, BASE_POSITION=(2, 2),
+                       NUM_AGENTS=3, NUM_OUT_BUILDINGS=0, BASE_REFILL_STEPS=1, BASE_CAPACITY=1)
     crew = uavs_of(model)
     for uav in crew:
         uav.water = 0
