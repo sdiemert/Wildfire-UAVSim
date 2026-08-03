@@ -167,7 +167,7 @@ MU = 0.5
 
 # ### `SMOKE_PRE_DISPELLING_COUNTER` -- steps between a cell catching fire and its smoke appearing.
 # The smoke then lasts for the cell's initial fuel, set as `self.dispelling_counter_start_value` in
-# `Smoke.__init__()` in `agents.py`. Keep the sum of the two above `FUEL_UPPER_LIMIT`, or the smoke
+# `Smoke.__init__()` in `sim/environment.py`. Keep the sum of the two above `FUEL_UPPER_LIMIT`, or the smoke
 # clears before the cell has finished burning.
 # **Bounds:** integer `>= 0`, where `0` raises smoke the moment the cell ignites.
 SMOKE_PRE_DISPELLING_COUNTER = 2
@@ -422,7 +422,7 @@ UAV_COLOR = "#111827"  # near black, the darkest thing on the map
 # hairline drawn around a UAV, so that it keeps an edge over the base and over burnt ground, which are the
 # only two things on the map anywhere near as dark as it is
 UAV_OUTLINE_COLOR = "#f8fafc"
-# the square marking what a UAV can see, drawn in Canvas_Grid_Visualization.py. It is deliberately lighter
+# the square marking what a UAV can see, drawn in sim/gui/canvas_grid.py. It is deliberately lighter
 # than UAV_COLOR: with a team of any size these squares cover much of the map, and drawn as dark as the
 # UAVs themselves they hide the very things they are meant to be drawn around.
 UAV_OBSERVATION_COLOR = "#64748b"

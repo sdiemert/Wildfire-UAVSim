@@ -111,8 +111,9 @@ def uav_speed():
     """Set config.UAV_SPEED for one test, restored afterwards.
 
     Policies read config.UAV_SPEED when they run, so patching the attribute here is enough to pin how far
-    they ask a UAV to fly. UAV.move() reads the constant star-imported into agents.py instead, so tests
-    about the movement itself go through sim_config.
+    they ask a UAV to fly. It is the narrow form of sim_config, for the policy tests, which have no grid
+    and no model to configure; tests about the movement itself go through sim_config with the rest of the
+    settings a model needs.
     """
     original = config.UAV_SPEED
 
