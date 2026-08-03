@@ -229,7 +229,7 @@ N_OBSERVATIONS = side * side
 # flying anywhere, and it is not what decides whether two UAVs collided -- that is a matter of sharing a
 # cell, see `UAV_HP` below.
 # **Bounds:** number `>= 0`. `0` never scores; more than the grid diagonal scores every pair every step.
-SECURITY_DISTANCE = 10
+SECURITY_DISTANCE = 2
 
 # ### `UAV_HP` -- health points each UAV starts the run with.
 # Two or more UAVs that end a step on the same cell have collided, and each of them rolls for damage; a

@@ -89,14 +89,25 @@ class RunResult:
     water_drops: int = 0
     cells_extinguished: int = 0
     refills: int = 0
+    # out buildings destroyed, of the ones that were placed; buildings_total is 0 when none were configured
     buildings_lost: int = 0
+    buildings_total: int = 0
     base_burning_steps: int = 0
+    # whether the run had a base to lose at all, which is what makes 'lost' meaningful
+    firefighting: bool = False
     lost: bool = False
     error: str | None = None
 
     @property
     def ok(self) -> bool:
         return self.error is None
+
+    @property
+    def outcome(self) -> str:
+        """WON or LOST, or N/A for a run with no home base to lose."""
+        if not self.firefighting:
+            return "N/A"
+        return "LOST" if self.lost else "WON"
 
 
 # ---------------------------------------------------------------------------
@@ -256,10 +267,13 @@ def run_simulation(config: RunConfig) -> RunResult:
 
             steps_completed = step
 
-            # the model clears 'running' when it reaches its own BATCH_SIZE; this
-            # loop normally stops first, so it only matters for --steps > BATCH_SIZE
+            # the model clears 'running' when it reaches its own BATCH_SIZE, and when the home
+            # base is destroyed. The BATCH_SIZE case normally does not arise, because this loop
+            # stops first unless --steps is larger than it.
             if not model.running:
-                log.info("model stopped itself at step %d (BATCH_SIZE reached)", step)
+                # a lost run has already logged why it stopped, and reports it again below
+                if not model.lost:
+                    log.info("model stopped itself at step %d (BATCH_SIZE reached)", step)
                 break
 
             if config.log_every and step % config.log_every == 0:
@@ -297,7 +311,9 @@ def run_simulation(config: RunConfig) -> RunResult:
             cells_extinguished=model.cells_extinguished,
             refills=model.refills,
             buildings_lost=model.buildings_lost,
+            buildings_total=len(model.out_buildings),
             base_burning_steps=model.base.burning_steps if model.base is not None else 0,
+            firefighting=cfg.ACTIVATE_FIREFIGHTING,
             lost=model.lost,
         )
         log.info(
@@ -321,11 +337,16 @@ def run_simulation(config: RunConfig) -> RunResult:
             )
         if cfg.ACTIVATE_FIREFIGHTING:
             log.info(
-                "firefighting | drops=%d extinguished=%d refills=%d buildings_lost=%d/%d base=%d/%d%s",
+                "firefighting | drops=%d extinguished=%d refills=%d%s",
                 result.water_drops, result.cells_extinguished, result.refills,
-                result.buildings_lost, len(model.out_buildings),
-                result.base_burning_steps, cfg.BHP,
-                " | RUN LOST" if result.lost else "",
+                # out buildings are optional within the extension, so they are only mentioned
+                # when NUM_OUT_BUILDINGS actually put some on the map
+                f" | out buildings destroyed={result.buildings_lost}/{result.buildings_total}"
+                if result.buildings_total else "",
+            )
+            log.info(
+                "RUN %s | home base burned %d/%d step(s)",
+                result.outcome, result.base_burning_steps, cfg.BHP,
             )
         return result
 
@@ -477,6 +498,21 @@ def log_summary(results: list[RunResult], elapsed: float, log: logging.Logger) -
                  _mean([result.wall_time_s for result in ok]),
                  sum(result.wall_time_s for result in ok))
 
+        # win/lose only exists with the firefighting extension, since it is the home base that is lost
+        scored = [result for result in ok if result.firefighting]
+        if scored:
+            lost_runs = [result for result in scored if result.lost]
+            log.info("outcome     : %d WON, %d LOST of %d run(s) | lost proportion=%.1f%%",
+                     len(scored) - len(lost_runs), len(lost_runs), len(scored),
+                     100.0 * len(lost_runs) / len(scored))
+            # only reported when out buildings were configured, NUM_OUT_BUILDINGS defaults to 0
+            with_buildings = [result for result in scored if result.buildings_total]
+            if with_buildings:
+                destroyed = [result.buildings_lost for result in with_buildings]
+                placed = max(result.buildings_total for result in with_buildings)
+                log.info("out buildings destroyed: mean=%.2f min=%d max=%d of %d placed",
+                         _mean(destroyed), min(destroyed), max(destroyed), placed)
+
     for result in failed:
         log.error("run %d failed: %s", result.run_id, result.error)
     log.info("=" * 62)
@@ -602,8 +638,11 @@ def main(argv: list[str] | None = None) -> int:
     log_summary(results, elapsed, log)
 
     if args.output:
+        # outcome is a property, so asdict() misses it; it is written out because it is what a
+        # reader of the results wants, rather than having to combine 'firefighting' and 'lost'
+        payload = [{**asdict(result), "outcome": result.outcome} for result in results]
         with open(args.output, "w") as handle:
-            json.dump([asdict(result) for result in results], handle, indent=2)
+            json.dump(payload, handle, indent=2)
         log.info("results written to %s", args.output)
 
     return 1 if any(not result.ok for result in results) else 0

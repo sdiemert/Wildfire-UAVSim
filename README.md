@@ -497,6 +497,18 @@ Out buildings are never placed on the home base, and if more are asked for than 
 
 The `firefighter` policy in `policy/firefighter.py` is written for this extension: it carries water to the fire, prefers fires that threaten an out building, dumps its load once in range, and flies back to the base to refill. It also keeps its team apart, sending no two UAVs to the same fire or through the same cell, so that it does not destroy its own fleet in collisions. The other policies still run with the extension switched on, but never dump water, since `ACTION_DUMP_WATER` sits outside `N_ACTIONS` and is only emitted by policies that opt in; `random` and `follow-fire` take no care to avoid each other either, so they lose UAVs to collisions.
 
+Because this extension is what gives a run something to lose, `headless.py` reports every run as **WON** or **LOST** while it is switched on, and the batch summary gives the share of runs that were lost:
+
+```
+firefighting | drops=12 extinguished=31 refills=4 | out buildings destroyed=1/6
+RUN LOST | home base burned 5/5 step(s)
+...
+outcome     : 3 WON, 1 LOST of 4 run(s) | lost proportion=25.0%
+out buildings destroyed: mean=1.00 min=0 max=3 of 6 placed
+```
+
+The out building figures only appear when `NUM_OUT_BUILDINGS` actually placed some, and the outcome lines only when `ACTIVATE_FIREFIGHTING` is on, since without a home base there is nothing to lose. The results record `lost`, `buildings_lost`, `buildings_total` and `base_burning_steps` per run, plus `outcome` as the `WON`/`LOST`/`N/A` string.
+
 To try it from the command line, without editing `config.py`:
 
 ```bash
