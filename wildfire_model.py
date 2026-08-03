@@ -51,7 +51,9 @@ class WildFireModel(mesa.Model):
         self.NUM_AGENTS = NUM_AGENTS
         print(self.NUM_AGENTS)
 
-        self.MR1_LIST = [0.0 for i in range(0, self.NUM_AGENTS)]
+        # the monitoring scores themselves are set up by reset(), so that restarting a run in place clears
+        # them rather than carrying the previous run's totals forward
+        self.MR1_LIST = []
         self.MR2_VALUE = 0
 
         self.reset()
@@ -68,6 +70,11 @@ class WildFireModel(mesa.Model):
         # Mesa's visualization server stops asking for steps once this turns False, and sets it back to True
         # itself when the model is reinstantiated by the Reset button
         self.running = True
+
+        # the monitoring metrics belong to one run, so they start again from nothing here. MR1_LIST is
+        # indexed by place in the team, which is why it is sized from the team rather than appended to.
+        self.MR1_LIST = [0.0 for _ in range(0, self.NUM_AGENTS)]
+        self.MR2_VALUE = 0
 
         self.unique_agents_id = 0
         # Inverted width and height order, because of matrix accessing purposes, like in many examples:
@@ -518,7 +525,9 @@ class WildFireModel(mesa.Model):
         # Otherwise, keep executing. Stopping is signalled through the Mesa 'running' flag rather than
         # sys.exit(), so that the visualization server survives the end of a run and the Reset button can
         # start a new one.
-        if BATCH_SIZE == self.evaluation_timesteps_counter - 1:
+        # evaluation_timesteps_counter is incremented once per simulated step below, so reaching BATCH_SIZE
+        # means exactly BATCH_SIZE steps have been taken and this call has nothing left to do
+        if self.evaluation_timesteps_counter >= BATCH_SIZE:
             self.log.info(" --- MR1 --- ")
             self.log.info("%s", self.MR1_LIST)
             self.log.info(" --- MR2 --- ")

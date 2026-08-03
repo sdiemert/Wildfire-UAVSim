@@ -276,7 +276,12 @@ ACTIVATE_FUEL = True
 # and cruising three cells a step costs about 6.2, so a 150 unit tank is either 150 steps of loitering or
 # about 24 steps of cruising. Size it against `BATCH_SIZE` and the number of sorties a run should allow.
 # **Bounds:** number `> 0`. A very large value studies a fleet that never runs dry.
-UAV_FUEL = 50
+#
+# Note that a tank only lasts a run if the policy flying it ever goes home to refuel. `firefighter` does,
+# because it reads `Observation.low_fuel()`, and comes back with fuel to spare; `random` and `follow-fire`
+# do not, so they drain any tank and lose the whole fleet part way through the run, whatever this is set
+# to. That is a property of those baselines rather than of the size of the tank.
+UAV_FUEL = 150
 
 # ### `UAV_FUEL_IDLE_BURN` -- fuel burned per step spent airborne, whatever the UAV did.
 # Charged for holding position and for dumping water as well as for flying, so staying up costs
