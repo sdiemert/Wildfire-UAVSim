@@ -59,35 +59,25 @@ def observation():
 def sim_config():
     """Override simulation constants for one test, restored afterwards.
 
-    `from config import *` copies the bindings into agents.py and wildfire_model.py, so a constant has to be
-    patched in each of them. Policies read `config.` at call time and need no patching.
+    Every module reads its settings through `config.` at the point of use, so setting them here reaches
+    the whole simulation, policies included.
 
     Usage:
         sim_config(ACTIVATE_FIREFIGHTING=True, WIDTH=9, HEIGHT=9)
     """
-    import matplotlib
-
-    matplotlib.use("Agg", force=True)  # the model calls plt.ion() on construction
-
-    import agents
-    import wildfire_model
-
-    modules = (config, agents, wildfire_model)
     saved = []
 
     def _set(**overrides):
         for name, value in overrides.items():
             if not hasattr(config, name):
                 raise KeyError(f"unknown simulation constant: {name}")
-            for module in modules:
-                if hasattr(module, name):
-                    saved.append((module, name, getattr(module, name)))
-                    setattr(module, name, value)
+            saved.append((name, getattr(config, name)))
+            setattr(config, name, value)
 
     yield _set
 
-    for module, name, value in reversed(saved):
-        setattr(module, name, value)
+    for name, value in reversed(saved):
+        setattr(config, name, value)
 
 
 @pytest.fixture

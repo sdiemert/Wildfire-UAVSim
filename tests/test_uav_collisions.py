@@ -22,7 +22,6 @@ import pytest
 
 # own python modules
 
-import agents
 import config
 
 from config import ACTION_LEFT, ACTION_RIGHT, ACTION_STAY

@@ -116,16 +116,12 @@ class RunResult:
 
 
 def _import_simulation():
-    """Import the simulation modules with a non-interactive matplotlib backend.
+    """Import the simulation modules.
 
-    WildFireModel.__init__ calls plt.ion(), which would try to open a GUI window
-    (and is not safe off the main thread), so the backend is forced to Agg
-    before the model module is imported.
+    Returned as a tuple so that apply_overrides() and seed_simulation() can walk
+    them. The simulation itself is headless: nothing in it imports matplotlib,
+    so there is no GUI backend to force here.
     """
-    import matplotlib
-
-    matplotlib.use("Agg", force=True)
-
     import agents
     import config as cfg
     import policy
@@ -135,34 +131,27 @@ def _import_simulation():
 
 
 def apply_overrides(overrides: dict[str, Any]) -> None:
-    """Override simulation constants across every module that star-imported them.
+    """Override simulation constants.
 
-    `from config import *` copies the bindings into each module's
-    own namespace, so patching only config would have no effect
-    on wildfire_model or agents. The policy package deliberately reads
-    through `config.` instead, so it needs no patching.
+    Every module reads its settings through `config.` at the point of use, so
+    setting them on config alone reaches the whole simulation. (This used to
+    have to walk every module: `from config import *` had copied the values
+    into each of their namespaces, and patching config reached none of them.)
     """
     if not overrides:
         return
 
-    modules = _import_simulation()
-    cfg = modules[0]
+    cfg = _import_simulation()[0]
 
     for name, value in overrides.items():
         if not hasattr(cfg, name):
             raise KeyError(f"unknown simulation constant: {name}")
-        for module in modules:
-            if hasattr(module, name):
-                setattr(module, name, value)
+        setattr(cfg, name, value)
 
     # derived constants that would otherwise keep their original values
     if "UAV_OBSERVATION_RADIUS" in overrides:
-        side = (overrides["UAV_OBSERVATION_RADIUS"] * 2) + 1
-        for module in modules:
-            if hasattr(module, "side"):
-                setattr(module, "side", side)
-            if hasattr(module, "N_OBSERVATIONS"):
-                setattr(module, "N_OBSERVATIONS", side * side)
+        cfg.side = (overrides["UAV_OBSERVATION_RADIUS"] * 2) + 1
+        cfg.N_OBSERVATIONS = cfg.side * cfg.side
 
     # the overrides are checked together with everything they did not touch, so that a combination which
     # is only invalid once applied (say NUM_AGENTS raised above WIDTH * HEIGHT) is caught here, before any
@@ -176,19 +165,15 @@ def seed_simulation(seed: int) -> None:
     Everything stochastic in the simulation draws from SYSTEM_RANDOM: cell fuel,
     tree placement, the fire spread rolls, UAV actions and policy tie breaks.
     It is a random.SystemRandom instance, which cannot be seeded, so it is
-    replaced by a seeded random.Random -- in every module that star-imported it.
-    Policies read config.SYSTEM_RANDOM at call time, so patching config reaches
-    them without the package having to be walked.
+    replaced by a seeded random.Random. Every module reads config.SYSTEM_RANDOM
+    at the point of use, so setting it on config reaches all of them.
 
     The `random` module is seeded as well. Nothing in the simulation draws from
     it any more, but mesa.Model builds its own random.Random from it, so seeding
     keeps anything reached through mesa reproducible too.
     """
     random.seed(seed)
-    seeded = random.Random(seed)
-    for module in _import_simulation():
-        if hasattr(module, "SYSTEM_RANDOM"):
-            setattr(module, "SYSTEM_RANDOM", seeded)
+    _import_simulation()[0].SYSTEM_RANDOM = random.Random(seed)
 
 
 class _LogWriter:

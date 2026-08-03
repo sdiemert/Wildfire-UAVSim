@@ -4,9 +4,11 @@ from mesa.visualization.ModularVisualization import VisualizationElement
 
 # own python modules
 
-import agents
-
-from config import *
+# imported as a module rather than with 'from config import *', so that every setting is looked up when it
+# is used. A star import copies the values into this module's namespace, which is why a runner overriding a
+# constant (see headless.py) used to have to reach into every module that had copied it. Reading through
+# 'config' leaves one copy to patch, the way the policy package has always done it.
+import config
 
 
 # Class StatusSidebar renders a live status panel in the sidebar of the web page, next to the grid.
@@ -40,7 +42,7 @@ class StatusSidebar(VisualizationElement):
     # builds the whole panel for the current state of the model
     def render(self, model):
         sections = [self.styles(), self.metrics(model)]
-        if ACTIVATE_FIREFIGHTING:
+        if config.ACTIVATE_FIREFIGHTING:
             sections.append(self.out_buildings(model))
         else:
             sections.append(self.note("Firefighting off: see ACTIVATE_FIREFIGHTING in config.py"))
@@ -116,7 +118,7 @@ class StatusSidebar(VisualizationElement):
         cells = [self.cell("MR1", f"{mr1_total:.3f}")]
         # MR2 counts how often UAVs flew closer to each other than SECURITY_DISTANCE, which is a risk
         # heuristic; the collisions beside it are the UAVs that actually shared a cell and paid for it
-        cells.append(self.cell(f"MR2 &lt;{SECURITY_DISTANCE}", model.MR2_VALUE))
+        cells.append(self.cell(f"MR2 &lt;{config.SECURITY_DISTANCE}", model.MR2_VALUE))
         cells.append(self.cell("Collisions", model.collisions,
                                "value crit" if model.collisions else "value"))
         # the ignition can be randomised in config.py, so it is shown here: without it a run that has not
@@ -126,7 +128,7 @@ class StatusSidebar(VisualizationElement):
         else:
             countdown = model.fire_start_step - model.evaluation_timesteps_counter
             cells.append(self.cell("Fire in", f"{countdown} step(s)", "value muted"))
-        if ACTIVATE_FIREFIGHTING:
+        if config.ACTIVATE_FIREFIGHTING:
             cells.extend(self.base_cells(model))
         return self.heading("Status", f"step {model.evaluation_timesteps_counter}") + self.grid(cells)
 
@@ -135,8 +137,8 @@ class StatusSidebar(VisualizationElement):
         if model.base is None:
             return [self.cell("Base", "none", "value muted")]
 
-        remaining = max(0, BHP - model.base.burning_steps)
-        cells = [self.cell("Base", f"{remaining} / {BHP}", self.health_class(remaining, BHP))]
+        remaining = max(0, config.BHP - model.base.burning_steps)
+        cells = [self.cell("Base", f"{remaining} / {config.BHP}", self.health_class(remaining, config.BHP))]
         if model.lost:
             cells.append(self.cell("&nbsp;", "LOST", "value crit"))
         elif model.base.is_burning():
@@ -160,15 +162,15 @@ class StatusSidebar(VisualizationElement):
 
         html.append('<div class="scroll">')
         for building in damaged:
-            remaining = max(0, OUT_BUILDING_HP - building.burning_steps)
+            remaining = max(0, config.OUT_BUILDING_HP - building.burning_steps)
             html.append('<div class="unit">')
             html.append(f'<span class="who">{building.pos}'
                         f'{" &#128293;" if building.is_burning() else ""}</span>')
             if building.destroyed:
                 html.append('<span class="num crit">destroyed</span>')
             else:
-                html.append(f'<span class="{self.health_class(remaining, OUT_BUILDING_HP)}">'
-                            f'{remaining}/{OUT_BUILDING_HP}</span>')
+                html.append(f'<span class="{self.health_class(remaining, config.OUT_BUILDING_HP)}">'
+                            f'{remaining}/{config.OUT_BUILDING_HP}</span>')
             html.append("</div>")
         html.append("</div>")
         return "".join(html)
@@ -195,14 +197,14 @@ class StatusSidebar(VisualizationElement):
                             f'<span class="num crit">destroyed</span>')
             else:
                 html.append(f'<span class="who">{index} {uav.pos}</span>')
-                html.append(f'<span class="{self.health_class(uav.hp, UAV_HP)}">'
-                            f'{uav.hp}/{UAV_HP}</span>')
-                if ACTIVATE_FUEL:
+                html.append(f'<span class="{self.health_class(uav.hp, config.UAV_HP)}">'
+                            f'{uav.hp}/{config.UAV_HP}</span>')
+                if config.ACTIVATE_FUEL:
                     # the tank, coloured like the health above, so a UAV running low is as easy to spot
                     # as a damaged one. Shown whole: the fractions it burns are not worth the width.
-                    html.append(f'<span class="{self.health_class(uav.fuel, UAV_FUEL)}">'
+                    html.append(f'<span class="{self.health_class(uav.fuel, config.UAV_FUEL)}">'
                                 f'&#9981;{uav.fuel:.0f}</span>')
-                if ACTIVATE_FIREFIGHTING:
+                if config.ACTIVATE_FIREFIGHTING:
                     # the water is a load count, so it is shown as a drop that is either lit or greyed out
                     water = f"&#128167;{uav.water}" if uav.has_water() else "&#128167;&ndash;"
                     html.append(f'<span class="num{"" if uav.has_water() else " muted"}">{water}</span>')

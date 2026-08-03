@@ -1,8 +1,8 @@
 # python libraries
 
+import itertools
 import logging
 import mesa
-import matplotlib.pyplot as plt
 import numpy
 
 # own python modules
@@ -15,8 +15,6 @@ import fire_spread
 # which would shadow the module
 from policy import Action, RandomPolicy, build_policy
 
-from config import *
-
 
 # class WildFireModel holds methods for managing the main logic of the grid, such as the main execution loop,
 # setting agents, methods for checking the state of the grid, etc
@@ -26,8 +24,6 @@ class WildFireModel(mesa.Model):
     # are attributed to the simulation they came from. When it isn't given, messages go to the shared
     # "wildfire.model" logger, which has no handlers unless something configured it, and so stays silent.
     def __init__(self, log=None, policy=None):
-
-        plt.ion()
 
         # the bounds documented in config.py are checked here, before anything is built, so that an out of
         # bounds setting is reported against its own name rather than surfacing as a ZeroDivisionError or
@@ -54,8 +50,7 @@ class WildFireModel(mesa.Model):
         self.unique_agents_id = None
         self.new_direction = None
         self.evaluation_timesteps_counter = None
-        self.NUM_AGENTS = NUM_AGENTS
-        print(self.NUM_AGENTS)
+        self.NUM_AGENTS = config.NUM_AGENTS
 
         # the monitoring scores themselves are set up by reset(), so that restarting a run in place clears
         # them rather than carrying the previous run's totals forward
@@ -86,7 +81,7 @@ class WildFireModel(mesa.Model):
         # Inverted width and height order, because of matrix accessing purposes, like in many examples:
         #   https://snyk.io/advisor/python/Mesa/functions/mesa.space.MultiGrid
         # set some Mesa framework management
-        self.grid = mesa.space.MultiGrid(HEIGHT, WIDTH, False)
+        self.grid = mesa.space.MultiGrid(config.HEIGHT, config.WIDTH, False)
         self.schedule = mesa.time.SimultaneousActivation(self)
         # where and when the wildfire starts. Both are resolved once per run, before the Fire agents are
         # created, because the ignition cell has to exist whatever the tree density decides
@@ -102,10 +97,10 @@ class WildFireModel(mesa.Model):
         self.fire_ys = []
         # burning mask and ignition probabilities of the whole grid, indexed [x, y] to match the
         # Mesa grid positions, whose x runs over HEIGHT (see the MultiGrid call above)
-        self.burning = numpy.zeros((HEIGHT, WIDTH), dtype=bool)
-        self.fire_prob = numpy.zeros((HEIGHT, WIDTH))
+        self.burning = numpy.zeros((config.HEIGHT, config.WIDTH), dtype=bool)
+        self.fire_prob = numpy.zeros((config.HEIGHT, config.WIDTH))
         # rebuilt per reset, so that a runner overriding the wind settings is picked up
-        self.fire_spread = fire_spread.FireSpread(HEIGHT, WIDTH)
+        self.fire_spread = fire_spread.FireSpread(config.HEIGHT, config.WIDTH)
         # set Fire and wind agents (Smoke are created inside Fire agents as well)
         self.set_fire_agents()
         self.fire_xs = numpy.array(self.fire_xs, dtype=int)
@@ -131,7 +126,7 @@ class WildFireModel(mesa.Model):
         self.uavs_lost = 0
         # of the UAVs lost above, how many ran their tanks dry rather than being destroyed in a collision
         self.uavs_out_of_fuel = 0
-        if ACTIVATE_FIREFIGHTING:
+        if config.ACTIVATE_FIREFIGHTING:
             self.set_base()
             self.set_out_buildings()
 
@@ -153,6 +148,10 @@ class WildFireModel(mesa.Model):
             self.uavs.append(aux_UAV)
             self.unique_agents_id += 1
 
+        # unique id -> place in the team, which is the index MR1_LIST is kept by. Built once here rather
+        # than scanning self.uavs for each UAV on every step of every run.
+        self.team_slot = {uav.unique_id: slot for slot, uav in enumerate(self.uavs)}
+
         # set Mesa framework management
         self.datacollector = mesa.DataCollector()
         self.new_direction = [0 for a in range(0, self.NUM_AGENTS)]
@@ -162,17 +161,17 @@ class WildFireModel(mesa.Model):
     # nothing but the configuration and the grid size, so that it can be consulted before the base agent
     # exists: a random ignition cell has to know which cells the base will occupy.
     def base_footprint(self):
-        if not ACTIVATE_FIREFIGHTING:
+        if not config.ACTIVATE_FIREFIGHTING:
             return []
 
-        anchor = tuple(BASE_POSITION if BASE_POSITION is not None else (int(HEIGHT / 4), int(WIDTH / 4)))
+        anchor = tuple(config.BASE_POSITION if config.BASE_POSITION is not None else (int(config.HEIGHT / 4), int(config.WIDTH / 4)))
         if self.grid.out_of_bounds(anchor):
-            raise ValueError(f"BASE_POSITION {anchor} is outside the {HEIGHT}x{WIDTH} grid")
+            raise ValueError(f"BASE_POSITION {anchor} is outside the {config.HEIGHT}x{config.WIDTH} grid")
 
         # the anchor comes first, so that it stays the cell the Base agent itself sits on
         footprint = [anchor]
-        for dx in range(BASE_SIZE[0]):
-            for dy in range(BASE_SIZE[1]):
+        for dx in range(config.BASE_SIZE[0]):
+            for dy in range(config.BASE_SIZE[1]):
                 cell = (anchor[0] + dx, anchor[1] + dy)
                 if cell != anchor and not self.grid.out_of_bounds(cell):
                     footprint.append(cell)
@@ -195,7 +194,7 @@ class WildFireModel(mesa.Model):
             self.grid.place_agent(tile, cell)
 
         self.log.info("home base placed at %s covering %d cell(s), surviving %d burning steps",
-                      anchor, len(footprint), BHP)
+                      anchor, len(footprint), config.BHP)
 
     # function that gives the cell each UAV of the team starts the run from, in team order and one distinct
     # cell each, so that nobody is launched stacked. The home base footprint is handed out first, in the
@@ -207,7 +206,7 @@ class WildFireModel(mesa.Model):
         if count <= 0:
             return []
 
-        home = list(self.base.cells) if self.base is not None else [(int(HEIGHT / 2), int(WIDTH / 2))]
+        home = list(self.base.cells) if self.base is not None else [(int(config.HEIGHT / 2), int(config.WIDTH / 2))]
         positions = home[:count]
 
         # the box the rings grow out of. Both the base footprint and the lone centre cell are rectangles,
@@ -220,9 +219,9 @@ class WildFireModel(mesa.Model):
             ring = self.launch_ring(box, distance)
             # a ring falling entirely outside the grid means the whole map has been handed out already
             if not ring:
-                raise ValueError(f"{count} UAVs do not fit on the {HEIGHT}x{WIDTH} grid: "
+                raise ValueError(f"{count} UAVs do not fit on the {config.HEIGHT}x{config.WIDTH} grid: "
                                  f"lower NUM_AGENTS or enlarge the grid")
-            SYSTEM_RANDOM.shuffle(ring)
+            config.SYSTEM_RANDOM.shuffle(ring)
             positions.extend(ring[:count - len(positions)])
             distance += 1
 
@@ -245,10 +244,10 @@ class WildFireModel(mesa.Model):
     # that already holds a building
     def set_out_buildings(self):
         taken = set(self.base.cells) if self.base is not None else set()
-        candidates = [(x, y) for x in range(HEIGHT) for y in range(WIDTH) if (x, y) not in taken]
+        candidates = [(x, y) for x in range(config.HEIGHT) for y in range(config.WIDTH) if (x, y) not in taken]
         # more buildings than free cells cannot be placed; ask for what fits
-        wanted = min(NUM_OUT_BUILDINGS, len(candidates))
-        for position in SYSTEM_RANDOM.sample(candidates, wanted):
+        wanted = min(config.NUM_OUT_BUILDINGS, len(candidates))
+        for position in config.SYSTEM_RANDOM.sample(candidates, wanted):
             building = agents.OutBuilding(self.unique_agents_id, self)
             self.unique_agents_id += 1
             self.schedule.add(building)
@@ -279,10 +278,10 @@ class WildFireModel(mesa.Model):
 
     # function that decides which cell the wildfire starts from, from FIRE_START_POSITION
     def resolve_fire_start_position(self):
-        setting = FIRE_START_POSITION
+        setting = config.FIRE_START_POSITION
 
         if setting is None:  # the centre of the grid
-            return int(HEIGHT / 2), int(WIDTH / 2)
+            return int(config.HEIGHT / 2), int(config.WIDTH / 2)
 
         if isinstance(setting, str):
             if setting.lower() != "random":
@@ -291,24 +290,24 @@ class WildFireModel(mesa.Model):
             # the home base is left out of the draw: a fire lit on top of it would have the base alight
             # from the first step, and BHP would run out before the UAVs could do anything about it
             reserved = set(self.base_footprint())
-            candidates = [(x, y) for x in range(HEIGHT) for y in range(WIDTH) if (x, y) not in reserved]
+            candidates = [(x, y) for x in range(config.HEIGHT) for y in range(config.WIDTH) if (x, y) not in reserved]
             if not candidates:
                 raise ValueError("no cell is free of the home base to start the fire from")
-            return SYSTEM_RANDOM.choice(candidates)
+            return config.SYSTEM_RANDOM.choice(candidates)
 
         cell = tuple(setting)
         if self.grid.out_of_bounds(cell):
-            raise ValueError(f"FIRE_START_POSITION {cell} is outside the {HEIGHT}x{WIDTH} grid")
+            raise ValueError(f"FIRE_START_POSITION {cell} is outside the {config.HEIGHT}x{config.WIDTH} grid")
         return cell
 
     # function that decides which step the wildfire starts at, from FIRE_START_STEP
     def resolve_fire_start_step(self):
-        setting = FIRE_START_STEP
+        setting = config.FIRE_START_STEP
 
         # anywhere in the run. BATCH_SIZE is how long a run lasts, so the fire always keeps at least one
         # step to spread in
         if setting is None or (isinstance(setting, str) and setting.lower() == "random"):
-            return SYSTEM_RANDOM.randrange(max(1, BATCH_SIZE))
+            return config.SYSTEM_RANDOM.randrange(max(1, config.BATCH_SIZE))
 
         if isinstance(setting, (tuple, list)):  # a random step inside a range the user gave
             if len(setting) != 2:
@@ -316,7 +315,7 @@ class WildFireModel(mesa.Model):
             first, last = max(0, int(setting[0])), max(0, int(setting[1]))
             if first > last:
                 raise ValueError(f"FIRE_START_STEP range {setting!r} ends before it starts")
-            return SYSTEM_RANDOM.randint(first, last)
+            return config.SYSTEM_RANDOM.randint(first, last)
 
         if isinstance(setting, str):
             raise ValueError("FIRE_START_STEP must be a step, a (first, last) range or 'random', "
@@ -326,12 +325,12 @@ class WildFireModel(mesa.Model):
 
     # function that creates all fire agents in a grid
     def set_fire_agents(self):
-        for i in range(HEIGHT):
-            for j in range(WIDTH):
+        for i in range(config.HEIGHT):
+            for j in range(config.WIDTH):
                 # decides to put a "tree" (fire agent) or not, if less than DENSITY_PROB. The ignition cell
                 # always gets one, whatever the density decides, because the fire has to start somewhere
                 ignition_cell = (i, j) == self.fire_start_pos
-                if SYSTEM_RANDOM.random() < DENSITY_PROB or ignition_cell:
+                if config.SYSTEM_RANDOM.random() < config.DENSITY_PROB or ignition_cell:
                     # the ignition cell is created already burning when the fire starts at step 0, otherwise
                     # every cell starts unburnt and start_fire() lights it once the run reaches that step
                     self.new_fire_agent(i, j, ignition_cell and self.fire_start_step <= 0)
@@ -341,9 +340,9 @@ class WildFireModel(mesa.Model):
             self.log.info("fire lit at %s at the start of the run", self.fire_start_pos)
         else:
             self.log.info("fire will start at %s at step %d", self.fire_start_pos, self.fire_start_step)
-            if self.fire_start_step >= BATCH_SIZE:
+            if self.fire_start_step >= config.BATCH_SIZE:
                 self.log.warning("FIRE_START_STEP %d is not reached in a %d step run: nothing will burn",
-                                 self.fire_start_step, BATCH_SIZE)
+                                 self.fire_start_step, config.BATCH_SIZE)
 
     # function that lights the initial wildfire on the resolved ignition cell. A delayed ignition is the
     # same event as a step 0 one: the cell starts burning, and the cells around it see it while they take
@@ -410,36 +409,23 @@ class WildFireModel(mesa.Model):
     def MR1(self, state, flying=None):
         flying = self.active_uavs() if flying is None else flying
         for uav, aux_state in zip(flying, state):
-            # normalized reward amount for this UAV state, added to the score of its place in the team
-            reward = normalize(float(sum(aux_state)), N_OBSERVATIONS, 1, 0)
-            self.MR1_LIST[self.uavs.index(uav)] += reward
+            # normalized reward amount for this UAV state, added to the score of its place in the team.
+            # self.team_slot maps the UAV to that place directly, rather than scanning the team for it
+            reward = config.normalize(float(sum(aux_state)), config.N_OBSERVATIONS, 1, 0)
+            self.MR1_LIST[self.team_slot[uav.unique_id]] += reward
 
     # this method obtains collision risk avoidance metric (MR2) for time step t. It counts the pairs of
     # UAVs flying closer to each other than SECURITY_DISTANCE, which is a measure of the collision risk a
     # policy accepts rather than a count of the collisions it caused: a collision is two UAVs sharing one
     # cell, and resolve_collisions() below is what charges for those.
     def MR2(self):
-        counter = 0
-        # the UAVs still flying, copied because the loop below deletes from its copy
-        UAV_agents = self.active_uavs()
-
-        # checks number of interactions for each UAV with others
-        for idx, agent in enumerate(UAV_agents):
-            aux_agents_positions = UAV_agents.copy()
-            del aux_agents_positions[idx]
-
-            # checks number of interactions for one UAV
-            for a in aux_agents_positions:
-                x1 = agent.pos[0]
-                y1 = agent.pos[1]
-                x2 = a.pos[0]
-                y2 = a.pos[1]
-                # Euclidean distance between two UAV grid positions
-                distance = euclidean_distance(x1, y1, x2, y2)
-                # if distance between the two UAV is less than the defined security distance, add 1 to the counter
-                if distance < SECURITY_DISTANCE:
-                    counter += 1
-        self.MR2_VALUE += counter // 2  # remove duplicate interactions
+        # each unordered pair of UAVs still flying, visited once, so there is nothing to halve afterwards.
+        # The distance is compared squared, which saves a square root per pair and is the same comparison.
+        limit_squared = config.SECURITY_DISTANCE ** 2
+        for one, other in itertools.combinations(self.active_uavs(), 2):
+            gap_squared = (one.pos[0] - other.pos[0]) ** 2 + (one.pos[1] - other.pos[1]) ** 2
+            if gap_squared < limit_squared:
+                self.MR2_VALUE += 1
 
     # method that settles the collisions of the step just taken. Two or more UAVs left on the same cell
     # have collided, and each of them rolls for damage: a whole health point or nothing at all, averaging
@@ -478,7 +464,7 @@ class WildFireModel(mesa.Model):
     # Run after resolve_collisions(), so a UAV that was destroyed by a collision on the same step is
     # already out of active_uavs() and is counted once, against the collision that actually killed it.
     def resolve_fuel(self):
-        if not ACTIVATE_FUEL:
+        if not config.ACTIVATE_FUEL:
             return
 
         for uav in self.active_uavs():
@@ -519,7 +505,7 @@ class WildFireModel(mesa.Model):
         # Mesa framework asks for
         for st, _ in enumerate(states):
             counter = len(states[st])
-            for i in range(counter, N_OBSERVATIONS):
+            for i in range(counter, config.N_OBSERVATIONS):
                 states[st].append(0)
         return states
 
@@ -533,14 +519,14 @@ class WildFireModel(mesa.Model):
         # start a new one.
         # evaluation_timesteps_counter is incremented once per simulated step below, so reaching BATCH_SIZE
         # means exactly BATCH_SIZE steps have been taken and this call has nothing left to do
-        if self.evaluation_timesteps_counter >= BATCH_SIZE:
+        if self.evaluation_timesteps_counter >= config.BATCH_SIZE:
             self.log.info(" --- MR1 --- ")
             self.log.info("%s", self.MR1_LIST)
             self.log.info(" --- MR2 --- ")
             self.log.info("%s", self.MR2_VALUE)
             self.log.info(" --- collisions --- ")
             self.log.info("%d, %d UAV(s) lost of %d", self.collisions, self.uavs_lost, len(self.uavs))
-            if ACTIVATE_FUEL:
+            if config.ACTIVATE_FUEL:
                 self.log.info(" --- fuel --- ")
                 self.log.info("%d UAV(s) ran out of fuel, tanks left: %s", self.uavs_out_of_fuel,
                               [round(uav.fuel, 1) for uav in self.uavs])
@@ -596,7 +582,7 @@ class WildFireModel(mesa.Model):
         self.resolve_fuel()
 
         # firefighting extension: losing the home base ends the run immediately
-        if ACTIVATE_FIREFIGHTING and self.base is not None and self.base.is_destroyed() and not self.lost:
+        if config.ACTIVATE_FIREFIGHTING and self.base is not None and self.base.is_destroyed() and not self.lost:
             self.lost = True
             self.running = False
             self.log.warning("home base destroyed after burning for %d steps: run lost at step %d",

@@ -18,8 +18,8 @@
 # gives nonsense. The few that raise are called out individually.
 # =====================================================================================================
 
+import math
 import random
-import numpy
 
 # =====================================================================================================
 # ## Random number source
@@ -597,12 +597,12 @@ def normalize(to_normalize, upper, multiplier, subtractor):
     return ((to_normalize / upper) * multiplier) - subtractor
 
 
-# function that calculates the Euclidean distance between two certain positions
+# function that calculates the Euclidean distance between two certain positions. math.hypot rather than
+# numpy: this is called on two scalars, once per pair of UAVs per step by MR2() and once per cell of a
+# water drop, and building two one dimensional arrays to take a norm of them costs far more than the
+# arithmetic does.
 def euclidean_distance(x1, y1, x2, y2):
-    a = numpy.array((x1, y1))
-    b = numpy.array((x2, y2))
-    dist = numpy.linalg.norm(a - b)
-    return dist
+    return math.hypot(x2 - x1, y2 - y1)
 
 
 # function that gives the probability of a water drop centred on drop_pos extinguishing the cell at

@@ -10,10 +10,6 @@ fuel, the spread roll and spontaneous re-ignition.
 
 import random
 
-# own python modules
-
-import agents
-
 
 # --- helpers ----------------------------------------------------------------
 
@@ -93,13 +89,17 @@ def test_cell_fuel_is_drawn_from_system_random(make_model, sim_config):
     assert len(set(first)) > 1
 
 
-def test_no_agent_draws_from_the_module_random(monkeypatch, make_model):
-    """Nothing in agents.py may reach the bare `random` module any more."""
+def test_nothing_draws_from_the_module_random(monkeypatch, make_model):
+    """No part of a running simulation may reach the bare `random` module.
+
+    The module itself is booby trapped rather than any one importer of it, so this keeps holding however
+    the simulation modules choose to import things.
+    """
     def refuse(*args, **kwargs):
         raise AssertionError("the simulation drew from the random module instead of SYSTEM_RANDOM")
 
     for name in ("random", "randint", "choice", "randrange", "sample", "shuffle"):
-        monkeypatch.setattr(agents.random, name, refuse)
+        monkeypatch.setattr(random, name, refuse)
 
     model = make_model(NUM_AGENTS=2, DENSITY_PROB=0.8)
     for _ in range(10):

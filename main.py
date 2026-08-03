@@ -16,17 +16,21 @@ import agents
 
 from policy import POLICIES, RandomPolicy
 
-from config import *
+# imported as a module rather than with 'from config import *', so that every setting is looked up when it
+# is used. A star import copies the values into this module's namespace, which is why a runner overriding a
+# constant (see headless.py) used to have to reach into every module that had copied it. Reading through
+# 'config' leaves one copy to patch, the way the policy package has always done it.
+import config
 
 
 # creates agent dictionary for rendering it on Canvas Gird from Mesa framework
 def agent_portrayal(agent):
     portrayal = {"Shape": "rect", "Filled": True, "h": 1, "w": 1}
     # showing the probability map
-    if PROBABILITY_MAP:
+    if config.PROBABILITY_MAP:
         if type(agent) is agents.Fire:
             idx = int(round(agent.get_prob(), 1) * 10)
-            portrayal.update({"Color": BLACK_AND_WHITE_COLORS[idx], "Layer": 0})
+            portrayal.update({"Color": config.BLACK_AND_WHITE_COLORS[idx], "Layer": 0})
         else:
             # nothing else is drawn on the probability map, and returning a portrayal without a "Layer"
             # would throw a KeyError in the canvas
@@ -36,10 +40,10 @@ def agent_portrayal(agent):
             # showing the home base, drawn above the vegetation. Every cell of its footprint is drawn, so
             # the base appears as a solid BASE_SIZE block.
             base = agent if type(agent) is agents.Base else agent.base
-            color = BASE_BURNING_COLOR if base.is_burning() else BASE_COLOR
+            color = config.BASE_BURNING_COLOR if base.is_burning() else config.BASE_COLOR
             portrayal.update({"Color": color, "Layer": 1})
         elif type(agent) is agents.OutBuilding:  # showing an out building
-            color = OUT_BUILDING_DESTROYED_COLOR if agent.destroyed else OUT_BUILDING_COLOR
+            color = config.OUT_BUILDING_DESTROYED_COLOR if agent.destroyed else config.OUT_BUILDING_COLOR
             portrayal.update({"Color": color, "Layer": 1, "h": 0.7, "w": 0.7})
         elif type(agent) is agents.Fire:  # showing smoke
             if agent.smoke.is_smoke_active():
@@ -47,25 +51,25 @@ def agent_portrayal(agent):
                 # only one color is used by default.
                 # idx = normalize_fuel_values(agent.smoke.get_dispelling_counter_value(),
                 # agent.smoke.get_dispelling_counter_start_value())
-                portrayal.update({"Color": SMOKE_COLORS[0], "Layer": 0})
+                portrayal.update({"Color": config.SMOKE_COLORS[0], "Layer": 0})
             else:
                 if agent.is_burning():  # showing fire
-                    idx = normalize_fuel_values(agent.get_fuel(), FUEL_UPPER_LIMIT)
-                    portrayal.update({"Color": FIRE_COLORS[idx], "Layer": 0})
-                elif ACTIVATE_FIREFIGHTING and agent.is_immune():  # showing a cell just hit by water
-                    portrayal.update({"Color": EXTINGUISHED_COLOR, "Layer": 0})
+                    idx = config.normalize_fuel_values(agent.get_fuel(), config.FUEL_UPPER_LIMIT)
+                    portrayal.update({"Color": config.FIRE_COLORS[idx], "Layer": 0})
+                elif config.ACTIVATE_FIREFIGHTING and agent.is_immune():  # showing a cell just hit by water
+                    portrayal.update({"Color": config.EXTINGUISHED_COLOR, "Layer": 0})
                 else:  # showing vegetation
-                    idx = normalize_fuel_values(agent.get_fuel(), FUEL_UPPER_LIMIT)
-                    portrayal.update({"Color": VEGETATION_COLORS[idx], "Layer": 0})
+                    idx = config.normalize_fuel_values(agent.get_fuel(), config.FUEL_UPPER_LIMIT)
+                    portrayal.update({"Color": config.VEGETATION_COLORS[idx], "Layer": 0})
         elif type(agent) is agents.UAV:  # showing UAV, above the base so that it stays visible over it
             # every UAV is drawn in the same near black, whatever it is carrying, because that is what
             # keeps it findable over the light map. The outline is what gives it an edge over the base
             # and over burnt ground, the only two things on the map anywhere near as dark as it is.
-            portrayal.update({"Color": UAV_COLOR, "stroke_color": UAV_OUTLINE_COLOR,
+            portrayal.update({"Color": config.UAV_COLOR, "stroke_color": config.UAV_OUTLINE_COLOR,
                               "Layer": 2, "h": 0.85, "w": 0.85})
             # the water a UAV carries is shown by size rather than by colour: a UAV drawn full is
             # carrying its load, and a smaller one has dropped it and is on its way back to the base
-            if ACTIVATE_FIREFIGHTING and not agent.has_water():
+            if config.ACTIVATE_FIREFIGHTING and not agent.has_water():
                 portrayal.update({"h": 0.55, "w": 0.55})
     return portrayal
 
@@ -92,12 +96,12 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s [%(name)s] %(message)s",
                         datefmt="%H:%M:%S")
 
-    print('actions:', N_ACTIONS)
-    print('observations:', N_OBSERVATIONS)
+    print('actions:', config.N_ACTIONS)
+    print('observations:', config.N_OBSERVATIONS)
     print('policies:', ', '.join(sorted(POLICIES)))
 
     # initialize CanvasGrid
-    grid = CanvasGrid(agent_portrayal, WIDTH, HEIGHT, 10 * WIDTH, 10 * HEIGHT)
+    grid = CanvasGrid(agent_portrayal, config.WIDTH, config.HEIGHT, 10 * config.WIDTH, 10 * config.HEIGHT)
     # live status panel, rendered in the sidebar next to the grid
     sidebar = StatusSidebar()
     # gathers the speed slider, the step counter and the run buttons into the bar along the top

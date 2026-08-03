@@ -7,7 +7,11 @@ import functools
 
 from policy import Observation
 
-from config import *
+# imported as a module rather than with 'from config import *', so that every setting is looked up when it
+# is used. A star import copies the values into this module's namespace, which is why a runner overriding a
+# constant (see headless.py) used to have to reach into every module that had copied it. Reading through
+# 'config' leaves one copy to patch, the way the policy package has always done it.
+import config
 
 
 # Class Fire holds methods for managing Fire agents
@@ -16,7 +20,7 @@ class Fire(mesa.Agent):
     # constructor
     def __init__(self, unique_id, model, burning=False):
         super().__init__(unique_id, model)
-        self.fuel = SYSTEM_RANDOM.randint(FUEL_BOTTOM_LIMIT, FUEL_UPPER_LIMIT)
+        self.fuel = config.SYSTEM_RANDOM.randint(config.FUEL_BOTTOM_LIMIT, config.FUEL_UPPER_LIMIT)
         self.burning = burning
         self.next_burning_state = None
         self.moore = True
@@ -47,9 +51,9 @@ class Fire(mesa.Agent):
         was_burning = self.burning
         self.burning = False
         self.next_burning_state = False
-        self.immunity_counter = REIGNITION_DELAY
+        self.immunity_counter = config.REIGNITION_DELAY
         self.was_extinguished = True
-        if ACTIVATE_SMOKE:
+        if config.ACTIVATE_SMOKE:
             self.smoke.smoke = False
         return was_burning
 
@@ -88,9 +92,9 @@ class Fire(mesa.Agent):
                     if type(agent) is Fire:
                         adjacent_burning = 1 if agent.is_burning() else 0
                         # calculates partial probability of burning cell s (self.pos), being influenced by adjacent (s')
-                        aux_prob = distance_rate(self.pos, adjacent, self.radius) * adjacent_burning
+                        aux_prob = config.distance_rate(self.pos, adjacent, self.radius) * adjacent_burning
                         # in this if statement, the wind logic occurs, by biasing the burning cell probability
-                        if ACTIVATE_WIND and (adjacent_burning == 1):
+                        if config.ACTIVATE_WIND and (adjacent_burning == 1):
                             # applies wind to the partial probability
                             aux_prob = self.model.wind.apply_wind(aux_prob, self.pos, agent.pos)
                         probs.append(1 - aux_prob)
@@ -108,17 +112,17 @@ class Fire(mesa.Agent):
         # the immunity left by a water drop is counted in simulation steps, not in fire updates, so it is
         # handled outside the FIRE_SPREAD_SPEED gate below. It is read before being decremented, so that a
         # drop with REIGNITION_DELAY = n protects the cell for n full steps.
-        immune = ACTIVATE_FIREFIGHTING and self.immunity_counter > 0
+        immune = config.ACTIVATE_FIREFIGHTING and self.immunity_counter > 0
         if immune:
             self.immunity_counter -= 1
         # make fire spread slower
-        if self.steps_counter % FIRE_SPREAD_SPEED == 0:
+        if self.steps_counter % config.FIRE_SPREAD_SPEED == 0:
             # if self.steps_counter == 26: # to model how the wind can suddenly change direction
             #     self.model.wind.wind_direction = 'south'
             # worked out for the whole grid before the schedule ran, so this is a lookup. The fuel
             # gate stays here, which keeps the model from having to mirror the fuel of every cell.
             self.cell_prob = 0.0 if self.fuel <= 0 else self.model.fire_prob[self.pos]
-            generated = SYSTEM_RANDOM.random()
+            generated = config.SYSTEM_RANDOM.random()
             # set next burning state
             if generated < self.cell_prob:
                 self.next_burning_state = True
@@ -126,25 +130,25 @@ class Fire(mesa.Agent):
                 self.next_burning_state = False
             # firefighting extension: a cell just hit by water cannot catch fire again yet. Once that wears
             # off it burns normally again, and may also relight on its own with a small probability.
-            if ACTIVATE_FIREFIGHTING:
+            if config.ACTIVATE_FIREFIGHTING:
                 if immune:
                     self.next_burning_state = False
                 elif (self.was_extinguished and self.fuel > 0
                       and not self.next_burning_state
-                      and SYSTEM_RANDOM.random() < SPONTANEOUS_REIGNITION_PROB):
+                      and config.SYSTEM_RANDOM.random() < config.SPONTANEOUS_REIGNITION_PROB):
                     self.next_burning_state = True
             # if possible, subtract BURNING_RATE from fuel of the corresponding cell
             if self.burning and self.fuel > 0:
-                self.fuel = self.fuel - BURNING_RATE
+                self.fuel = self.fuel - config.BURNING_RATE
             # smoke step
-            if ACTIVATE_SMOKE:
+            if config.ACTIVATE_SMOKE:
                 self.smoke.smoke_step(self.burning)
 
     # Mesa framework native method, which is overwritten, necessary for executing changes made in step() method. This
     # logic is required to not update the overall grid state until all cells step() method where executed.
     def advance(self):
         # make fire spread slower
-        if self.steps_counter % FIRE_SPREAD_SPEED == 0:
+        if self.steps_counter % config.FIRE_SPREAD_SPEED == 0:
             # only state changes are logged: a message per cell per step would mean hundreds of thousands
             # of records for a default sized grid
             if self.next_burning_state and not self.burning:
@@ -161,7 +165,7 @@ class Smoke:
     def __init__(self, fire_cell_fuel):
         self.smoke = False
         self.dispelling_counter_start_value = fire_cell_fuel
-        self.dispelling_lower_bound_start_value = SMOKE_PRE_DISPELLING_COUNTER
+        self.dispelling_lower_bound_start_value = config.SMOKE_PRE_DISPELLING_COUNTER
         self.dispelling_lower_bound = self.dispelling_lower_bound_start_value
         self.dispelling_counter = self.dispelling_counter_start_value
 
@@ -211,26 +215,26 @@ class Wind:
 
     # constructor
     def __init__(self):
-        self.wind_direction = WIND_DIRECTION
+        self.wind_direction = config.WIND_DIRECTION
 
     # it allows to change wind direction based on FIRST_DIR_PROB value
     def change_direction(self):
-        if SYSTEM_RANDOM.random() < FIRST_DIR_PROB:
-            self.wind_direction = FIRST_DIR
+        if config.SYSTEM_RANDOM.random() < config.FIRST_DIR_PROB:
+            self.wind_direction = config.FIRST_DIR
         else:
-            self.wind_direction = SECOND_DIR
+            self.wind_direction = config.SECOND_DIR
 
     # function to apply wind to partial burning probability of cell s (relative_center_pos),
     # caused by cell s' (adjacent_pos)
     def apply_wind(self, aux_prob, relative_center_pos, adjacent_pos):
         # if wind is compound by more than one direction
-        if not FIXED_WIND:
+        if not config.FIXED_WIND:
             self.change_direction()
             # print("Wind: ", self.wind_direction)
         if self.is_on_wind_direction(relative_center_pos, adjacent_pos):
-            aux_prob = aux_prob + (MU * (1 - aux_prob))  # part of 1 I- 'aux_prob' probability is added, depending on mu
+            aux_prob = aux_prob + (config.MU * (1 - aux_prob))  # part of 1 I- 'aux_prob' probability is added, depending on mu
         else:
-            aux_prob = aux_prob - (MU * aux_prob)  # part of 'aux_prob' probability is removed, depending on mu
+            aux_prob = aux_prob - (config.MU * aux_prob)  # part of 'aux_prob' probability is removed, depending on mu
         return aux_prob
 
     # function that checks if cell located in relative_center_pos is on wind direction, influenced by cell located
@@ -266,13 +270,13 @@ class UAV(mesa.Agent):
         # health points. Sharing a cell with another UAV costs a rolled amount of them per step, and a UAV
         # that runs out is destroyed. WildFireModel.resolve_collisions() is what charges the damage,
         # because whether two UAVs share a cell is a property of the grid rather than of either of them.
-        self.hp = UAV_HP
+        self.hp = config.UAV_HP
         # fuel extension: UAVs take off with a full tank. The attribute is set whether or not the
         # extension is on, so that the interface and the tests need no special case for it; what
         # ACTIVATE_FUEL governs is whether burn_fuel() ever takes anything off it.
-        self.fuel = float(UAV_FUEL)
+        self.fuel = float(config.UAV_FUEL)
         # firefighting extension: UAVs leave the base with a full load of water
-        self.water = UAV_WATER_CAPACITY if ACTIVATE_FIREFIGHTING else 0
+        self.water = config.UAV_WATER_CAPACITY if config.ACTIVATE_FIREFIGHTING else 0
 
     # checks whether this UAV is still flying | True until its health points run out
     def is_alive(self):
@@ -294,25 +298,25 @@ class UAV(mesa.Agent):
     # while a collision can be made to cost less than a certain point. Returns the points lost, which is
     # zero for a roll that did no harm as well as for a UAV that was already down.
     def take_collision_damage(self):
-        return self.take_damage(roll_collision_damage())
+        return self.take_damage(config.roll_collision_damage())
 
     # checks whether this UAV has run dry | always False when the fuel extension is switched off, so that
     # nothing downstream has to test the flag itself. WildFireModel.resolve_fuel() is what acts on it.
     def is_out_of_fuel(self):
-        return ACTIVATE_FUEL and self.fuel <= 0
+        return config.ACTIVATE_FUEL and self.fuel <= 0
 
     # checks whether the tank is full, which is what tells the base there is nothing to refuel
     def has_full_tank(self):
-        return self.fuel >= UAV_FUEL
+        return self.fuel >= config.UAV_FUEL
 
     # burns the fuel one step of flight cost this UAV, given the cells it actually covered. The cost comes
     # from fuel_burn_cost() in config.py, which the policies read as well. The tank is clamped at zero, so
     # an empty one lands exactly on 0.0 rather than drifting negative. Returns the fuel actually burned.
     def burn_fuel(self, cells_moved):
-        if not ACTIVATE_FUEL:
+        if not config.ACTIVATE_FUEL:
             return 0.0
 
-        burned = min(self.fuel, fuel_burn_cost(cells_moved, at_base=self.model.at_base(self.pos)))
+        burned = min(self.fuel, config.fuel_burn_cost(cells_moved, at_base=self.model.at_base(self.pos)))
         self.fuel -= burned
         self.model.log.debug("UAV %d burned %.2f fuel over %d cell(s), %.2f left",
                              self.unique_id, burned, cells_moved, self.fuel)
@@ -320,7 +324,7 @@ class UAV(mesa.Agent):
 
     # fills the tank, which the home base does once a refuel has taken BASE_REFUEL_STEPS steps
     def refuel(self):
-        self.fuel = float(UAV_FUEL)
+        self.fuel = float(config.UAV_FUEL)
 
     # checks whether this UAV still carries water to dump | True if it does, False if it is empty
     def has_water(self):
@@ -328,7 +332,7 @@ class UAV(mesa.Agent):
 
     # refills this UAV, which the home base does once a refill has taken BASE_REFILL_STEPS steps
     def refill(self):
-        self.water = UAV_WATER_CAPACITY
+        self.water = config.UAV_WATER_CAPACITY
 
     # dumps one load of water on the cell the UAV is over. The drop extinguishes cells within
     # WATER_DROP_RADIUS with a probability that falls off with distance from the centre of the drop.
@@ -341,11 +345,11 @@ class UAV(mesa.Agent):
         self.water -= 1
         extinguished = 0
         affected_cells = self.model.grid.get_neighborhood(
-            self.pos, moore=self.moore, include_center=True, radius=WATER_DROP_RADIUS
+            self.pos, moore=self.moore, include_center=True, radius=config.WATER_DROP_RADIUS
         )
         for cell in affected_cells:
-            probability = extinguish_probability(self.pos, cell)
-            if SYSTEM_RANDOM.random() >= probability:
+            probability = config.extinguish_probability(self.pos, cell)
+            if config.SYSTEM_RANDOM.random() >= probability:
                 continue
             for agent in self.model.grid.get_cell_list_contents([cell]):
                 if type(agent) is Fire and agent.extinguish():
@@ -368,7 +372,7 @@ class UAV(mesa.Agent):
         cells = []
         # obtains adjacent cells s' from a concrete cell s (self.pos)
         adjacent_cells = self.model.grid.get_neighborhood(
-            self.pos, moore=self.moore, include_center=True, radius=UAV_OBSERVATION_RADIUS
+            self.pos, moore=self.moore, include_center=True, radius=config.UAV_OBSERVATION_RADIUS
         )
         # records (position, burning) for every observed cell that holds vegetation, the cells the other
         # UAVs in view are standing on, which a policy needs to keep clear of, and the positions of the out
@@ -387,14 +391,14 @@ class UAV(mesa.Agent):
         # the fuel a policy is told about. Left at None when the extension is off, so that a policy can
         # tell "the tank is empty" apart from "fuel is not being tracked in this run" and ignore it
         # entirely; Observation.low_fuel() reports False either way.
-        fuel = self.fuel if ACTIVATE_FUEL else None
-        capacity = float(UAV_FUEL) if ACTIVATE_FUEL else None
+        fuel = self.fuel if config.ACTIVATE_FUEL else None
+        capacity = float(config.UAV_FUEL) if config.ACTIVATE_FUEL else None
 
         # the extension fields stay at their defaults when the extension is off, so that policies written
         # against the plain simulation keep working unchanged. The UAVs in view are reported either way,
         # because collisions do not belong to the extension, and so is the fuel, which has a switch of its
         # own and is burned with or without the firefighting extension.
-        if not ACTIVATE_FIREFIGHTING:
+        if not config.ACTIVATE_FIREFIGHTING:
             return Observation(uav_id=self.unique_id, pos=self.pos, cells=cells,
                                uav_positions=neighbours,
                                fuel=fuel, fuel_capacity=capacity)
@@ -424,12 +428,12 @@ class UAV(mesa.Agent):
         previous_pos = self.pos
 
         # policies may hold position instead of moving; there is no movement vector for that
-        if self.selected_dir == ACTION_STAY:
+        if self.selected_dir == config.ACTION_STAY:
             self.model.log.debug("UAV %d holding position at %s", self.unique_id, self.pos)
             return 0
 
         # a UAV covers at most UAV_SPEED cells per step, whatever speed the policy asked for
-        speed = max(0, min(int(self.selected_speed), UAV_SPEED))
+        speed = max(0, min(int(self.selected_speed), config.UAV_SPEED))
         if speed == 0:
             self.model.log.debug("UAV %d ordered to move at zero speed, stayed at %s",
                                  self.unique_id, self.pos)
@@ -437,7 +441,7 @@ class UAV(mesa.Agent):
 
         # the cells are crossed one at a time, so that the UAV stops at the edge of the grid, and so that it
         # cannot jump over an occupied cell without having been in it
-        move_x, move_y = MOVEMENT_VECTORS[self.selected_dir]
+        move_x, move_y = config.MOVEMENT_VECTORS[self.selected_dir]
         cells_moved = 0
         for _ in range(speed):
             pos_to_move = (self.pos[0] + move_x, self.pos[1] + move_y)
@@ -473,7 +477,7 @@ class UAV(mesa.Agent):
 
         # dumping water takes the whole step, so the UAV does not move as well
         cells_moved = 0
-        if ACTIVATE_FIREFIGHTING and self.selected_dir == ACTION_DUMP_WATER:
+        if config.ACTIVATE_FIREFIGHTING and self.selected_dir == config.ACTION_DUMP_WATER:
             self.model.water_drops += 1
             self.model.cells_extinguished += self.dump_water()
         else:
@@ -481,7 +485,7 @@ class UAV(mesa.Agent):
 
             # refilling is not an action: a UAV standing on the base with an empty tank or a part empty
             # fuel tank starts being served, and the base itself decides whether it is free to serve it
-            if ACTIVATE_FIREFIGHTING and self.model.base is not None:
+            if config.ACTIVATE_FIREFIGHTING and self.model.base is not None:
                 self.model.base.serve(self)
 
         # the step is paid for last, from the distance actually covered, so that a UAV stopped early by the
@@ -520,17 +524,17 @@ class Base(mesa.Agent):
 
     # checks whether the base has taken all the damage it can survive
     def is_destroyed(self):
-        return self.burning_steps >= BHP
+        return self.burning_steps >= config.BHP
 
     # checks whether a UAV standing on the base wants anything from it: water, or fuel when the fuel
     # extension is on. With ACTIVATE_FUEL off this is exactly the empty tank test it has always been.
     def needs_service(self, uav):
-        return not uav.has_water() or (ACTIVATE_FUEL and not uav.has_full_tank())
+        return not uav.has_water() or (config.ACTIVATE_FUEL and not uav.has_full_tank())
 
     # how long one visit to the base takes. Water and fuel are taken on together in a single visit, so a
     # UAV that wants both waits for the slower of the two rather than queueing twice.
     def service_steps(self):
-        return max(BASE_REFILL_STEPS, BASE_REFUEL_STEPS) if ACTIVATE_FUEL else BASE_REFILL_STEPS
+        return max(config.BASE_REFILL_STEPS, config.BASE_REFUEL_STEPS) if config.ACTIVATE_FUEL else config.BASE_REFILL_STEPS
 
     # serves one UAV standing on the base cell, if there is a free slot. A visit takes service_steps()
     # steps, during which the slot stays taken, and hands over a full load of water and a full tank.
@@ -541,7 +545,7 @@ class Base(mesa.Agent):
             return False
 
         if uav.unique_id not in self.serving:
-            if len(self.serving) >= BASE_CAPACITY:  # somebody else is being served
+            if len(self.serving) >= config.BASE_CAPACITY:  # somebody else is being served
                 self.model.log.debug("UAV %d is waiting for the base to be free", uav.unique_id)
                 return False
             self.serving[uav.unique_id] = self.service_steps()
@@ -550,7 +554,7 @@ class Base(mesa.Agent):
         self.serving[uav.unique_id] -= 1
         if self.serving[uav.unique_id] <= 0:
             uav.refill()
-            if ACTIVATE_FUEL:
+            if config.ACTIVATE_FUEL:
                 uav.refuel()
             self.model.refills += 1
             self.model.log.debug("UAV %d refilled at the base", uav.unique_id)
@@ -564,7 +568,7 @@ class Base(mesa.Agent):
     def step(self):
         if self.is_burning():
             self.burning_steps += 1
-            self.model.log.info("home base is burning: %d/%d", self.burning_steps, BHP)
+            self.model.log.info("home base is burning: %d/%d", self.burning_steps, config.BHP)
 
         for uav_id in list(self.serving):
             uav = self.model.uav_by_id(uav_id)
@@ -609,7 +613,7 @@ class OutBuilding(mesa.Agent):
             return
 
         self.burning_steps += 1
-        if self.burning_steps >= OUT_BUILDING_HP:
+        if self.burning_steps >= config.OUT_BUILDING_HP:
             self.destroyed = True
             self.model.buildings_lost += 1
             self.model.log.info("out building at %s destroyed", self.pos)
