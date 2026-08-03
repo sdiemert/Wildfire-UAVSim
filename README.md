@@ -7,23 +7,49 @@ the evaluation of diverse adaptation strategies. Among its many configuration pa
 
 ## Files structure
 
-The project structure is composed of the following Python files and packages:
+Three things sit at the root, and everything else is inside the `sim` package:
 
-### `agents.py`
+```
+config.py     every simulation setting; this is the file you edit
+main.py       launches the web interface
+headless.py   runs simulations without it
 
-This python file holds the logic for managing elements such as Fire, Smoke, Wind and UAVs.
+sim/
+  formulas.py       shared maths: distances, fuel costs, extinguishing odds
+  model.py          WildFireModel, the main loop and the state of a run
+  fire_spread.py    how likely every cell is to catch fire, for the whole grid at once
+  environment.py    Wind and Smoke
+  agents/           what stands on the grid: Fire, UAV, Base, BaseTile, OutBuilding
+  policy/           the policies that decide where each UAV flies
+  gui/              the Mesa web interface
+  cli/              the headless runner behind headless.py
 
-### `widlfire_model.py`
+tests/          the unit tests, mirroring the package
+```
 
-This python file holds the logic for managing the wildfire simulation, by utilizing elements from `agents.py` file.
+### `config.py`
 
-### `fire_spread.py`
+This python file holds the variables used to set the simulation execution configurations. It stays at the root of the project, rather than inside `sim`, because it is the one file most users need to open. It is organised into sections in the order a run is built up — the environment, the forest, the ignition, the wind, the smoke, the UAVs, the firefighting extension and the drawing colours — and each variable carries a one line description and its bounds next to its value. [Common variables configuration](#common-variables-configuration) below is the longer form of the same material.
+
+Every module reads its settings as `config.NAME` at the point of use rather than copying the values in, which is what lets `headless.py --set` override any of them for a single run.
+
+### `sim/agents/`
+
+This python package holds the agents that stand on the grid, one module per kind: `fire.py` (a cell of vegetation, which holds the fuel and does the burning), `uav.py` (a drone, which observes, flies and dumps water), `base.py` (the home base UAVs refill at, and the tiles of its footprint) and `out_building.py` (a building worth defending). All of them are re-exported, so `from sim import agents` then `agents.UAV` reaches any of them.
+
+The wind and the smoke are in `sim/environment.py` instead: neither holds a cell on the grid, and neither is stepped by the scheduler.
+
+### `sim/model.py`
+
+This python file holds the logic for managing the wildfire simulation, by utilizing the agents above. It owns the grid, the schedule, the ignition, the collision and fuel resolution, and the MR1/MR2 monitoring metrics.
+
+### `sim/fire_spread.py`
 
 This python file works out how likely every cell of the grid is to catch fire, for the whole grid at
 once, and is by far the largest influence on how fast a simulation runs.
 
 The rule itself is unchanged, and is still written out cell by cell in `Fire.probability_of_fire()`
-in `agents.py`. That version asks each cell to walk its neighbourhood, which repeats the same
+in `sim/agents/fire.py`. That version asks each cell to walk its neighbourhood, which repeats the same
 distance calculation millions of times per run and used to account for over 99% of the run time.
 Because a cell's influence on its neighbour depends only on the offset between them, the same
 quantity can be obtained for every cell in a single pass over the grid, which is what this file does.
@@ -38,26 +64,26 @@ give exactly the results they gave before this file existed. With composed wind 
 False`) the wind direction is drawn per cell in one go rather than one cell at a time, so runs are
 statistically the same but a given seed no longer reproduces older results.
 
-### `main.py`
+### `sim/formulas.py`
 
-This python file allows to execute the wildfire simulation built in `widlfire_model.py` file.
+This python file holds the maths shared between the model, the agents, the policies and the interface: Euclidean distance, the fuel a step of flight costs, the odds of a water drop extinguishing a cell. It is kept in one place so that a policy estimating how far its remaining fuel will take it works it out exactly the way the model charges for it.
 
-### `config.py`
+### `sim/gui/`
 
-This python file holds the variables used to set the simulation execution configurations. It is organised into sections in the order a run is built up — the environment, the forest, the ignition, the wind, the smoke, the UAVs, the firefighting extension, the drawing colours and a few shared helper functions — and each variable carries a one line description and its bounds next to its value. [Common variables configuration](#common-variables-configuration) below is the longer form of the same material.
+This python package holds the Mesa web interface that `main.py` launches: `app.py` wires it together, `portrayal.py` says how each agent is drawn, and `canvas_grid.py`, `status_sidebar.py`, `top_bar.py` and `policy_selector.py` are the four elements on the page. `canvas_grid.py` is a Mesa class modified to make UAV observation areas visible; it is not really necessary to change these files.
 
-### `Canvas_Grid_Visualization.py`
+### `sim/cli/`
 
-This python file contains a Mesa class, modified for making UAV observation areas visible on the graphical web interface. It is not really necessary to change this file.
+This python package runs simulations without the graphical interface, with logging and optional parallel execution — `main.py` parses the arguments, `runner.py` executes one run, `batch.py` runs several in parallel, `overrides.py` implements `--set` and `--seed`, and `reporting.py` handles the logging and the summary. Run `python3 headless.py --help` for the available options.
 
-### `policy/`
+### `sim/policy/`
 
-This python package holds the policies that decide where each UAV flies. `policy/base.py` defines the abstract `Policy` interface, `policy/observation.py` defines the `Observation` a UAV receives, `policy/action.py` defines the `Action` it returns, and every concrete policy lives in its own file (`policy/random_policy.py`, `policy/follow_fire.py`). The policy in use can be picked from the dropdown on the web interface, or with the `--policy` option of `headless.py`.
+This python package holds the policies that decide where each UAV flies. `base.py` defines the abstract `Policy` interface, `observation.py` defines the `Observation` a UAV receives, `action.py` defines the `Action` it returns, and every concrete policy lives in its own file (`random_policy.py`, `follow_fire.py`, `firefighter.py`). The policy in use can be picked from the dropdown on the web interface, or with the `--policy` option of `headless.py`.
 
 A policy receives one `Observation` per UAV and returns one `Action` per UAV: a direction and a speed.
 
 ```python
-from policy import Action, Policy
+from sim.policy import Action, Policy
 from config import ACTION_UP
 
 class MyPolicy(Policy):
@@ -70,10 +96,10 @@ class MyPolicy(Policy):
 
 `Action.stay()` holds position and `Action.dump()` drops water; both carry a speed of zero. A UAV never covers more than `UAV_SPEED` cells in a step, whatever speed is asked for, and stops early at the edge of the grid. A policy may also return a bare direction index, or a `(direction, speed)` pair, which are coerced into an `Action` — a bare direction means one cell per step, as it did before speeds existed.
 
-An `Observation` reports what one UAV can see: `pos`, the `cells` in view with their burning state, and `uav_positions`, the cells the **other UAVs in view** are standing on. Flying onto one of those is a collision and costs both UAVs health points, so a policy that moves its team about has to keep it apart. Three helpers in `policy/base.py` are there for that:
+An `Observation` reports what one UAV can see: `pos`, the `cells` in view with their burning state, and `uav_positions`, the cells the **other UAVs in view** are standing on. Flying onto one of those is a collision and costs both UAVs health points, so a policy that moves its team about has to keep it apart. Three helpers in `sim/policy/base.py` are there for that:
 
 ```python
-from policy import avoid, flight_path, by_distance
+from sim.policy import avoid, flight_path, by_distance
 
 flight_path(pos, action)          # the cells the action would take the UAV through, in order
 avoid(pos, action, blocked)       # the same action, trimmed to stop short of any 'blocked' cell
@@ -86,13 +112,9 @@ It also never asks a UAV to fly further than `UAV_OBSERVATION_RADIUS`. This matt
 
 With the firefighting extension on, an `Observation` also carries `has_water`, `base_pos`, `base_cells` and `building_positions`; `at_base()` is true anywhere on the base footprint. With the fuel extension on it carries `fuel` and `fuel_capacity`, read through `fuel_fraction()` and `low_fuel()`; both are `None` when fuel is not being tracked, and `low_fuel()` is then always `False`, so a policy that ignores fuel flies exactly as it did before.
 
-### `headless.py`
-
-This python file runs simulations without the graphical interface, with logging and optional parallel execution. Run `python3 headless.py --help` for the available options.
-
 ### `tests/`
 
-This directory holds the unit tests. See [Running the tests](#running-the-tests).
+This directory holds the unit tests, grouped to mirror the package: `tests/agents/` and `tests/policy/`, with the tests that cover a single module at the root of `sim` — or cut across everything — at the top. See [Running the tests](#running-the-tests).
 
 # Installation setup
 
@@ -134,9 +156,18 @@ python3 -m pip install -r requirements.txt
 Once project is opened, and dependencies were installed, `main.py` can be executed by selecting the file, right mouse click, and clicking on `Run 'main'` (shortcut should be `Ctrl+Mayus+F10`).
 A web page interface should appear, with the wildfire grid, and buttons for configuring the simulation.
 
+From the command line, run either entry point from the root of the project:
+
+```bash
+python3 main.py            # the web interface
+python3 headless.py        # a simulation without it, see --help
+```
+
+Both have to be run from the project root, because that is where `config.py` and the `sim` package are found. There is no need to install the project; if you would rather have `wildfire-gui` and `wildfire-headless` on your path, `python3 -m pip install -e .` provides them.
+
 # Running the tests
 
-The unit tests live in the `tests/` directory and are run with [pytest](https://docs.pytest.org/). They cover the UAV policies in the `policy/` package, and need neither a grid nor the Mesa framework, so the whole suite finishes in well under a second.
+The unit tests live in the `tests/` directory and are run with [pytest](https://docs.pytest.org/). They are grouped to mirror the package — `tests/policy/` for the UAV policies, which need neither a grid nor the Mesa framework, `tests/agents/` for the agents on the grid, and the tests covering the fire spread, the run lifecycle, the configuration and reproducibility at the top. The whole suite finishes in well under two seconds.
 
 ## From the command line
 
@@ -149,13 +180,14 @@ python3 -m pytest
 Useful variations:
 
 ```bash
-python3 -m pytest tests/test_follow_fire_policy.py   # a single file
-python3 -m pytest -k "holds_position"                # tests whose name matches a pattern
-python3 -m pytest -q                                 # quiet, one line per file
-python3 -m pytest -x                                 # stop at the first failure
+python3 -m pytest tests/policy                          # every policy test
+python3 -m pytest tests/policy/test_follow_fire_policy.py   # a single file
+python3 -m pytest -k "holds_position"                   # tests whose name matches a pattern
+python3 -m pytest -q                                    # quiet, one line per file
+python3 -m pytest -x                                    # stop at the first failure
 ```
 
-Test discovery is configured in `pytest.ini`, which also puts the project root on the import path so that `import policy` and `import config` work from inside `tests/`.
+Test discovery is configured in `pyproject.toml`, which also puts the project root on the import path so that `import config` and `from sim.policy import ...` work from inside `tests/`.
 
 ## From Pycharm
 
@@ -184,13 +216,13 @@ def test_is_reproducible(observation, seed_rng):
     assert policy.select_actions([observation(pos=(5, 5))]) == first
 ```
 
-The contract tests in `tests/test_policy_interface.py` are parametrised over every policy in the registry, so a newly registered policy is automatically checked for returning one valid `Action` per UAV, keeping its speeds within `UAV_SPEED`, handling an empty view, and having a usable name.
+The contract tests in `tests/policy/test_policy_interface.py` are parametrised over every policy in the registry, so a newly registered policy is automatically checked for returning one valid `Action` per UAV, keeping its speeds within `UAV_SPEED`, handling an empty view, and having a usable name.
 
-Tests about the movement itself — how far a UAV actually gets — need a grid, and live in `tests/test_uav_speed.py`.
+Tests about the movement itself — how far a UAV actually gets — need a grid, and live in `tests/agents/test_uav_speed.py`.
 
 # Graphical interface functionalities
 
-When executing the project as explained above, a web page hosted in http://127.0.0.1:8521/ should appear in user's default browser. Port can be modified in `main.py` file if user has the default one already busy.
+When executing the project as explained above, a web page hosted in http://127.0.0.1:8521/ should appear in user's default browser. Port can be modified in `sim/gui/app.py` if user has the default one already busy.
 
 Everything used to drive a run sits in the bar along the top of the page: the speed slider, the step the run has reached, and the buttons. The status panel is down the left hand side, and the policy in use is picked above the grid on the right. The relevant graphical interface elements are:
 
@@ -208,7 +240,7 @@ The step button allows to execute one time step at a time.
 
 ### `Reset button`
 
-The reset button allows to execute the `reset()` method, inherited and overwritten from Mesa framework class `mesa.Model`, into WildFireModel class, inside `widlfire_model.py` file.
+The reset button allows to execute the `reset()` method, inherited and overwritten from Mesa framework class `mesa.Model`, into WildFireModel class, inside `sim/model.py`.
 
 ### `FPS`
 
@@ -325,7 +357,7 @@ Wind raises the chance of the fire spreading downwind and lowers it upwind, by a
 | `ACTIVATE_SMOKE` | Whether smoke is part of the simulation | `True` / `False` | `False` |
 | `SMOKE_PRE_DISPELLING_COUNTER` | Steps between a cell catching fire and its smoke appearing | integer `>= 0` | `2` |
 
-The smoke then lasts for the cell's initial fuel, set as `self.dispelling_counter_start_value` in `Smoke.__init__()` in `agents.py`. Keep the sum of the two above `FUEL_UPPER_LIMIT`, or the smoke clears before the cell has finished burning.
+The smoke then lasts for the cell's initial fuel, set as `self.dispelling_counter_start_value` in `Smoke.__init__()` in `sim/environment.py`. Keep the sum of the two above `FUEL_UPPER_LIMIT`, or the smoke clears before the cell has finished burning.
 
 ### UAV
 
@@ -495,7 +527,7 @@ A water drop covers a disc, so the corners of the surrounding square are outside
 
 Out buildings are never placed on the home base, and if more are asked for than there are free cells, only what fits is placed.
 
-The `firefighter` policy in `policy/firefighter.py` is written for this extension: it carries water to the fire, prefers fires that threaten an out building, dumps its load once in range, and flies back to the base to refill. It also keeps its team apart, sending no two UAVs to the same fire or through the same cell, so that it does not destroy its own fleet in collisions. The other policies still run with the extension switched on, but never dump water, since `ACTION_DUMP_WATER` sits outside `N_ACTIONS` and is only emitted by policies that opt in; `random` and `follow-fire` take no care to avoid each other either, so they lose UAVs to collisions.
+The `firefighter` policy in `sim/policy/firefighter.py` is written for this extension: it carries water to the fire, prefers fires that threaten an out building, dumps its load once in range, and flies back to the base to refill. It also keeps its team apart, sending no two UAVs to the same fire or through the same cell, so that it does not destroy its own fleet in collisions. The other policies still run with the extension switched on, but never dump water, since `ACTION_DUMP_WATER` sits outside `N_ACTIONS` and is only emitted by policies that opt in; `random` and `follow-fire` take no care to avoid each other either, so they lose UAVs to collisions.
 
 Because this extension is what gives a run something to lose, `headless.py` reports every run as **WON** or **LOST** while it is switched on, and the batch summary gives the share of runs that were lost:
 
@@ -581,7 +613,7 @@ Concretely, a scenario with two weak wind components should appear, first with 5
 
 ### Windy and partial observabiliy conditions (smoke, wind, no UAV)
 
-A scenario with strong windy conditions, blowing east, and late short-lasting smoke should appear. Remember that, since the dispelling counter for smoke is set in `Smoke` class by default, inside `agents.py` file, changes should be done to the `self.dispelling_counter_start_value` variable, inside `__init()__` method (`Smoke` class). Keep also in mind that `self.dispelling_counter_start_value + SMOKE_PRE_DISPELLING_COUNTER` should be greater than the amount of fuel assigned to each cell (for taking less risks, compare to `FUEL_UPPER_LIMIT`, which is the maximum possible amount of fuel of each cell), in order to avoid situations in which smoke dissipates before the end of the cell’s burning process.
+A scenario with strong windy conditions, blowing east, and late short-lasting smoke should appear. Remember that, since the dispelling counter for smoke is set in `Smoke` class by default, inside `sim/environment.py`, changes should be done to the `self.dispelling_counter_start_value` variable, inside `__init()__` method (`Smoke` class). Keep also in mind that `self.dispelling_counter_start_value + SMOKE_PRE_DISPELLING_COUNTER` should be greater than the amount of fuel assigned to each cell (for taking less risks, compare to `FUEL_UPPER_LIMIT`, which is the maximum possible amount of fuel of each cell), in order to avoid situations in which smoke dissipates before the end of the cell’s burning process.
 
 `NUM_AGENTS = 0`
 
