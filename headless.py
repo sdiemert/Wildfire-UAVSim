@@ -122,10 +122,9 @@ def _import_simulation():
     them. The simulation itself is headless: nothing in it imports matplotlib,
     so there is no GUI backend to force here.
     """
-    import agents
     import config as cfg
-    import wildfire_model
-    from sim import policy
+    from sim import agents, policy
+    from sim import model as wildfire_model
 
     return cfg, wildfire_model, agents, policy
 

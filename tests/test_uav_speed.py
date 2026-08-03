@@ -14,7 +14,7 @@ import pytest
 
 # own python modules
 
-import agents
+from sim import agents
 
 from config import ACTION_DUMP_WATER, ACTION_LEFT, ACTION_RIGHT, ACTION_STAY, ACTION_UP
 

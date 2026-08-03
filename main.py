@@ -11,8 +11,8 @@ from Top_Bar import TopBar
 
 # own python modules
 
-import wildfire_model
-import agents
+from sim import model as wildfire_model
+from sim import agents
 
 from sim.policy import POLICIES, RandomPolicy
 

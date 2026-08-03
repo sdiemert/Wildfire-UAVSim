@@ -18,7 +18,7 @@ import pytest
 
 # own python modules
 
-import agents
+from sim import agents
 
 from config import ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_UP
 

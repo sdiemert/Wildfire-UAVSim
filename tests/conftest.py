@@ -99,7 +99,7 @@ def make_model(sim_config):
         settings.update(overrides)
         sim_config(**settings)
 
-        import wildfire_model
+        from sim import model as wildfire_model
 
         return wildfire_model.WildFireModel(policy=policy)
 

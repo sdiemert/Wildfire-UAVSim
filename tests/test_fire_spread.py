@@ -1,7 +1,7 @@
 """Checks the vectorized fire spread against the per cell definition it replaced.
 
-fire_spread.py works out the ignition probability of every cell in one convolution, where
-Fire.probability_of_fire() (agents.py) works out one cell at a time by walking its neighbourhood.
+sim/fire_spread.py works out the ignition probability of every cell in one convolution, where
+Fire.probability_of_fire() (sim/agents/fire.py) works out one cell at a time by walking its neighbourhood.
 The two have to agree, so every test here compares them directly on a live model: the per cell
 version is the specification, the vectorized one is the implementation under test.
 
@@ -19,9 +19,8 @@ import pytest
 # own python modules
 
 import config
-import fire_spread
 
-from sim import formulas
+from sim import fire_spread, formulas
 
 
 TOLERANCE = 1e-12
@@ -37,7 +36,7 @@ WIND_DIRECTIONS = ("north", "south", "east", "west")
 # runs the model until enough cells are alight for the comparison to be meaningful. The ignition
 # step is configurable and may be delayed, so this steps rather than assuming the fire is burning.
 def burn_for_a_while(model, wanted=25, limit=400):
-    import agents as agents_module
+    from sim import agents as agents_module, environment
 
     fires = [agent for agent in model.schedule.agents if type(agent) is agents_module.Fire]
     for _ in range(limit):
@@ -108,9 +107,9 @@ def test_kernel_matches_distance_rate_without_wind(radius):
 def test_kernel_matches_apply_wind(direction, sim_config):
     sim_config(ACTIVATE_WIND=True, FIXED_WIND=True, WIND_DIRECTION=direction)
 
-    import agents as agents_module
+    from sim import environment
 
-    wind = agents_module.Wind()
+    wind = environment.Wind()
     radius = 3
     kernel = fire_spread.build_kernel(radius, config.MU, direction)
 
@@ -136,9 +135,9 @@ def test_kernel_matches_apply_wind(direction, sim_config):
 def test_on_wind_matches_is_on_wind_direction(direction, sim_config):
     sim_config(ACTIVATE_WIND=True, FIXED_WIND=True, WIND_DIRECTION=direction)
 
-    import agents as agents_module
+    from sim import environment
 
-    wind = agents_module.Wind()
+    wind = environment.Wind()
     cell = (10, 10)
     for dx in range(-3, 4):
         for dy in range(-3, 4):

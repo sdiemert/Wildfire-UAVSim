@@ -4,7 +4,7 @@ Modular Canvas Rendering
 
 Module for visualizing model objects in grid cells.
 """
-from agents import UAV
+from sim.agents import UAV
 from config import UAV_OBSERVATION_COLOR, UAV_OBSERVATION_RADIUS
 from collections import defaultdict
 

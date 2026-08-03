@@ -10,7 +10,7 @@ import pytest
 
 # own python modules
 
-import agents
+from sim import agents
 import config
 
 from sim import formulas

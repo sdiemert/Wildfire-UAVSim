@@ -1,6 +1,6 @@
 """Vectorized fire spread: every cell's ignition probability in one convolution.
 
-The per cell calculation in Fire.probability_of_fire() (see agents.py) works out, for a cell s:
+The per cell calculation in Fire.probability_of_fire() (see sim/agents/fire.py) works out, for a cell s:
 
     P(s) = 1 - PRODUCT over burning neighbours s' of (1 - w(s, s'))
 
@@ -38,7 +38,7 @@ import numpy
 # own python modules
 
 # imported as a module rather than with 'from config import *', so that a runner which overrides the
-# constants (see headless.py) is picked up when a FireSpread is built
+# constants (see sim/cli/) is picked up when a FireSpread is built
 import config
 
 
@@ -48,7 +48,7 @@ import config
 # multiplied by a zero of the burning mask and give nan.
 NEG_INF = -50.0
 
-# the four wind directions, and the offsets they favour. is_on_wind_direction(s, s') in agents.py
+# the four wind directions, and the offsets they favour. is_on_wind_direction(s, s') in sim/environment.py
 # compares the cell with its neighbour; rewriting it on the offset (dx, dy) = s' - s gives, for
 # 'east' (s[0] > s'[0] and s[1] == s'[1]) the neighbours lying to the west, and so on. Taken from
 # config.py, which validates the wind settings against the same tuple, so the two cannot drift apart.
@@ -113,7 +113,7 @@ def mixed_offsets(kernel_first, kernel_second, radius):
 # runner takes effect.
 class FireSpread:
 
-    # constructor. 'radius' and 'moore' must match what the Fire agents use (see agents.py), which
+    # constructor. 'radius' and 'moore' must match what the Fire agents use (see sim/agents/fire.py), which
     # assert_matches() checks against the live agents.
     def __init__(self, height, width, radius=3, moore=True):
         if not moore:
@@ -148,7 +148,7 @@ class FireSpread:
 
         # the per cell wind draws are the only randomness this module needs, and they are only
         # needed under composed wind. The generator is seeded from SYSTEM_RANDOM, so a runner that
-        # seeds the simulation (see headless.py) makes them reproducible too. It is built lazily so
+        # seeds the simulation (see sim/cli/) makes them reproducible too. It is built lazily so
         # that the other two wind modes consume nothing from SYSTEM_RANDOM and leave the stream of
         # draws, and therefore seeded runs, exactly as they were before this module existed.
         self.rng = numpy.random.default_rng(config.SYSTEM_RANDOM.getrandbits(64)) if self.mixed else None

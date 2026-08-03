@@ -13,7 +13,7 @@ import pytest
 
 # own python modules
 
-import agents
+from sim import agents
 
 
 # --- helpers ----------------------------------------------------------------
