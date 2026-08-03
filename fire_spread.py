@@ -50,8 +50,9 @@ NEG_INF = -50.0
 
 # the four wind directions, and the offsets they favour. is_on_wind_direction(s, s') in agents.py
 # compares the cell with its neighbour; rewriting it on the offset (dx, dy) = s' - s gives, for
-# 'east' (s[0] > s'[0] and s[1] == s'[1]) the neighbours lying to the west, and so on.
-WIND_DIRECTIONS = ("north", "south", "east", "west")
+# 'east' (s[0] > s'[0] and s[1] == s'[1]) the neighbours lying to the west, and so on. Taken from
+# config.py, which validates the wind settings against the same tuple, so the two cannot drift apart.
+WIND_DIRECTIONS = config.WIND_DIRECTIONS
 
 
 # checks whether a neighbour at offset (dx, dy) from a cell pushes fire into it under this wind

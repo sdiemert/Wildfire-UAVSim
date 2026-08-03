@@ -16,7 +16,7 @@ class Fire(mesa.Agent):
     # constructor
     def __init__(self, unique_id, model, burning=False):
         super().__init__(unique_id, model)
-        self.fuel = random.randint(FUEL_BOTTOM_LIMIT, FUEL_UPPER_LIMIT)
+        self.fuel = SYSTEM_RANDOM.randint(FUEL_BOTTOM_LIMIT, FUEL_UPPER_LIMIT)
         self.burning = burning
         self.next_burning_state = None
         self.moore = True
@@ -118,7 +118,7 @@ class Fire(mesa.Agent):
             # worked out for the whole grid before the schedule ran, so this is a lookup. The fuel
             # gate stays here, which keeps the model from having to mirror the fuel of every cell.
             self.cell_prob = 0.0 if self.fuel <= 0 else self.model.fire_prob[self.pos]
-            generated = random.random()
+            generated = SYSTEM_RANDOM.random()
             # set next burning state
             if generated < self.cell_prob:
                 self.next_burning_state = True
@@ -131,7 +131,7 @@ class Fire(mesa.Agent):
                     self.next_burning_state = False
                 elif (self.was_extinguished and self.fuel > 0
                       and not self.next_burning_state
-                      and random.random() < SPONTANEOUS_REIGNITION_PROB):
+                      and SYSTEM_RANDOM.random() < SPONTANEOUS_REIGNITION_PROB):
                     self.next_burning_state = True
             # if possible, subtract BURNING_RATE from fuel of the corresponding cell
             if self.burning and self.fuel > 0:

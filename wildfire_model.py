@@ -8,6 +8,7 @@ import numpy
 # own python modules
 
 import agents
+import config
 import fire_spread
 
 # imported by name because 'policy' is also the name of the constructor argument and attribute below,
@@ -27,6 +28,11 @@ class WildFireModel(mesa.Model):
     def __init__(self, log=None, policy=None):
 
         plt.ion()
+
+        # the bounds documented in config.py are checked here, before anything is built, so that an out of
+        # bounds setting is reported against its own name rather than surfacing as a ZeroDivisionError or
+        # a KeyError somewhere deep in a step
+        config.validate()
 
         # set before reset(), because agents log through self.model.log while they are being created
         self.log = log if log is not None else logging.getLogger("wildfire.model")

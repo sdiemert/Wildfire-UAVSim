@@ -111,4 +111,7 @@ def main():
     server.launch()
 
 
-main()
+# guarded, so that importing this module (to reuse agent_portrayal, or simply to check that it parses)
+# does not launch a web server on port 8521
+if __name__ == "__main__":
+    main()

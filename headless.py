@@ -164,16 +164,25 @@ def apply_overrides(overrides: dict[str, Any]) -> None:
             if hasattr(module, "N_OBSERVATIONS"):
                 setattr(module, "N_OBSERVATIONS", side * side)
 
+    # the overrides are checked together with everything they did not touch, so that a combination which
+    # is only invalid once applied (say NUM_AGENTS raised above WIDTH * HEIGHT) is caught here, before any
+    # worker starts a run with it
+    cfg.validate()
+
 
 def seed_simulation(seed: int) -> None:
     """Seed every random source the simulation uses.
 
-    The model draws from both the `random` module (fuel levels, fire spread) and
-    SYSTEM_RANDOM (tree placement, UAV actions, policy tie breaks). SYSTEM_RANDOM
-    is a random.SystemRandom instance, which cannot be seeded, so it is replaced
-    by a seeded random.Random -- again in every module that star-imported it.
+    Everything stochastic in the simulation draws from SYSTEM_RANDOM: cell fuel,
+    tree placement, the fire spread rolls, UAV actions and policy tie breaks.
+    It is a random.SystemRandom instance, which cannot be seeded, so it is
+    replaced by a seeded random.Random -- in every module that star-imported it.
     Policies read config.SYSTEM_RANDOM at call time, so patching config reaches
     them without the package having to be walked.
+
+    The `random` module is seeded as well. Nothing in the simulation draws from
+    it any more, but mesa.Model builds its own random.Random from it, so seeding
+    keeps anything reached through mesa reproducible too.
     """
     random.seed(seed)
     seeded = random.Random(seed)
@@ -608,6 +617,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.policy not in policy_module.POLICIES:
         log.error("unknown policy %r, available: %s",
                   args.policy, ", ".join(sorted(policy_module.POLICIES)))
+        return 2
+
+    # likewise for the overrides: applying them here checks the whole configuration once, so a typo or an
+    # out of bounds value is reported before the batch starts rather than as N identical failed runs.
+    # Each worker applies them again in its own process, so this is a check and not the real application.
+    try:
+        apply_overrides(overrides)
+    except (KeyError, ValueError) as exc:
+        log.error("%s", exc)
         return 2
 
     workers = args.workers if args.workers > 0 else (os.cpu_count() or 1)

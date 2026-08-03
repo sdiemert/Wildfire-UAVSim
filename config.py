@@ -135,21 +135,23 @@ FIRE_START_STEP = (10, 20)
 # `fire_spread.build_kernel()`.
 WIND_DIRECTION = 'south'
 
-# Composed wind. These three exist only when `FIXED_WIND` is False, which is also the only time anything
-# reads them. Mixing two perpendicular directions gives a diagonal wind: NW, NE, SW or SE.
-if not FIXED_WIND:
-    # ### `FIRST_DIR` -- the predominant wind direction.
-    # **Bounds:** one of 'north', 'south', 'east', 'west'.
-    FIRST_DIR = 'south'
+# Composed wind. Read only when `FIXED_WIND` is False, but defined either way: a name that exists under
+# one setting and not the other cannot be overridden from the command line (`headless.py --set` rejects it
+# as an unknown constant) and turns any stray read into a NameError instead of a wrong answer. Mixing two
+# perpendicular directions gives a diagonal wind: NW, NE, SW or SE.
 
-    # ### `SECOND_DIR` -- the other direction, blown whenever the first one is not.
-    # **Bounds:** one of 'north', 'south', 'east', 'west'.
-    SECOND_DIR = 'east'
+# ### `FIRST_DIR` -- the predominant wind direction.
+# **Bounds:** one of 'north', 'south', 'east', 'west'.
+FIRST_DIR = 'south'
 
-    # ### `FIRST_DIR_PROB` -- how far `FIRST_DIR` predominates, drawn afresh per cell per update.
-    # **Bounds:** float in `[0, 1]`. `1` collapses onto `FIRST_DIR`, `0` onto `SECOND_DIR`, and `0.5`
-    # splits the wind evenly between the two.
-    FIRST_DIR_PROB = 0.8
+# ### `SECOND_DIR` -- the other direction, blown whenever the first one is not.
+# **Bounds:** one of 'north', 'south', 'east', 'west'.
+SECOND_DIR = 'east'
+
+# ### `FIRST_DIR_PROB` -- how far `FIRST_DIR` predominates, drawn afresh per cell per update.
+# **Bounds:** float in `[0, 1]`. `1` collapses onto `FIRST_DIR`, `0` onto `SECOND_DIR`, and `0.5`
+# splits the wind evenly between the two.
+FIRST_DIR_PROB = 0.8
 
 # ### `MU` -- wind strength (wind velocity).
 # The fraction of the remaining probability that blowing downwind adds, and blowing upwind takes away.
@@ -446,6 +448,135 @@ SMOKE_COLORS = ["#a8b0bd"]  # only the first entry is used
 BLACK_AND_WHITE_COLORS = ["#ffffff", "#e6e6e6", "#c9c9c9", "#b1b1b1", "#a1a1a1", "#818181",
                           "#636363", "#474747", "#303030", "#1a1a1a", "#000000"]
 COLORS_LEN = len(VEGETATION_COLORS)
+
+
+# =====================================================================================================
+# ## Validation
+#
+# The bounds stated against each setting above are checked here, once, at the start of a run. Without
+# this an out of bounds value either runs and quietly gives nonsense, or fails much later and far from
+# its cause: FIRE_SPREAD_SPEED = 0 raises ZeroDivisionError inside Fire.step(), a FUEL_BOTTOM_LIMIT above
+# FUEL_UPPER_LIMIT raises ValueError once per cell out of randint(), and PROBABILITY_MAP with a UAV on
+# the map throws KeyError: 'Layer' from the canvas.
+#
+# Only the settings whose bounds actually matter are checked; the colours and the advisory thresholds are
+# left alone. WildFireModel.__init__() calls this, so it covers the web interface and the headless runner
+# alike, and headless.py calls it again after applying --set overrides.
+# =====================================================================================================
+
+# every direction the wind logic understands, in agents.Wind and in fire_spread.build_kernel()
+WIND_DIRECTIONS = ('north', 'south', 'east', 'west')
+
+
+# checks the configuration over, raising ValueError describing everything that is wrong with it rather
+# than only the first thing found, so that a badly set up run is fixed in one pass
+def validate():
+    problems = []
+
+    def require(condition, message):
+        if not condition:
+            problems.append(message)
+
+    # forest area
+    require(isinstance(BATCH_SIZE, int) and BATCH_SIZE >= 1,
+            f"BATCH_SIZE must be an integer >= 1, got {BATCH_SIZE!r}")
+    require(isinstance(WIDTH, int) and WIDTH >= 1, f"WIDTH must be an integer >= 1, got {WIDTH!r}")
+    require(isinstance(HEIGHT, int) and HEIGHT >= 1, f"HEIGHT must be an integer >= 1, got {HEIGHT!r}")
+    require(1 <= FUEL_BOTTOM_LIMIT <= FUEL_UPPER_LIMIT,
+            f"FUEL_BOTTOM_LIMIT {FUEL_BOTTOM_LIMIT} and FUEL_UPPER_LIMIT {FUEL_UPPER_LIMIT} must "
+            "satisfy 1 <= bottom <= upper")
+    require(isinstance(BURNING_RATE, int) and BURNING_RATE >= 1,
+            f"BURNING_RATE must be an integer >= 1, got {BURNING_RATE!r}")
+    # a non integer never satisfies the modulo in Fire.step() and freezes the fire; zero divides by it
+    require(isinstance(FIRE_SPREAD_SPEED, int) and FIRE_SPREAD_SPEED >= 1,
+            f"FIRE_SPREAD_SPEED must be an integer >= 1, got {FIRE_SPREAD_SPEED!r}")
+    require(0.0 <= DENSITY_PROB <= 1.0, f"DENSITY_PROB must be in [0, 1], got {DENSITY_PROB!r}")
+
+    # wind. The composed directions are only read when the wind is on and not fixed, but they are always
+    # defined, so they are always worth checking
+    if ACTIVATE_WIND:
+        require(0.0 <= MU <= 1.0, f"MU must be in [0, 1], got {MU!r}")
+        if FIXED_WIND:
+            require(WIND_DIRECTION in WIND_DIRECTIONS,
+                    f"WIND_DIRECTION must be one of {WIND_DIRECTIONS}, got {WIND_DIRECTION!r}")
+        else:
+            require(FIRST_DIR in WIND_DIRECTIONS,
+                    f"FIRST_DIR must be one of {WIND_DIRECTIONS}, got {FIRST_DIR!r}")
+            require(SECOND_DIR in WIND_DIRECTIONS,
+                    f"SECOND_DIR must be one of {WIND_DIRECTIONS}, got {SECOND_DIR!r}")
+            require(0.0 <= FIRST_DIR_PROB <= 1.0,
+                    f"FIRST_DIR_PROB must be in [0, 1], got {FIRST_DIR_PROB!r}")
+
+    # smoke
+    require(isinstance(SMOKE_PRE_DISPELLING_COUNTER, int) and SMOKE_PRE_DISPELLING_COUNTER >= 0,
+            f"SMOKE_PRE_DISPELLING_COUNTER must be an integer >= 0, got {SMOKE_PRE_DISPELLING_COUNTER!r}")
+
+    # UAVs
+    require(isinstance(NUM_AGENTS, int) and NUM_AGENTS >= 0,
+            f"NUM_AGENTS must be an integer >= 0, got {NUM_AGENTS!r}")
+    if isinstance(NUM_AGENTS, int) and isinstance(WIDTH, int) and isinstance(HEIGHT, int):
+        # same wording as the check in WildFireModel.launch_positions(), which is the other place this
+        # can be discovered: one problem, one message
+        require(NUM_AGENTS <= WIDTH * HEIGHT,
+                f"{NUM_AGENTS} UAVs do not fit on the {HEIGHT}x{WIDTH} grid: "
+                "lower NUM_AGENTS or enlarge the grid")
+    require(N_ACTIONS in (4, 5), f"N_ACTIONS must be 4 or 5, got {N_ACTIONS!r}")
+    require(isinstance(UAV_SPEED, int) and UAV_SPEED >= 0,
+            f"UAV_SPEED must be an integer >= 0, got {UAV_SPEED!r}")
+    require(isinstance(UAV_OBSERVATION_RADIUS, int) and UAV_OBSERVATION_RADIUS >= 0,
+            f"UAV_OBSERVATION_RADIUS must be an integer >= 0, got {UAV_OBSERVATION_RADIUS!r}")
+    require(SECURITY_DISTANCE >= 0, f"SECURITY_DISTANCE must be >= 0, got {SECURITY_DISTANCE!r}")
+    require(isinstance(UAV_HP, int) and UAV_HP >= 1, f"UAV_HP must be an integer >= 1, got {UAV_HP!r}")
+
+    # nothing but the fire is drawn on the probability map, so a UAV would get a portrayal with no
+    # "Layer" attribute and the canvas would throw KeyError: 'Layer'
+    require(not (PROBABILITY_MAP and NUM_AGENTS), "PROBABILITY_MAP requires NUM_AGENTS = 0")
+
+    # fuel extension
+    if ACTIVATE_FUEL:
+        require(UAV_FUEL > 0, f"UAV_FUEL must be > 0, got {UAV_FUEL!r}")
+        require(UAV_FUEL_IDLE_BURN >= 0,
+                f"UAV_FUEL_IDLE_BURN must be >= 0, got {UAV_FUEL_IDLE_BURN!r}")
+        require(UAV_FUEL_BURN_PER_CELL >= 0,
+                f"UAV_FUEL_BURN_PER_CELL must be >= 0, got {UAV_FUEL_BURN_PER_CELL!r}")
+        require(UAV_FUEL_SPEED_EXPONENT >= 0,
+                f"UAV_FUEL_SPEED_EXPONENT must be >= 0, got {UAV_FUEL_SPEED_EXPONENT!r}")
+        require(0.0 <= UAV_FUEL_RESERVE <= 1.0,
+                f"UAV_FUEL_RESERVE must be in [0, 1], got {UAV_FUEL_RESERVE!r}")
+        require(isinstance(BASE_REFUEL_STEPS, int) and BASE_REFUEL_STEPS >= 0,
+                f"BASE_REFUEL_STEPS must be an integer >= 0, got {BASE_REFUEL_STEPS!r}")
+
+    # firefighting extension
+    if ACTIVATE_FIREFIGHTING:
+        require(len(BASE_SIZE) == 2 and all(isinstance(side_, int) and side_ >= 1 for side_ in BASE_SIZE),
+                f"BASE_SIZE must be a pair of integers >= 1, got {BASE_SIZE!r}")
+        require(isinstance(BHP, int) and BHP >= 1, f"BHP must be an integer >= 1, got {BHP!r}")
+        require(isinstance(BASE_REFILL_STEPS, int) and BASE_REFILL_STEPS >= 0,
+                f"BASE_REFILL_STEPS must be an integer >= 0, got {BASE_REFILL_STEPS!r}")
+        require(isinstance(BASE_CAPACITY, int) and BASE_CAPACITY >= 1,
+                f"BASE_CAPACITY must be an integer >= 1, got {BASE_CAPACITY!r}")
+        require(isinstance(UAV_WATER_CAPACITY, int) and UAV_WATER_CAPACITY >= 1,
+                f"UAV_WATER_CAPACITY must be an integer >= 1, got {UAV_WATER_CAPACITY!r}")
+        require(isinstance(WATER_DROP_RADIUS, int) and WATER_DROP_RADIUS >= 0,
+                f"WATER_DROP_RADIUS must be an integer >= 0, got {WATER_DROP_RADIUS!r}")
+        require(0.0 <= WATER_EXTINGUISH_PROB_CENTRE <= 1.0,
+                f"WATER_EXTINGUISH_PROB_CENTRE must be in [0, 1], got {WATER_EXTINGUISH_PROB_CENTRE!r}")
+        require(0.0 <= WATER_EXTINGUISH_PROB_EDGE <= 1.0,
+                f"WATER_EXTINGUISH_PROB_EDGE must be in [0, 1], got {WATER_EXTINGUISH_PROB_EDGE!r}")
+        require(isinstance(REIGNITION_DELAY, int) and REIGNITION_DELAY >= 0,
+                f"REIGNITION_DELAY must be an integer >= 0, got {REIGNITION_DELAY!r}")
+        require(0.0 <= SPONTANEOUS_REIGNITION_PROB <= 1.0,
+                f"SPONTANEOUS_REIGNITION_PROB must be in [0, 1], got {SPONTANEOUS_REIGNITION_PROB!r}")
+        require(isinstance(NUM_OUT_BUILDINGS, int) and NUM_OUT_BUILDINGS >= 0,
+                f"NUM_OUT_BUILDINGS must be an integer >= 0, got {NUM_OUT_BUILDINGS!r}")
+        require(isinstance(OUT_BUILDING_HP, int) and OUT_BUILDING_HP >= 1,
+                f"OUT_BUILDING_HP must be an integer >= 1, got {OUT_BUILDING_HP!r}")
+    # ACTIVATE_FUEL without ACTIVATE_FIREFIGHTING is deliberately not an error: there is simply nowhere to
+    # refuel, which turns UAV_FUEL into a hard endurance limit on the whole run. See the note against
+    # ACTIVATE_FUEL above.
+
+    if problems:
+        raise ValueError("invalid configuration:\n  - " + "\n  - ".join(problems))
 
 
 # =====================================================================================================
