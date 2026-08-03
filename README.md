@@ -84,7 +84,7 @@ by_distance(pos, positions)       # positions ordered nearest first, for picking
 
 It also never asks a UAV to fly further than `UAV_OBSERVATION_RADIUS`. This matters whenever `UAV_SPEED` is the larger of the two, as it is by default (`5` against `4`): a flight that ends outside the observation window lands on a cell `uav_positions` said nothing about, so the UAV can fly into a teammate it was never told was there. Giving up the last cell of speed is cheaper than the collision.
 
-With the firefighting extension on, an `Observation` also carries `has_water`, `base_pos`, `base_cells` and `building_positions`; `at_base()` is true anywhere on the base footprint.
+With the firefighting extension on, an `Observation` also carries `has_water`, `base_pos`, `base_cells` and `building_positions`; `at_base()` is true anywhere on the base footprint. With the fuel extension on it carries `fuel` and `fuel_capacity`, read through `fuel_fraction()` and `low_fuel()`; both are `None` when fuel is not being tracked, and `low_fuel()` is then always `False`, so a policy that ignores fuel flies exactly as it did before.
 
 ### `headless.py`
 
@@ -173,7 +173,7 @@ def test_moves_toward_a_fire_on_its_right(observation, uav_speed):
     assert policy.select_actions([obs]) == [Action(ACTION_RIGHT, 3)]
 ```
 
-`pos` is where the UAV is, `burning` and `unburnt` are the cells it can see; cells outside its observation radius are simply left out. `uavs=[(5, 7)]` puts other UAVs in view, for testing that a policy keeps its team apart. The `uav_speed` fixture pins `UAV_SPEED` for the test, so an expected speed does not depend on what `config.py` is set to. For a policy that makes random choices, the `seed_rng` fixture replaces `config.SYSTEM_RANDOM` with a seeded generator so the result is reproducible:
+`pos` is where the UAV is, `burning` and `unburnt` are the cells it can see; cells outside its observation radius are simply left out. `uavs=[(5, 7)]` puts other UAVs in view, for testing that a policy keeps its team apart, and `fuel=10` gives the UAV a part empty tank, defaulting the capacity to `UAV_FUEL`. The `uav_speed` fixture pins `UAV_SPEED` for the test, so an expected speed does not depend on what `config.py` is set to. For a policy that makes random choices, the `seed_rng` fixture replaces `config.SYSTEM_RANDOM` with a seeded generator so the result is reproducible:
 
 ```python
 def test_is_reproducible(observation, seed_rng):
@@ -377,6 +377,77 @@ collision at (24, 2) between UAVs [3235, 3236], health points lost: {3235: 1, 32
 ```
 
 The graphical interface reports the health of every UAV on its own line of the sidebar, in figures that turn amber and then red as it drops, and marks a destroyed one as `destroyed`. The `Collisions` counter beside the metrics is how many times a cell was found holding more than one UAV; `headless.py` records the same as `collisions` and `uavs_lost` in its results.
+
+### Fuel extension
+
+An optional extension that gives each UAV a tank to fly on. It is switched off by default; with `ACTIVATE_FUEL = False` nothing in this section is burned, tracked or reported, and the simulator behaves exactly as it did before the extension existed.
+
+> Note that **"fuel" means two unrelated things** in this project. `FUEL_UPPER_LIMIT` and `FUEL_BOTTOM_LIMIT` in the forest area section are how much a *vegetation cell* has left to burn. Everything here is the fuel in a *UAV's tank*, and the two never interact.
+
+A UAV that runs its tank dry **loses every health point it has left and is destroyed**, exactly as a fatal collision destroys it: off the grid, out of the scheduler, no further part in the run. It is settled once per step, after the collisions, so a UAV that both collided fatally and ran dry on the same step is counted once, against the collision.
+
+#### What a step costs
+
+```
+cost = idle + UAV_FUEL_BURN_PER_CELL * cells_moved ** UAV_FUEL_SPEED_EXPONENT
+```
+
+The **idle burn** is charged for staying in the air at all, so holding position and dumping water are cheap but not free. It is waived for a UAV parked on the home base footprint — engines off — which is what makes flying home worth the trip.
+
+`cells_moved` is the distance **actually covered**, so a UAV stopped early by the edge of the grid or by another UAV pays only for the flight it really made.
+
+Because the exponent is above `1`, **each extra cell of speed costs more than the last**, the way the power a real airframe draws climbs steeply with airspeed. Covering ground in one fast dash costs more than covering it slowly, which gives a policy a genuine reason to cruise:
+
+| flight | fuel at the defaults |
+| --- | --- |
+| hold position | `1.0` |
+| 1 cell | `2.0` |
+| 3 cells in one step | `6.2` |
+| 5 cells in one step | `12.2` |
+| 5 cells, one per step over 5 steps | `10.0` |
+
+`ACTIVATE_FUEL`: Master switch for the extension.
+
+`UAV_FUEL`: Units in a full tank, which is what every UAV starts the run with. Size it against `BATCH_SIZE` and how many sorties a run should allow: at the defaults, holding position costs `1` a step and cruising three cells a step costs about `6.2`, so a 150 unit tank is either 150 steps of loitering or about 24 of cruising.
+
+`UAV_FUEL_IDLE_BURN`: Fuel burned per step spent airborne, whatever the UAV did. `0` lets a UAV loiter for free, so only distance costs.
+
+`UAV_FUEL_BURN_PER_CELL`: Fuel burned per cell of flight, before the speed penalty. `0` makes movement free, leaving the idle burn as a pure clock.
+
+`UAV_FUEL_SPEED_EXPONENT`: How much harder each extra cell of speed is on the tank. `1.0` is flat, so five cells cost five times one cell however they are flown; `1.5` is the default; `2.0` makes sprinting a serious decision. Below `1` it rewards sprinting instead, which is not physical but is a legitimate thing to experiment with.
+
+`UAV_FUEL_RESERVE`: The share of a tank at or below which a policy should turn for home. **Advisory only** — nothing in the simulation enforces it. `Observation.low_fuel()` reports it, and the `firefighter` policy acts on it.
+
+`BASE_REFUEL_STEPS`: Steps a UAV must spend at the base to fill its tank.
+
+#### Refuelling
+
+Refuelling happens at the **home base**, so it needs the firefighting extension switched on as well. With fuel on and `ACTIVATE_FIREFIGHTING = False` there is nowhere to refuel, which turns `UAV_FUEL` into a hard endurance limit on the whole run — a legitimate way to ask how much a policy achieves before its fleet is gone.
+
+Refuelling is not an action, and it **shares the refilling slot with water**: a UAV standing on the base that wants either takes one of the `BASE_CAPACITY` slots, waits `max(BASE_REFILL_STEPS, BASE_REFUEL_STEPS)` steps, and gets a full load of water and a full tank together. A UAV that is full of water but short of fuel is a reason to be served, so it can make a thirsty teammate queue — the base is deliberately the one logistics bottleneck.
+
+#### What a policy is told
+
+An `Observation` carries `fuel` and `fuel_capacity`, both `None` when the extension is off, which is what tells a policy fuel is not being tracked at all rather than that the tank is empty. Two helpers read them:
+
+```python
+observation.fuel_fraction()   # how much of a full tank is left, 1.0 when fuel is not tracked
+observation.low_fuel()        # at or below UAV_FUEL_RESERVE; always False when fuel is not tracked
+```
+
+The `firefighter` policy acts on the reserve: a UAV down to it breaks off whatever it was doing, flies home with its water still aboard, and **waits on the base until the tank is full** — landing is not enough, since a visit takes `BASE_REFUEL_STEPS`. The reserve is a flat share of the tank, not an estimate of the fuel needed to reach the base, so a UAV that strays far enough from home can still run dry on the way back; sizing the reserve against how far the team ranges is left to whoever configures the run. `random` and `follow-fire` take no notice of fuel at all and will fly themselves into the ground.
+
+The sidebar shows each UAV's tank beside its health, in figures that turn amber and then red as it empties. `headless.py` records `uavs_out_of_fuel` and `fuel_remaining` in its results, and logs a `fuel |` line per run:
+
+```
+fuel | ran dry=0/4 | tanks left: mean=31.6 min=24.8 of 40
+```
+
+To try it from the command line, without editing `config.py`:
+
+```bash
+python3 headless.py --steps 60 --policy firefighter --set ACTIVATE_FUEL=True --set UAV_FUEL=40
+```
 
 ### Firefighting extension
 

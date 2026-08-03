@@ -30,16 +30,23 @@ def observation():
     'uavs' is where the other UAVs in view are standing, which a policy needs to keep its team from
     colliding. It is reported whether or not the firefighting extension is switched on.
 
+    'fuel' and 'fuel_capacity' belong to the fuel extension and are None when it is switched off, which
+    is what makes low_fuel() False and lets a policy ignore fuel entirely. Passing 'fuel' alone defaults
+    the capacity to config.UAV_FUEL, so a test can just say fuel=10 and mean "nearly dry".
+
     'has_water', 'base_pos', 'base_cells' and 'building_positions' belong to the firefighting extension,
     and keep the defaults they have when it is switched off.
     """
 
-    def _make(pos, burning=(), unburnt=(), uav_id=0, uavs=(),
+    def _make(pos, burning=(), unburnt=(), uav_id=0, uavs=(), fuel=None, fuel_capacity=None,
               has_water=False, base_pos=None, base_cells=(), building_positions=()):
         cells = [(tuple(cell), 1) for cell in burning]
         cells += [(tuple(cell), 0) for cell in unburnt]
+        if fuel is not None and fuel_capacity is None:
+            fuel_capacity = float(config.UAV_FUEL)
         return Observation(uav_id=uav_id, pos=tuple(pos), cells=cells,
                            uav_positions=[tuple(cell) for cell in uavs],
+                           fuel=fuel, fuel_capacity=fuel_capacity,
                            has_water=has_water,
                            base_pos=None if base_pos is None else tuple(base_pos),
                            base_cells=[tuple(cell) for cell in base_cells],

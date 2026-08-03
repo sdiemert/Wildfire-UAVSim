@@ -116,6 +116,8 @@ class WildFireModel(mesa.Model):
         # that cost the team. Counted whether or not the firefighting extension is on.
         self.collisions = 0
         self.uavs_lost = 0
+        # of the UAVs lost above, how many ran their tanks dry rather than being destroyed in a collision
+        self.uavs_out_of_fuel = 0
         if ACTIVATE_FIREFIGHTING:
             self.set_base()
             self.set_out_buildings()
@@ -453,15 +455,33 @@ class WildFireModel(mesa.Model):
                           position, [uav.unique_id for uav in crowd], damage)
             for uav in crowd:
                 if not uav.is_alive():
-                    self.destroy_uav(uav)
+                    self.destroy_uav(uav, reason="collision")
+
+    # method that settles the UAVs that ran their tanks dry during the step just taken. An empty tank
+    # costs a UAV every health point it has left, so it is destroyed exactly as a fatal collision destroys
+    # it, and for the same reason it is settled here rather than inside UAV.advance(): destroying an agent
+    # takes it out of the scheduler, which must not happen while the scheduler is iterating.
+    #
+    # Run after resolve_collisions(), so a UAV that was destroyed by a collision on the same step is
+    # already out of active_uavs() and is counted once, against the collision that actually killed it.
+    def resolve_fuel(self):
+        if not ACTIVATE_FUEL:
+            return
+
+        for uav in self.active_uavs():
+            if not uav.is_out_of_fuel():
+                continue
+            self.uavs_out_of_fuel += 1
+            uav.take_damage(uav.hp)  # an empty tank costs every health point it has left
+            self.destroy_uav(uav, reason="out of fuel")
 
     # takes a UAV that has run out of health points out of the simulation: off the grid, so that it stops
     # blocking traffic and being drawn, and out of the scheduler, so that it takes no further steps. It
     # stays in self.uavs as a record of the team that started the run.
-    def destroy_uav(self, uav):
+    def destroy_uav(self, uav, reason="collision"):
         self.uavs_lost += 1
-        self.log.warning("UAV %d destroyed at %s after %d step(s)",
-                         uav.unique_id, uav.pos, self.evaluation_timesteps_counter)
+        self.log.warning("UAV %d destroyed at %s after %d step(s): %s",
+                         uav.unique_id, uav.pos, self.evaluation_timesteps_counter, reason)
         # a UAV destroyed while refilling would otherwise hold its slot at the base for good
         if self.base is not None:
             self.base.serving.pop(uav.unique_id, None)
@@ -505,6 +525,10 @@ class WildFireModel(mesa.Model):
             self.log.info("%s", self.MR2_VALUE)
             self.log.info(" --- collisions --- ")
             self.log.info("%d, %d UAV(s) lost of %d", self.collisions, self.uavs_lost, len(self.uavs))
+            if ACTIVATE_FUEL:
+                self.log.info(" --- fuel --- ")
+                self.log.info("%d UAV(s) ran out of fuel, tanks left: %s", self.uavs_out_of_fuel,
+                              [round(uav.fuel, 1) for uav in self.uavs])
             self.running = False
             return
 
@@ -550,6 +574,11 @@ class WildFireModel(mesa.Model):
         # rather than inside UAV.advance(), because sharing a cell is a property of the grid: it is only
         # known once every UAV has moved, and it costs both of them the same whichever moved first.
         self.resolve_collisions()
+
+        # the fuel each UAV burned was charged as it flew, so whoever ran the tank dry is settled now,
+        # after the collisions: a UAV that both collided fatally and ran out on the same step has already
+        # gone, and is counted against the collision rather than twice.
+        self.resolve_fuel()
 
         # firefighting extension: losing the home base ends the run immediately
         if ACTIVATE_FIREFIGHTING and self.base is not None and self.base.is_destroyed() and not self.lost:

@@ -267,6 +267,10 @@ class UAV(mesa.Agent):
         # that runs out is destroyed. WildFireModel.resolve_collisions() is what charges the damage,
         # because whether two UAVs share a cell is a property of the grid rather than of either of them.
         self.hp = UAV_HP
+        # fuel extension: UAVs take off with a full tank. The attribute is set whether or not the
+        # extension is on, so that the interface and the tests need no special case for it; what
+        # ACTIVATE_FUEL governs is whether burn_fuel() ever takes anything off it.
+        self.fuel = float(UAV_FUEL)
         # firefighting extension: UAVs leave the base with a full load of water
         self.water = UAV_WATER_CAPACITY if ACTIVATE_FIREFIGHTING else 0
 
@@ -291,6 +295,32 @@ class UAV(mesa.Agent):
     # zero for a roll that did no harm as well as for a UAV that was already down.
     def take_collision_damage(self):
         return self.take_damage(roll_collision_damage())
+
+    # checks whether this UAV has run dry | always False when the fuel extension is switched off, so that
+    # nothing downstream has to test the flag itself. WildFireModel.resolve_fuel() is what acts on it.
+    def is_out_of_fuel(self):
+        return ACTIVATE_FUEL and self.fuel <= 0
+
+    # checks whether the tank is full, which is what tells the base there is nothing to refuel
+    def has_full_tank(self):
+        return self.fuel >= UAV_FUEL
+
+    # burns the fuel one step of flight cost this UAV, given the cells it actually covered. The cost comes
+    # from fuel_burn_cost() in config.py, which the policies read as well. The tank is clamped at zero, so
+    # an empty one lands exactly on 0.0 rather than drifting negative. Returns the fuel actually burned.
+    def burn_fuel(self, cells_moved):
+        if not ACTIVATE_FUEL:
+            return 0.0
+
+        burned = min(self.fuel, fuel_burn_cost(cells_moved, at_base=self.model.at_base(self.pos)))
+        self.fuel -= burned
+        self.model.log.debug("UAV %d burned %.2f fuel over %d cell(s), %.2f left",
+                             self.unique_id, burned, cells_moved, self.fuel)
+        return burned
+
+    # fills the tank, which the home base does once a refuel has taken BASE_REFUEL_STEPS steps
+    def refuel(self):
+        self.fuel = float(UAV_FUEL)
 
     # checks whether this UAV still carries water to dump | True if it does, False if it is empty
     def has_water(self):
@@ -354,15 +384,24 @@ class UAV(mesa.Agent):
                 elif type(agent) is OutBuilding and not agent.destroyed:
                     buildings.append(cell)
 
+        # the fuel a policy is told about. Left at None when the extension is off, so that a policy can
+        # tell "the tank is empty" apart from "fuel is not being tracked in this run" and ignore it
+        # entirely; Observation.low_fuel() reports False either way.
+        fuel = self.fuel if ACTIVATE_FUEL else None
+        capacity = float(UAV_FUEL) if ACTIVATE_FUEL else None
+
         # the extension fields stay at their defaults when the extension is off, so that policies written
         # against the plain simulation keep working unchanged. The UAVs in view are reported either way,
-        # because collisions do not belong to the extension.
+        # because collisions do not belong to the extension, and so is the fuel, which has a switch of its
+        # own and is burned with or without the firefighting extension.
         if not ACTIVATE_FIREFIGHTING:
             return Observation(uav_id=self.unique_id, pos=self.pos, cells=cells,
-                               uav_positions=neighbours)
+                               uav_positions=neighbours,
+                               fuel=fuel, fuel_capacity=capacity)
 
         return Observation(uav_id=self.unique_id, pos=self.pos, cells=cells,
                            uav_positions=neighbours,
+                           fuel=fuel, fuel_capacity=capacity,
                            has_water=self.has_water(),
                            base_pos=self.model.base.pos if self.model.base else None,
                            base_cells=list(self.model.base.cells) if self.model.base else [],
@@ -433,17 +472,23 @@ class UAV(mesa.Agent):
             return
 
         # dumping water takes the whole step, so the UAV does not move as well
+        cells_moved = 0
         if ACTIVATE_FIREFIGHTING and self.selected_dir == ACTION_DUMP_WATER:
             self.model.water_drops += 1
             self.model.cells_extinguished += self.dump_water()
-            return
+        else:
+            cells_moved = self.move()
 
-        self.move()
+            # refilling is not an action: a UAV standing on the base with an empty tank or a part empty
+            # fuel tank starts being served, and the base itself decides whether it is free to serve it
+            if ACTIVATE_FIREFIGHTING and self.model.base is not None:
+                self.model.base.serve(self)
 
-        # refilling is not an action: a UAV standing on the base with an empty tank starts refilling, and
-        # the base itself decides whether it is free to serve it
-        if ACTIVATE_FIREFIGHTING and self.model.base is not None:
-            self.model.base.serve(self)
+        # the step is paid for last, from the distance actually covered, so that a UAV stopped early by the
+        # grid edge or by another UAV is not charged for the flight it did not make. Running the tank dry
+        # does not kill the UAV here: WildFireModel.resolve_fuel() settles that once the whole schedule has
+        # run, because destroying an agent mid schedule would mutate what the scheduler is iterating over.
+        self.burn_fuel(cells_moved)
 
 
 # Class Base holds the home base the UAVs start from and refill at. It is part of the firefighting
@@ -477,24 +522,36 @@ class Base(mesa.Agent):
     def is_destroyed(self):
         return self.burning_steps >= BHP
 
-    # serves one UAV standing on the base cell, if there is a free refilling slot. A refill takes
-    # BASE_REFILL_STEPS steps, during which the slot stays taken.
+    # checks whether a UAV standing on the base wants anything from it: water, or fuel when the fuel
+    # extension is on. With ACTIVATE_FUEL off this is exactly the empty tank test it has always been.
+    def needs_service(self, uav):
+        return not uav.has_water() or (ACTIVATE_FUEL and not uav.has_full_tank())
+
+    # how long one visit to the base takes. Water and fuel are taken on together in a single visit, so a
+    # UAV that wants both waits for the slower of the two rather than queueing twice.
+    def service_steps(self):
+        return max(BASE_REFILL_STEPS, BASE_REFUEL_STEPS) if ACTIVATE_FUEL else BASE_REFILL_STEPS
+
+    # serves one UAV standing on the base cell, if there is a free slot. A visit takes service_steps()
+    # steps, during which the slot stays taken, and hands over a full load of water and a full tank.
     def serve(self, uav):
-        if not self.covers(uav.pos) or uav.has_water():
-            # a UAV that leaves, or that is already full, gives its slot back
+        if not self.covers(uav.pos) or not self.needs_service(uav):
+            # a UAV that leaves, or that wants nothing, gives its slot back
             self.serving.pop(uav.unique_id, None)
             return False
 
         if uav.unique_id not in self.serving:
-            if len(self.serving) >= BASE_CAPACITY:  # somebody else is refilling
+            if len(self.serving) >= BASE_CAPACITY:  # somebody else is being served
                 self.model.log.debug("UAV %d is waiting for the base to be free", uav.unique_id)
                 return False
-            self.serving[uav.unique_id] = BASE_REFILL_STEPS
+            self.serving[uav.unique_id] = self.service_steps()
             self.model.log.debug("UAV %d started refilling at the base", uav.unique_id)
 
         self.serving[uav.unique_id] -= 1
         if self.serving[uav.unique_id] <= 0:
             uav.refill()
+            if ACTIVATE_FUEL:
+                uav.refuel()
             self.model.refills += 1
             self.model.log.debug("UAV %d refilled at the base", uav.unique_id)
             # the slot is not released here: it stays taken until the next step, so that no more than

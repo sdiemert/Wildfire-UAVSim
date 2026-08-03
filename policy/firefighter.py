@@ -14,13 +14,19 @@ class FirefighterPolicy(Policy):
 
     Each UAV follows the same simple loop:
 
+      * down to the fuel reserve -> break off for home, and wait there until the tank is full
       * carrying water, with fire close enough for the drop to reach it -> dump the water
       * carrying water, with fire in view but out of reach          -> fly toward the nearest fire
       * carrying water, with a threatened out building in view       -> defend it
       * empty                                                        -> fly back to the base and refill
 
-    Refilling is not an action: standing on the base with an empty tank is enough, and the base serves one
-    UAV at a time, so UAVs that arrive together queue up.
+    Refilling is not an action: standing on the base wanting water or fuel is enough, and the base serves
+    one UAV at a time, so UAVs that arrive together queue up. With the fuel extension off, low_fuel() is
+    never true and the loop is exactly the water one it has always been.
+
+    The reserve is a flat share of the tank (UAV_FUEL_RESERVE), not an estimate of the fuel needed to
+    reach the base, so a UAV that strays far enough from home can still run dry on the way back. Sizing
+    the reserve against how far the team ranges is left to whoever configures the run.
 
     The team is kept apart, because UAVs that end a step on the same cell collide and lose health points.
     Two rules do it, and both need the whole team, which is why the work is in select_actions() rather than
@@ -61,6 +67,15 @@ class FirefighterPolicy(Policy):
     # decides the action for a single UAV, and reports the fire it went for so that the rest of the team
     # leaves that one alone. 'claimed' is the fires the UAVs before it in the team were sent to.
     def action_for(self, observation, claimed=()):
+        # an empty tank costs a UAV every health point it has, so the reserve outranks the firefighting:
+        # a UAV down to it breaks off and flies home, water still aboard, rather than pressing on to a
+        # fire it would not survive. Once home, return_to_base() holds position, so the UAV sits on the
+        # base until the tank is full and low_fuel() goes quiet -- the same way an empty one waits for
+        # water. Leaving as soon as it landed would mean never staying the BASE_REFUEL_STEPS it takes to
+        # be served, so it would fly off just as dry as it arrived.
+        if observation.low_fuel():
+            return self.return_to_base(observation), None
+
         if not observation.has_water:
             # the base is shared airspace, so going home claims nothing
             return self.return_to_base(observation), None

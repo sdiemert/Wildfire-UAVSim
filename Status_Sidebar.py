@@ -173,9 +173,9 @@ class StatusSidebar(VisualizationElement):
         html.append("</div>")
         return "".join(html)
 
-    # the team, one line each: where the UAV is, what health it has left, whether it is carrying water and
-    # what it has scored. The per UAV MR1 lives here rather than in the metrics, which keeps every fact
-    # about a UAV on its own line.
+    # the team, one line each: where the UAV is, what health and fuel it has left, whether it is carrying
+    # water and what it has scored. The per UAV MR1 lives here rather than in the metrics, which keeps
+    # every fact about a UAV on its own line.
     def uavs(self, model):
         crew = model.uavs
         flying = sum(1 for uav in crew if uav.is_alive())
@@ -197,6 +197,11 @@ class StatusSidebar(VisualizationElement):
                 html.append(f'<span class="who">{index} {uav.pos}</span>')
                 html.append(f'<span class="{self.health_class(uav.hp, UAV_HP)}">'
                             f'{uav.hp}/{UAV_HP}</span>')
+                if ACTIVATE_FUEL:
+                    # the tank, coloured like the health above, so a UAV running low is as easy to spot
+                    # as a damaged one. Shown whole: the fractions it burns are not worth the width.
+                    html.append(f'<span class="{self.health_class(uav.fuel, UAV_FUEL)}">'
+                                f'&#9981;{uav.fuel:.0f}</span>')
                 if ACTIVATE_FIREFIGHTING:
                     # the water is a load count, so it is shown as a drop that is either lit or greyed out
                     water = f"&#128167;{uav.water}" if uav.has_water() else "&#128167;&ndash;"

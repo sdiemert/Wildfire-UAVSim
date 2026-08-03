@@ -40,7 +40,7 @@ SYSTEM_RANDOM = random.SystemRandom()
 # ### `ACTIVATE_WIND` -- whether wind skews the direction the fire spreads in.
 # With it off, `MU`, `WIND_DIRECTION` and the composed wind settings are ignored.
 # **Bounds:** `True` / `False`.
-ACTIVATE_WIND = False
+ACTIVATE_WIND = True
 
 # ### `FIXED_WIND` -- whether the wind blows from one direction or two.
 # `True` uses `WIND_DIRECTION` alone; `False` composes `FIRST_DIR` and `SECOND_DIR`.
@@ -49,7 +49,7 @@ FIXED_WIND = False
 
 # ### `ACTIVATE_SMOKE` -- whether burning cells raise smoke, hiding what is underneath.
 # **Bounds:** `True` / `False`.
-ACTIVATE_SMOKE = False
+ACTIVATE_SMOKE = True
 
 # ### `PROBABILITY_MAP` -- draw each cell's probability of catching fire instead of the forest.
 # **Bounds:** `True` / `False`. Requires `NUM_AGENTS = 0`: nothing but the fire is drawn on the
@@ -71,15 +71,15 @@ BATCH_SIZE = 100
 # ### `WIDTH`, `HEIGHT` -- grid size (forest area size), in cells.
 # The web canvas is drawn at 10 pixels per cell, so a grid much past ~100 stops fitting on screen.
 # **Bounds:** integers `>= 1`. Run time grows with `WIDTH * HEIGHT`.
-WIDTH = 60  # in python [height, width] for grid, in js [width, heigh]
-HEIGHT = 60
+WIDTH = 50  # in python [height, width] for grid, in js [width, heigh]
+HEIGHT = 50
 
 # ### `FUEL_UPPER_LIMIT`, `FUEL_BOTTOM_LIMIT` -- burnable fuel each cell starts with.
 # Every cell draws uniformly from the inclusive range, and burns for that many fire updates.
 # **Bounds:** integers, `1 <= FUEL_BOTTOM_LIMIT <= FUEL_UPPER_LIMIT`. `FUEL_UPPER_LIMIT` also scales the
 # vegetation and fire colour ramps, so it must stay `> 0`.
 FUEL_UPPER_LIMIT = 10
-FUEL_BOTTOM_LIMIT = 7
+FUEL_BOTTOM_LIMIT = 5
 
 # ### `BURNING_RATE` -- fuel a burning cell loses per fire update.
 # Larger means cells burn out sooner, so the fire front is thinner and moves on faster.
@@ -154,7 +154,7 @@ if not FIXED_WIND:
 # ### `MU` -- wind strength (wind velocity).
 # The fraction of the remaining probability that blowing downwind adds, and blowing upwind takes away.
 # **Bounds:** float in `[0, 1]`. `0` makes the wind irrelevant, `1` makes it absolute.
-MU = 0.9
+MU = 0.5
 
 # =====================================================================================================
 # ## Smoke
@@ -179,7 +179,7 @@ SMOKE_PRE_DISPELLING_COUNTER = 2
 # ### `NUM_AGENTS` -- how many UAVs fly over the forest area.
 # **Bounds:** integer `>= 0`, and no larger than `WIDTH * HEIGHT`, since the team launches unstacked.
 # Must be `0` when `PROBABILITY_MAP` is True.
-NUM_AGENTS = 10
+NUM_AGENTS = 4
 
 # ### `N_ACTIONS` -- size of the movement action space a policy draws from.
 # The four movement directions below are indices 0..3. Holding position and dumping water sit outside
@@ -249,6 +249,70 @@ UAV_HP = 3
 # **Bounds:** float in `[0, 1]`. Anything outside it is clamped by `roll_collision_damage()`, because a
 # collision can never cost more than one health point.
 UAV_COLLISION_DAMAGE_MEAN = 1.0
+
+# =====================================================================================================
+# ## Fuel extension
+#
+# Optional. When `ACTIVATE_FUEL` is False no fuel is burned, tracked or reported, and the simulation
+# behaves exactly as it did before the extension existed. When it is True every UAV burns fuel to stay
+# in the air, and one that runs dry loses every health point it has left and is destroyed, exactly as a
+# fatal collision destroys it.
+#
+# Note that "fuel" means two unrelated things in this project. The `FUEL_UPPER_LIMIT` and
+# `FUEL_BOTTOM_LIMIT` in the forest area section above are how much a vegetation cell has left to burn.
+# Everything in this section is the fuel in a UAV's tank, and the two never interact.
+#
+# Refuelling happens at the home base, so it needs `ACTIVATE_FIREFIGHTING` to be True as well. With fuel
+# on and the firefighting extension off there is nowhere to refuel, which turns `UAV_FUEL` into a hard
+# endurance limit on the whole run.
+# =====================================================================================================
+
+# ### `ACTIVATE_FUEL` -- master switch for the whole extension.
+# **Bounds:** `True` / `False`.
+ACTIVATE_FUEL = True
+
+# ### `UAV_FUEL` -- units of fuel in a full tank, which is what every UAV starts the run with.
+# What this buys depends on how the UAV is flown: at the defaults below, holding position costs 1 a step
+# and cruising three cells a step costs about 6.2, so a 150 unit tank is either 150 steps of loitering or
+# about 24 steps of cruising. Size it against `BATCH_SIZE` and the number of sorties a run should allow.
+# **Bounds:** number `> 0`. A very large value studies a fleet that never runs dry.
+UAV_FUEL = 50
+
+# ### `UAV_FUEL_IDLE_BURN` -- fuel burned per step spent airborne, whatever the UAV did.
+# Charged for holding position and for dumping water as well as for flying, so staying up costs
+# something. A UAV parked on the home base footprint burns nothing at all: engines off.
+# **Bounds:** number `>= 0`. `0` lets a UAV loiter for free, so only distance costs.
+UAV_FUEL_IDLE_BURN = 1.0
+
+# ### `UAV_FUEL_BURN_PER_CELL` -- fuel burned per cell of flight, before the speed penalty below.
+# Charged on the cells actually covered, so a UAV stopped early by the edge of the grid or by another UAV
+# only pays for the distance it really flew.
+# **Bounds:** number `>= 0`. `0` makes movement free, leaving the idle burn as a pure clock.
+UAV_FUEL_BURN_PER_CELL = 1.0
+
+# ### `UAV_FUEL_SPEED_EXPONENT` -- how much harder each extra cell of speed is on the tank.
+# The per cell cost is raised to this power, so above `1` covering ground quickly costs more than covering
+# the same ground slowly, the way the power a real airframe draws climbs steeply with airspeed:
+#   1.0 -> flat. Five cells cost five times one cell, whether flown in one step or five
+#   1.5 -> the default. Five cells in one step cost 11.2, against 5.0 flown one cell at a time
+#   2.0 -> harsh. Five cells in one step cost 25.0, so sprinting is a serious decision
+# **Bounds:** number `>= 0`. Below `1` it rewards sprinting instead, which is not physical but is a
+# legitimate thing to experiment with.
+UAV_FUEL_SPEED_EXPONENT = 1.5
+
+# ### `UAV_FUEL_RESERVE` -- the share of a tank at or below which a policy should turn for home.
+# Advisory only: nothing in the simulation enforces it. `Observation.low_fuel()` reports it, and the
+# `firefighter` policy breaks off whatever it is doing and flies back to the base once it is reached.
+# **Bounds:** float in `[0, 1]`. `0` never warns, so a policy reading it flies until the tank is empty;
+# `1` sends a UAV home the moment it is anything short of full.
+UAV_FUEL_RESERVE = 0.25
+
+# ### `BASE_REFUEL_STEPS` -- steps a UAV must spend at the base to fill its tank.
+# Refuelling is not an action, and shares the refilling slot with water: a UAV standing on the base that
+# wants either takes one of the `BASE_CAPACITY` slots, waits `max(BASE_REFILL_STEPS, BASE_REFUEL_STEPS)`
+# steps, and gets both at once. Ignored unless `ACTIVATE_FUEL` is True.
+# **Bounds:** integer `>= 1`. `0` behaves the same as `1`, as a refuel still takes the step it starts on.
+BASE_REFUEL_STEPS = 2
 
 # =====================================================================================================
 # ## Firefighting extension
@@ -425,6 +489,22 @@ def extinguish_probability(drop_pos, cell_pos):
 def roll_collision_damage():
     chance = min(1.0, max(0.0, UAV_COLLISION_DAMAGE_MEAN))
     return 1 if SYSTEM_RANDOM.random() < chance else 0
+
+
+# function that gives the fuel one step of flight costs a UAV, from the cells it actually covered and
+# whether it ended the step parked on the home base. The cost is
+#
+#     idle + UAV_FUEL_BURN_PER_CELL * cells ** UAV_FUEL_SPEED_EXPONENT
+#
+# so with the exponent above 1 each extra cell of speed costs more than the last, and covering ground in
+# one fast dash costs more than covering it slowly over several steps. A UAV that did not move pays the
+# idle burn alone, since zero to any positive power is zero; one parked on the base pays nothing, which
+# is what makes flying home to refuel worth the trip. Policies read this too, to work out how far the
+# fuel they have left will take them, so the estimate and the charge cannot drift apart.
+def fuel_burn_cost(cells_moved, at_base=False):
+    idle = 0.0 if at_base else max(0.0, UAV_FUEL_IDLE_BURN)
+    cells = max(0, int(cells_moved))
+    return idle + max(0.0, UAV_FUEL_BURN_PER_CELL) * (cells ** max(0.0, UAV_FUEL_SPEED_EXPONENT))
 
 
 # function that calculates the grade of influence of cell s' over cell s, based on a distance_limit

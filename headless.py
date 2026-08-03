@@ -75,6 +75,11 @@ class RunResult:
     # UAV collisions: cells found holding more than one UAV, and UAVs destroyed by them
     collisions: int = 0
     uavs_lost: int = 0
+    # fuel extension; zero/empty when it is switched off. uavs_out_of_fuel is the share of uavs_lost
+    # above that ran dry rather than being destroyed in a collision, and fuel_remaining is what each UAV
+    # of the team had left at the end, in team order, a destroyed one keeping whatever it died with.
+    uavs_out_of_fuel: int = 0
+    fuel_remaining: list[float] = field(default_factory=list)
     burning_cells_final: int = 0
     burned_out_cells_final: int = 0
     # where and when the fire was lit; worth recording because both can be randomised in config.py
@@ -282,6 +287,8 @@ def run_simulation(config: RunConfig) -> RunResult:
             mr2=model.MR2_VALUE,
             collisions=model.collisions,
             uavs_lost=model.uavs_lost,
+            uavs_out_of_fuel=model.uavs_out_of_fuel,
+            fuel_remaining=[round(uav.fuel, 3) for uav in model.uavs] if cfg.ACTIVATE_FUEL else [],
             burning_cells_final=burning,
             burned_out_cells_final=burned_out,
             fire_start_pos=list(model.fire_start_pos),
@@ -306,6 +313,12 @@ def run_simulation(config: RunConfig) -> RunResult:
             result.uavs_lost,
             len(model.uavs),
         )
+        if cfg.ACTIVATE_FUEL:
+            log.info(
+                "fuel | ran dry=%d/%d | tanks left: mean=%.1f min=%.1f of %.0f",
+                result.uavs_out_of_fuel, len(model.uavs),
+                _mean(result.fuel_remaining), min(result.fuel_remaining, default=0.0), cfg.UAV_FUEL,
+            )
         if cfg.ACTIVATE_FIREFIGHTING:
             log.info(
                 "firefighting | drops=%d extinguished=%d refills=%d buildings_lost=%d/%d base=%d/%d%s",
@@ -453,6 +466,12 @@ def log_summary(results: list[RunResult], elapsed: float, log: logging.Logger) -
         lost = [result.uavs_lost for result in ok]
         log.info("collisions  : mean=%.2f min=%d max=%d | UAVs lost: mean=%.2f max=%d",
                  _mean(collisions), min(collisions), max(collisions), _mean(lost), max(lost))
+        # only reported when something in the batch actually ran with the fuel extension on
+        dry = [result.uavs_out_of_fuel for result in ok]
+        tanks = [value for result in ok for value in result.fuel_remaining]
+        if any(dry) or tanks:
+            log.info("out of fuel : mean=%.2f max=%d | tank left: mean=%.1f min=%.1f",
+                     _mean(dry), max(dry), _mean(tanks), min(tanks, default=0.0))
         log.info("burning cells: mean=%.1f min=%d max=%d", _mean(burning), min(burning), max(burning))
         log.info("run time    : mean=%.2fs total=%.2fs",
                  _mean([result.wall_time_s for result in ok]),
