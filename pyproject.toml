@@ -23,6 +23,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest"]
 
+# only available after `pip install -e .`, which is optional: main.py and headless.py at the repository
+# root do the same thing without one
+[project.scripts]
+wildfire-gui = "sim.gui.app:main"
+wildfire-headless = "sim.cli.main:main"
+
 [tool.setuptools]
 # config.py deliberately lives at the repository root rather than inside the sim package: it is the file
 # users actually edit, and burying it would make a newcomer hunt for the one thing they came to change.
