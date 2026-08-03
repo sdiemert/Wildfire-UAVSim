@@ -2,7 +2,7 @@
 
 # own python modules
 
-from policy import Observation
+from sim.policy import Observation
 
 
 def test_flat_states_keeps_observation_order():

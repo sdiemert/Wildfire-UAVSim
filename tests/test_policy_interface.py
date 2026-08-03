@@ -14,9 +14,9 @@ import config
 
 from config import ACTION_DUMP_WATER, ACTION_STAY, N_ACTIONS
 
-import policy as policy_pkg
+import sim.policy as policy_pkg
 
-from policy import POLICIES, REGISTERED, Action, Policy, build_policy
+from sim.policy import POLICIES, REGISTERED, Action, Policy, build_policy
 
 VALID_DIRECTIONS = set(range(N_ACTIONS)) | {ACTION_STAY, ACTION_DUMP_WATER}
 

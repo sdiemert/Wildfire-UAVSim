@@ -17,7 +17,7 @@ import config
 
 from config import ACTION_DOWN, ACTION_DUMP_WATER, ACTION_LEFT, ACTION_RIGHT, ACTION_STAY, ACTION_UP
 
-from policy import Action, FirefighterPolicy, avoid, flight_path
+from sim.policy import Action, FirefighterPolicy, avoid, flight_path
 
 
 @pytest.fixture

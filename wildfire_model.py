@@ -13,7 +13,7 @@ import fire_spread
 
 # imported by name because 'policy' is also the name of the constructor argument and attribute below,
 # which would shadow the module
-from policy import Action, RandomPolicy, build_policy
+from sim.policy import Action, RandomPolicy, build_policy
 
 
 # class WildFireModel holds methods for managing the main logic of the grid, such as the main execution loop,

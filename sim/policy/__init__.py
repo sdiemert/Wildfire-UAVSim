@@ -6,7 +6,7 @@ it once per time step, in step().
 
 To add your own policy:
 
-  1. create policy/my_policy.py with a Policy subclass that has a unique 'name' and implements
+  1. create sim/policy/my_policy.py with a Policy subclass that has a unique 'name' and implements
      select_actions(observations)
   2. import it below and add the class to the REGISTERED tuple
 

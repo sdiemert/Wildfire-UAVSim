@@ -14,7 +14,7 @@ from Top_Bar import TopBar
 import wildfire_model
 import agents
 
-from policy import POLICIES, RandomPolicy
+from sim.policy import POLICIES, RandomPolicy
 
 # imported as a module rather than with 'from config import *', so that every setting is looked up when it
 # is used. A star import copies the values into this module's namespace, which is why a runner overriding a

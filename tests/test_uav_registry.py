@@ -22,7 +22,7 @@ import agents
 
 from config import ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_UP
 
-from policy import Policy
+from sim.policy import Policy
 
 
 # --- helpers ----------------------------------------------------------------

@@ -26,7 +26,7 @@ import config
 
 from config import ACTION_LEFT, ACTION_RIGHT, ACTION_STAY
 
-from policy import Action, Policy
+from sim.policy import Action, Policy
 
 
 # --- helpers ----------------------------------------------------------------

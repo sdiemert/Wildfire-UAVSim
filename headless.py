@@ -124,8 +124,8 @@ def _import_simulation():
     """
     import agents
     import config as cfg
-    import policy
     import wildfire_model
+    from sim import policy
 
     return cfg, wildfire_model, agents, policy
 

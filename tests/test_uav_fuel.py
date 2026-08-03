@@ -26,7 +26,7 @@ import config
 
 from config import ACTION_RIGHT, ACTION_STAY
 
-from policy import Action, FirefighterPolicy, Policy
+from sim.policy import Action, FirefighterPolicy, Policy
 
 
 # --- helpers ----------------------------------------------------------------

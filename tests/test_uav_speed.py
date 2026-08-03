@@ -18,7 +18,7 @@ import agents
 
 from config import ACTION_DUMP_WATER, ACTION_LEFT, ACTION_RIGHT, ACTION_STAY, ACTION_UP
 
-from policy import Action, Policy
+from sim.policy import Action, Policy
 
 
 # --- helpers ----------------------------------------------------------------

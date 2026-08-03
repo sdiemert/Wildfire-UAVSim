@@ -14,7 +14,7 @@ import pytest
 
 import config
 
-from policy import Observation
+from sim.policy import Observation
 
 
 @pytest.fixture

@@ -10,7 +10,7 @@ import config
 
 from config import ACTION_STAY
 
-from policy import RandomPolicy
+from sim.policy import RandomPolicy
 
 
 @pytest.fixture

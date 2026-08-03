@@ -5,7 +5,7 @@ import functools
 
 # own python modules
 
-from policy import Observation
+from sim.policy import Observation
 
 # imported as a module rather than with 'from config import *', so that every setting is looked up when it
 # is used. A star import copies the values into this module's namespace, which is why a runner overriding a

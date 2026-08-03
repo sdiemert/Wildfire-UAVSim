@@ -17,7 +17,7 @@ import pytest
 
 from config import ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_UP
 
-from policy import Action, FollowFirePolicy
+from sim.policy import Action, FollowFirePolicy
 
 
 @pytest.fixture
