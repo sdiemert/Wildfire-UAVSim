@@ -2,6 +2,11 @@ __pycache__
 *.pyc
 .pytest_cache/
 
+# only produced by the optional `pip install -e .`
+*.egg-info/
+build/
+dist/
+
 .venv/
 /.idea/Wildfire-UAVSim.iml
 /.idea/.gitignore

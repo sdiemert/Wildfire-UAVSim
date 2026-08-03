@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wildfire-uavsim"
+version = "0.1.0"
+description = "A customizable wildfire tracking simulator for evaluating UAV adaptation strategies"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# Kept in step with requirements.txt, which stays the documented install path for anyone following the
+# README (`python3 -m pip install -r requirements.txt`). Installing this project is optional; see below.
+#
+# Mesa MUST stay on 1.x. Mesa 2.0 removed mesa.time and the tornado-based ModularServer /
+# ModularVisualization used by the web interface, so newer versions fail at import.
+dependencies = [
+    "mesa==1.2.1",
+    "numpy",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+# config.py deliberately lives at the repository root rather than inside the sim package: it is the file
+# users actually edit, and burying it would make a newcomer hunt for the one thing they came to change.
+# That makes it a top-level module, so an install has to carry it alongside the package.
+py-modules = ["config"]
+
+[tool.setuptools.packages.find]
+include = ["sim*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# the project is run from its checkout rather than installed, so the repository root has to be importable
+# from the tests: that is where config.py and the sim package live
+pythonpath = ["."]
+addopts = "-v"
