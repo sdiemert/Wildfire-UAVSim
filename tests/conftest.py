@@ -56,6 +56,46 @@ def observation():
 
 
 @pytest.fixture
+def snapshot():
+    """Factory that builds a FleetSnapshot without a model, the way `observation` builds one for a UAV.
+
+    The managing system consumes FleetSnapshot objects and nothing else, so its tests build them directly
+    and never need a grid, a model or mesa -- the same reasoning that keeps the policy tests fast.
+
+    Usage:
+        snapshot(uavs=[{"uav_id": 0, "pos": (5, 5), "sees_uavs": [(5, 6)]}],
+                 base_cells=[(2, 2)], fire_near_base=[(4, 4)], burning_steps=1)
+
+    Each entry of 'uavs' is a dictionary of UavReport fields; anything left out keeps a sensible default,
+    so a test names only what it is actually about. Passing base_cells=None leaves the snapshot without a
+    base, which is what the firefighting extension being switched off looks like.
+    """
+
+    from sim.managing.contract import BaseReport, FleetSnapshot, UavReport
+
+    def _make(uavs=(), step=0, grid_size=(50, 50), base_cells=((2, 2),), fire_near_base=(),
+              burning_steps=0, bhp=None, destroyed=False):
+        reports = []
+        for index, fields in enumerate(uavs):
+            fields = dict(fields)
+            fields.setdefault("uav_id", index)
+            fields.setdefault("hp", config.UAV_HP)
+            fields.setdefault("water", 1)
+            fields.setdefault("policy", config.DEFAULT_UAV_POLICY)
+            reports.append(UavReport(**fields))
+
+        base = None
+        if base_cells is not None:
+            base = BaseReport(cells=base_cells, burning_steps=burning_steps,
+                              bhp=config.BHP if bhp is None else bhp,
+                              destroyed=destroyed, fire_near_base=fire_near_base)
+
+        return FleetSnapshot(step=step, grid_size=grid_size, uavs=tuple(reports), base=base)
+
+    return _make
+
+
+@pytest.fixture
 def sim_config():
     """Override simulation constants for one test, restored afterwards.
 

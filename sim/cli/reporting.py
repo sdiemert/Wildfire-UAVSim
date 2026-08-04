@@ -98,6 +98,32 @@ def log_summary(results, elapsed: float, log: logging.Logger) -> None:
                 log.info("out buildings destroyed: mean=%.2f min=%d max=%d of %d placed",
                          _mean(destroyed), min(destroyed), max(destroyed), placed)
 
+        # managing system; only reported when something in the batch actually ran with one
+        managed = [result for result in ok if result.managing]
+        if managed:
+            adaptations = [result.adaptations for result in managed]
+            log.info("managing    : %d of %d run(s) managed, %s | adaptations: mean=%.1f min=%d max=%d",
+                     len(managed), len(ok), managed[0].managing_system,
+                     _mean(adaptations), min(adaptations), max(adaptations))
+            # UAV-steps per policy, summed over the batch, which says whether the managing system used
+            # the policies it was given or settled on one and stayed there
+            totals: dict[str, int] = {}
+            for result in managed:
+                for name, count in result.policy_steps.items():
+                    totals[name] = totals.get(name, 0) + count
+            flown = sum(totals.values())
+            if flown:
+                log.info("UAV-steps   : %s",
+                         " ".join(f"{name}={count} ({100.0 * count / flown:.0f}%)"
+                                  for name, count in sorted(totals.items(), key=lambda item: -item[1])))
+            # both are silent on a healthy batch, and both mean the results were produced with less
+            # managing than was asked for
+            refused = sum(result.directives_rejected for result in managed)
+            unreachable = sum(result.managing_failures for result in managed)
+            if refused or unreachable:
+                log.warning("managing    : %d directive(s) refused, %d evaluation(s) unanswered by the "
+                            "managing system", refused, unreachable)
+
     for result in failed:
         log.error("run %d failed: %s", result.run_id, result.error)
     log.info("=" * 62)

@@ -185,6 +185,75 @@ def test_fuel_without_a_base_to_refuel_at_is_allowed(sim_config):
     config.validate()
 
 
+# --- managing system --------------------------------------------------------
+
+
+@pytest.mark.parametrize("managing", ["local", "remote"])
+@pytest.mark.parametrize("setting, value", [
+    ("ADAPTATION_PERIOD", 0),
+    ("ADAPTATION_PERIOD", 1.5),
+    ("ADAPTATION_HYSTERESIS", 0),
+    ("DEFAULT_UAV_POLICY", ""),
+    ("DEFAULT_UAV_POLICY", None),
+    ("BASE_SENSOR_RADIUS", -1),
+    ("BASE_THREAT_RADIUS", 0),
+    ("MANAGING_CROWDED_SPEED_CAP", -1),
+    ("MANAGING_KNOWLEDGE_HISTORY", 0),
+])
+def test_out_of_bounds_managing_settings_are_refused(sim_config, managing, setting, value):
+    # they are the same settings wherever the managing system lives, so both are checked
+    sim_config(MANAGING_SYSTEM=managing, **{setting: value})
+    with pytest.raises(ValueError, match=setting):
+        config.validate()
+
+
+def test_an_unknown_managing_system_is_refused(sim_config):
+    sim_config(MANAGING_SYSTEM="telepathy")
+    with pytest.raises(ValueError, match="MANAGING_SYSTEM"):
+        config.validate()
+
+
+@pytest.mark.parametrize("setting, value", [
+    ("MANAGING_SYSTEM_URL", "not-a-url"),
+    ("MANAGING_SYSTEM_TIMEOUT", 0),
+])
+def test_out_of_bounds_remote_settings_are_refused(sim_config, setting, value):
+    sim_config(MANAGING_SYSTEM="remote", **{setting: value})
+    with pytest.raises(ValueError, match=setting):
+        config.validate()
+
+
+def test_the_remote_settings_are_ignored_by_a_local_managing_system(sim_config):
+    sim_config(MANAGING_SYSTEM="local", MANAGING_SYSTEM_URL="nonsense", MANAGING_SYSTEM_TIMEOUT=-1)
+    config.validate()
+
+
+def test_managing_settings_are_ignored_when_there_is_no_managing_system(sim_config):
+    sim_config(MANAGING_SYSTEM="none", ADAPTATION_PERIOD=0, MANAGING_SYSTEM_URL="nonsense")
+    config.validate()
+
+
+# the web interface can start a managing system for one model without touching config.py, and its settings
+# then have to be checked even though the file says they are unused
+def test_the_check_can_be_asked_for_a_managing_system_the_file_does_not_have(sim_config):
+    sim_config(MANAGING_SYSTEM="none", ADAPTATION_PERIOD=0)
+    config.validate()                                   # as configured, nothing reads it
+    with pytest.raises(ValueError, match="ADAPTATION_PERIOD"):
+        config.validate(managing="local")               # ... but this caller is about to
+
+
+# config.py cannot import the policy package to look the name up, because the policy package imports
+# config. The name is resolved when the model is built instead, which is where the useful error lives.
+def test_an_unknown_default_policy_is_caught_when_the_model_is_built(sim_config):
+    sim_config(MANAGING_SYSTEM="local", DEFAULT_UAV_POLICY="no-such-policy")
+    config.validate()   # the name is a string, so validate() is satisfied
+
+    from sim.policy import SuperPolicy
+
+    with pytest.raises(KeyError, match="available"):
+        SuperPolicy()
+
+
 # --- reporting --------------------------------------------------------------
 
 

@@ -400,6 +400,106 @@ NUM_OUT_BUILDINGS = 0
 OUT_BUILDING_HP = 5
 
 # =====================================================================================================
+# ## Managing system (MAPE-K)
+#
+# Optional. The simulation on its own is a *managed system*: every UAV flies one policy, chosen before the
+# run starts and never revisited. Setting `MANAGING_SYSTEM` to `local` or `remote` adds a *managing system* over
+# it, which decides at runtime which policy each UAV should be flying, so as to keep the home base standing
+# and keep the team from flying into itself.
+#
+# It is built as a MAPE-K loop (Monitor, Analyse, Plan, Execute over a shared Knowledge base) and lives in
+# `sim/managing/`. It never touches the simulation directly: it reads through a *sensor* and writes through
+# an *effector*, both defined in `sim/managing/ports.py` and implemented in `sim/adapters.py`. Nothing in
+# `sim/managing/` imports the model, the agents or mesa, and a test enforces that.
+#
+# With it switched off, `AdaptiveWildFireModel` behaves exactly like the plain `WildFireModel`: every
+# setting below is ignored and the whole team flies whichever single policy was selected.
+# =====================================================================================================
+
+# ### `MANAGING_SYSTEM` -- whether a managing system runs, and where it lives.
+#
+#   * `'none'`   -- no managing system. Every UAV flies the one policy the model was given, for the whole
+#                   run, exactly as the simulator behaved before any of this existed. This is the
+#                   unmanaged baseline a managed run is compared against.
+#   * `'local'`  -- the whole MAPE-K loop runs in this process.
+#   * `'remote'` -- the whole MAPE-K loop runs on the server at `MANAGING_SYSTEM_URL`. What stays here is
+#                   the sensor and the effector, which are the simulation's own interface and cannot be
+#                   anywhere else; every decision -- what is wrong, what to do about it, and what to
+#                   remember -- is made there. See `sim/managing/remote.py`.
+#
+# `'local'` and `'remote'` are the same managing system in two places, not two managing systems. The point
+# of `'remote'` is that a managing system on the other side of a socket provably cannot reach into the
+# simulation, and need not be written in Python.
+#
+# This is the starting value rather than the last word: the web interface has a `Managing system` dropdown
+# that overrides it for a single run, and `headless.py --managing none|local|remote` does the same, so the
+# three can be compared without editing this file.
+# **Bounds:** one of `MANAGING_SYSTEMS` below.
+MANAGING_SYSTEM = "local"
+
+# ### `ADAPTATION_PERIOD` -- how many simulation steps pass between runs of the MAPE-K loop.
+# `1` re-evaluates the allocation every step. Larger values make the managing system slower to react but
+# cheaper, which matters most with `MANAGING_SYSTEM = 'remote'`, where every evaluation is a round trip.
+# **Bounds:** integer `>= 1`.
+ADAPTATION_PERIOD = 1
+
+# ### `ADAPTATION_HYSTERESIS` -- consecutive evaluations that must agree before a UAV's policy is changed.
+# Without it a UAV on the edge of a threshold flips policy every step and spends the run turning round
+# instead of flying anywhere. `1` disables the damping and applies every decision immediately.
+# **Bounds:** integer `>= 1`.
+ADAPTATION_HYSTERESIS = 2
+
+# ### `DEFAULT_UAV_POLICY` -- the policy every UAV starts the run under, before the first adaptation.
+# It is also what the managing system falls back to for a UAV it has no better idea for. Must name a policy
+# registered in `sim/policy/__init__.py`; the name is checked when the model is built rather than here,
+# because this file cannot import the policy package (the policy package imports this one).
+# **Bounds:** a registered policy name.
+DEFAULT_UAV_POLICY = "firefighter"
+
+# ### `BASE_SENSOR_RADIUS` -- how far around the home base the managing system sees the ground truth.
+# The rest of what it is told comes from the UAVs themselves, so it is as partially sighted as they are.
+# The base is the one thing it must never be blind to, so it is modelled as having a fire sensor of its own
+# covering this many cells beyond its footprint.
+# **Bounds:** integer `>= 0`. `0` leaves the managing system with nothing but the UAV reports.
+BASE_SENSOR_RADIUS = 6
+
+# ### `BASE_THREAT_RADIUS` -- how close fire has to get to the base before it counts as threatening it.
+# Fire within this distance of the footprint raises the threat level, which is what makes the managing
+# system pull UAVs off the open fire and onto `defend-base`.
+# **Bounds:** integer `>= 1`.
+BASE_THREAT_RADIUS = 10
+
+# ### `MANAGING_CROWDED_SPEED_CAP` -- speed a UAV is held to while it is being moved out of a crowd.
+# Cheap insurance: a UAV that is already too close to a neighbour covers less ground per step, so it has
+# fewer chances to end the step on top of one. Applied by `SuperPolicy`, whatever policy the UAV is flying.
+# **Bounds:** integer `>= 0`, normally well below `UAV_SPEED`.
+MANAGING_CROWDED_SPEED_CAP = 1
+
+# ### `MANAGING_KNOWLEDGE_HISTORY` -- how many past snapshots the Knowledge base keeps.
+# Bounded so that a long run does not grow without limit. Only the most recent few are actually consulted.
+# **Bounds:** integer `>= 1`.
+MANAGING_KNOWLEDGE_HISTORY = 20
+
+# ### `MANAGING_SYSTEM_URL` -- where a remote managing system lives.
+# Ignored unless `MANAGING_SYSTEM` is `'remote'`. The request and response format is documented in
+# `sim/managing/remote.py`.
+# **Bounds:** an http:// or https:// URL.
+MANAGING_SYSTEM_URL = "http://127.0.0.1:8600/manage"
+
+# ### `MANAGING_SYSTEM_TIMEOUT` -- seconds to wait for a remote managing system before giving up on it.
+# A run of `BATCH_SIZE` steps at `ADAPTATION_PERIOD = 1` makes that many requests, so this bounds how long
+# an unreachable server can hold a run up.
+# **Bounds:** float `> 0`.
+MANAGING_SYSTEM_TIMEOUT = 2.0
+
+# ### `MANAGING_SYSTEM_FALLBACK` -- whether an unreachable remote managing system is stood in for locally.
+# True runs the local loop for any evaluation the server could not answer, so a broken server costs the run
+# its adaptation quality rather than its adaptation. False leaves the team on whatever it is already flying,
+# which is the more honest setting for an experiment about what happens when a managing system goes away.
+# **Bounds:** True or False.
+MANAGING_SYSTEM_FALLBACK = True
+
+# =====================================================================================================
 # ## Colours
 #
 # Presentation only: these change what the web interface draws, never what the simulation does.
@@ -467,11 +567,19 @@ COLORS_LEN = len(VEGETATION_COLORS)
 # every direction the wind logic understands, in agents.Wind and in fire_spread.build_kernel()
 WIND_DIRECTIONS = ('north', 'south', 'east', 'west')
 
+# where a managing system can live. 'none' is no managing system at all, which is the unmanaged baseline.
+MANAGING_SYSTEMS = ('none', 'local', 'remote')
+
 
 # checks the configuration over, raising ValueError describing everything that is wrong with it rather
-# than only the first thing found, so that a badly set up run is fixed in one pass
-def validate():
+# than only the first thing found, so that a badly set up run is fixed in one pass.
+#
+# 'managing' overrides MANAGING_SYSTEM for the check alone. The web interface can start a managing system
+# for a single model without touching this file, and its settings then have to be checked even though the
+# file says they are unused; passing 'local' or 'remote' here is how that caller asks for it.
+def validate(managing=None):
     problems = []
+    managing = MANAGING_SYSTEM if managing is None else str(managing)
 
     def require(condition, message):
         if not condition:
@@ -574,6 +682,34 @@ def validate():
     # ACTIVATE_FUEL without ACTIVATE_FIREFIGHTING is deliberately not an error: there is simply nowhere to
     # refuel, which turns UAV_FUEL into a hard endurance limit on the whole run. See the note against
     # ACTIVATE_FUEL above.
+
+    # managing system. DEFAULT_UAV_POLICY is only checked for being a name at all: this module cannot
+    # import the policy package to look it up, because the policy package imports this one. The name is
+    # resolved when the model is built, which raises a KeyError listing the policies that do exist.
+    require(managing in MANAGING_SYSTEMS,
+            f"MANAGING_SYSTEM must be one of {MANAGING_SYSTEMS}, got {managing!r}")
+
+    if managing in ("local", "remote"):
+        require(isinstance(ADAPTATION_PERIOD, int) and ADAPTATION_PERIOD >= 1,
+                f"ADAPTATION_PERIOD must be an integer >= 1, got {ADAPTATION_PERIOD!r}")
+        require(isinstance(ADAPTATION_HYSTERESIS, int) and ADAPTATION_HYSTERESIS >= 1,
+                f"ADAPTATION_HYSTERESIS must be an integer >= 1, got {ADAPTATION_HYSTERESIS!r}")
+        require(isinstance(DEFAULT_UAV_POLICY, str) and DEFAULT_UAV_POLICY != "",
+                f"DEFAULT_UAV_POLICY must be a policy name, got {DEFAULT_UAV_POLICY!r}")
+        require(isinstance(BASE_SENSOR_RADIUS, int) and BASE_SENSOR_RADIUS >= 0,
+                f"BASE_SENSOR_RADIUS must be an integer >= 0, got {BASE_SENSOR_RADIUS!r}")
+        require(isinstance(BASE_THREAT_RADIUS, int) and BASE_THREAT_RADIUS >= 1,
+                f"BASE_THREAT_RADIUS must be an integer >= 1, got {BASE_THREAT_RADIUS!r}")
+        require(isinstance(MANAGING_CROWDED_SPEED_CAP, int) and MANAGING_CROWDED_SPEED_CAP >= 0,
+                f"MANAGING_CROWDED_SPEED_CAP must be an integer >= 0, got {MANAGING_CROWDED_SPEED_CAP!r}")
+        require(isinstance(MANAGING_KNOWLEDGE_HISTORY, int) and MANAGING_KNOWLEDGE_HISTORY >= 1,
+                f"MANAGING_KNOWLEDGE_HISTORY must be an integer >= 1, got {MANAGING_KNOWLEDGE_HISTORY!r}")
+        if managing == "remote":
+            require(isinstance(MANAGING_SYSTEM_URL, str)
+                    and MANAGING_SYSTEM_URL.startswith(("http://", "https://")),
+                    f"MANAGING_SYSTEM_URL must be an http(s) URL, got {MANAGING_SYSTEM_URL!r}")
+            require(MANAGING_SYSTEM_TIMEOUT > 0,
+                    f"MANAGING_SYSTEM_TIMEOUT must be > 0, got {MANAGING_SYSTEM_TIMEOUT!r}")
 
     if problems:
         raise ValueError("invalid configuration:\n  - " + "\n  - ".join(problems))

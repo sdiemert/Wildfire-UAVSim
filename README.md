@@ -21,11 +21,19 @@ sim/
   environment.py    Wind and Smoke
   agents/           what stands on the grid: Fire, UAV, Base, BaseTile, OutBuilding
   policy/           the policies that decide where each UAV flies
+  managing/         the MAPE-K managing system that decides which policy each UAV flies
+  adapters.py       the sensors and effectors joining the two; the only module importing both
+  adaptive.py       AdaptiveWildFireModel, the model with a managing system over it
   gui/              the Mesa web interface
   cli/              the headless runner behind headless.py
 
 tests/          the unit tests, mirroring the package
 ```
+
+The simulator can be run as a plain **managed system**, which is what it has always been, or as a
+**self-adaptive system**: the same simulation with a managing system over it that reallocates policies to
+UAVs while the run is going. `MANAGING_SYSTEM` in `config.py` is the switch. See
+[The managing system](#the-managing-system).
 
 ### `config.py`
 
@@ -70,7 +78,7 @@ This python file holds the maths shared between the model, the agents, the polic
 
 ### `sim/gui/`
 
-This python package holds the Mesa web interface that `main.py` launches: `app.py` wires it together, `portrayal.py` says how each agent is drawn, and `canvas_grid.py`, `status_sidebar.py`, `top_bar.py` and `policy_selector.py` are the four elements on the page. `canvas_grid.py` is a Mesa class modified to make UAV observation areas visible; it is not really necessary to change these files.
+This python package holds the Mesa web interface that `main.py` launches: `app.py` wires it together, `portrayal.py` says how each agent is drawn, and `canvas_grid.py`, `status_sidebar.py`, `top_bar.py` and `policy_selector.py` are the elements on the page — the last of these holds both `PolicySelector`, which moves a control into the strip above the grid, and `ControlGate`, which greys one control out while another makes it meaningless. `canvas_grid.py` is a Mesa class modified to make UAV observation areas visible; it is not really necessary to change these files.
 
 ### `sim/cli/`
 
@@ -112,9 +120,17 @@ It also never asks a UAV to fly further than `UAV_OBSERVATION_RADIUS`. This matt
 
 With the firefighting extension on, an `Observation` also carries `has_water`, `base_pos`, `base_cells` and `building_positions`; `at_base()` is true anywhere on the base footprint. With the fuel extension on it carries `fuel` and `fuel_capacity`, read through `fuel_fraction()` and `low_fuel()`; both are `None` when fuel is not being tracked, and `low_fuel()` is then always `False`, so a policy that ignores fuel flies exactly as it did before.
 
+### `sim/managing/`
+
+This python package holds the managing system: a MAPE-K loop that watches how a run is going and decides which policy each UAV should be flying. It is described in full under [The managing system](#the-managing-system).
+
+`contract.py` holds the frozen messages that cross the boundary, `ports.py` the `Sensor` and `Effector` interfaces, `knowledge.py` the shared Knowledge base, and `monitor.py`, `analyze.py`, `plan/` and `execute.py` the four steps. `loop.py` ties them together into a `ManagingSystem` that runs here; `remote.py` is the same loop living on a server.
+
+Nothing in this package imports the simulation — not the model, not the agents, not the policies, not mesa — and `tests/managing/test_independence.py` fails if that ever changes.
+
 ### `tests/`
 
-This directory holds the unit tests, grouped to mirror the package: `tests/agents/` and `tests/policy/`, with the tests that cover a single module at the root of `sim` — or cut across everything — at the top. See [Running the tests](#running-the-tests).
+This directory holds the unit tests, grouped to mirror the package: `tests/agents/`, `tests/policy/` and `tests/managing/`, with the tests that cover a single module at the root of `sim` — or cut across everything — at the top. See [Running the tests](#running-the-tests).
 
 # Installation setup
 
@@ -254,13 +270,290 @@ Indicates the current time step of the simulation, beside the buttons that advan
 
 The panel down the left hand side reports the monitoring metrics, the state of the home base and the out buildings, and a line per UAV with its position, its health and the water it is carrying. Figures turn amber and then red as whatever they measure is used up.
 
-### `UAV policy`
+With `MANAGING_SYSTEM` set to `local` or `remote` it also gains a **Managing system** section: where the managing system is, how many adaptations there have been, how many UAVs are on each policy right now, and its own one line account of why. Each UAV's line then shows the policy it has been allocated next to its position, so what a UAV is doing can be read against what it was told to do. See [The managing system](#the-managing-system).
 
-The dropdown above the grid picks the rule that decides where each UAV flies. Press `Reset` after changing it to restart the simulation with the new policy.
+### `Managing system` and `UAV policy`
+
+Two dropdowns are stacked at the right hand end of the strip above the grid. Each overrides the matching
+setting in `config.py` **for that run only** — nothing is written back, so pressing `Reset` with different
+settings builds a different model rather than changing the configuration for everything built afterwards.
+Press `Reset` after changing either of them.
+
+| Control | Overrides | Values |
+|---|---|---|
+| `Managing system` | `MANAGING_SYSTEM` | `none` — no managing system, the unmanaged baseline; `local` — the whole MAPE-K loop in this process; `remote` — the whole loop on the server at `MANAGING_SYSTEM_URL` |
+| `UAV policy` | — | the rule each UAV flies |
+
+Being able to switch between the three from the page is what makes the comparison a matter of two clicks
+rather than an edit and a server restart.
+
+**How they interact.** `UAV policy` is only live while `Managing system` is `none`; otherwise it is greyed
+out. That is not a cosmetic choice — a managing system allocates a policy to each UAV itself and overwrites
+whatever the run started under within a few steps, so leaving the control enabled would be a promise the
+page cannot keep. While it is greyed out it is held at `DEFAULT_UAV_POLICY`, which is the policy the team
+actually starts under and the one a UAV with nothing wrong with it is put back on, so what is shown is what
+is used.
+
+If you want an unmanaged `random` baseline, set `Managing system` to `none` and pick `random`.
 
 ### `Colours`
 
 The map is deliberately kept light. Vegetation runs from near white to a mid green, and the fire from pale yellow to a bright red orange, so that the things worth finding at a glance stay the darkest marks on it: the UAVs are near black, the home base is a deep blue block, and the out buildings are brown. A UAV is outlined in white, which is what keeps it visible on the two backgrounds as dark as it is — the base and burnt ground — and the square marking what it can see is drawn in a lighter slate, so that a team of any size does not bury the map under its own observation windows. All of it is in the `Colours` section of `config.py`.
+
+# The managing system
+
+Setting `MANAGING_SYSTEM` in `config.py` to `local` or `remote` turns the simulator from a **managed
+system** into a **self-adaptive system**.
+
+With it at `none`, every UAV flies one policy, chosen before the run starts and never reconsidered however
+the run goes. Otherwise a *managing system* watches the run and reallocates a policy — and a set of
+parameters — to each UAV as things change, with two goals: keep the home base from burning down, and keep
+the team from flying into itself.
+
+`local` and `remote` are the same managing system in two places, not two managing systems. The whole
+MAPE-K loop moves: with `remote`, the analysis, the planning and the Knowledge base are all on the server.
+
+## Managed and managing
+
+```
+MANAGING_SYSTEM = 'local'                     MANAGING_SYSTEM = 'remote'
+
+┌───── MANAGING SYSTEM (sim/managing/) ─────┐  ┌──── server ─────────────────────┐
+│  Analyse ──▶ Plan          Knowledge      │  │  Analyse ─▶ Plan   Knowledge    │
+│     ▲          │                          │  └────▲──────────┼─────────────────┘
+│  Monitor    Execute                       │       │ snapshot │ allocation (JSON)
+└─────┼──────────┼──────────────────────────┘  ┌────┼──────────┼─────────────────┐
+      │          │                             │ Monitor    Execute   remote.py  │
+      │          │                             └────┼──────────┼─────────────────┘
+  Sensor.read()  Effector.apply()      ports: sim/managing/ports.py
+   ─▶ FleetSnapshot ◀─ Allocation      messages: sim/managing/contract.py
+┌─────┼──────────┼──────────────────────────────────┼──────────┼─────────────────┐
+│  ModelSensor   AllocationEffector                                sim/adapters.py│
+└─────┼──────────┼──────────────────────────────────────────────────────────────-┘
+┌─────┴──────────┴───────────────────────────────────────────────────────────────┐
+│  WildFireModel ── SuperPolicy ── { firefighter, defend-base, disperse, ... }    │
+│                   per UAV dispatch + fleet wide traffic pass   MANAGED SYSTEM   │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The sensor and the effector stay on this side either way, because they *are* the simulation's own
+interface — a sensor reads a model object and an effector writes to one, and neither can be anywhere else.
+In a real deployment they would be the radio link to the fleet. Everything that could be called deciding
+is on whichever side `MANAGING_SYSTEM` names.
+
+The managing system reaches the simulation through exactly two things: a **sensor** that reads and an
+**effector** that writes. It has no other access, and this is enforced rather than merely intended —
+nothing in `sim/managing/` imports `sim.model`, `sim.agents`, `sim.policy` or `mesa`, and
+`tests/managing/test_independence.py` walks every module in the package and fails if that ever stops being
+true. The adapters that satisfy the two interfaces live in `sim/adapters.py`, which is the one module in
+the project that imports both halves.
+
+That independence is what makes `remote` possible without redesigning anything: code that was never able
+to reach the simulation loses nothing by being moved to another machine.
+
+## The loop
+
+`ManagingSystem.tick(step)` runs one turn, and `AdaptiveWildFireModel.step()` calls it once before each
+simulation step — so the loop always reads a settled world, and an allocation takes effect on the step
+after the reading that prompted it.
+
+| Step | What it does |
+|---|---|
+| **Monitor** | `sensor.read()` builds a `FleetSnapshot` and files it in the Knowledge base |
+| **Analyse** | judges the snapshot into `Symptoms`: base threat 0–3, which UAVs are crowded, which are at risk. If nothing is wrong the turn ends here, before Plan |
+| **Plan** | turns snapshot and symptoms into an `Allocation`: one directive per UAV, each a policy name and its parameters |
+| **Execute** | `effector.apply()` validates every directive and writes the ones that survive |
+| **Knowledge** | bounded history of snapshots, the allocation in force, and the hysteresis streaks |
+
+### What the managing system is allowed to see
+
+`FleetSnapshot` is the whole of it, and it comes from two sources:
+
+* **the UAVs.** Each is asked what it can see through the same `UAV.observe()` the policies get, so the
+  managing system is exactly as partially sighted as the team it manages. It learns nothing about a part of
+  the map nobody is looking at, and a team that loses UAVs goes blind where they were. Each UAV also
+  reports its own state **and the policy it is currently flying**, which is what closes the loop: the
+  managing system sees the effect of its own last decision, not just the state of the world.
+* **the home base**, which is modelled as having a fire sensor of its own covering `BASE_SENSOR_RADIUS`
+  cells beyond its footprint, reported whether or not any UAV is nearby. Without it the managing system
+  could be blind to fire reaching the very asset it exists to protect, simply because it had sent the team
+  elsewhere.
+
+### What it is allowed to change
+
+One `UavDirective` per UAV: a policy name, plus `PolicyParams` — `speed_cap`, `separation`, `fuel_reserve`
+and a free `extra` dictionary. It cannot fly a UAV, only decide what rule the UAV flies itself by.
+
+`AllocationEffector` is a **trust boundary**, not just a channel. Every directive is checked against the
+simulation that has to carry it out — the UAV exists, it is still flying, the policy is registered, the
+parameters are in bounds — and one that fails is dropped and logged rather than raised. A managing system
+that has gone wrong should cost a run its adaptation quality, not its completion.
+
+## The policies it allocates
+
+| Policy | What a UAV under it does |
+|---|---|
+| `firefighter` | attack the nearest fire, refill at the base. The default working policy |
+| `defend-base` | attack the fire nearest **the base**, not the nearest fire; hold station over the base when nothing threatens it |
+| `disperse` | give up on the mission and open the gap to nearby team mates until there is room |
+| `follow-fire`, `random` | the pre-existing baselines |
+
+`defend-base` and `disperse` are new, and are the levers for the two goals. All five are ordinary policies:
+they appear in the `--policy` option and the web interface dropdown, and are covered by the same
+parametrised contract tests as the others.
+
+### `SuperPolicy`
+
+The team flies a `SuperPolicy`, which implements the ordinary `Policy` interface — so `WildFireModel` is
+untouched and unaware, still holding one policy and calling `select_actions()` once a step. It does two
+things:
+
+1. **dispatch.** UAVs are grouped by the policy and parameters they were allocated, and each group is
+   handed to its policy in **one call**. Grouping rather than asking per UAV is what preserves the team
+   level reasoning the basic policies already do — `FirefighterPolicy` can only avoid sending two UAVs to
+   one fire if it is shown both in the same call. A uniform allocation therefore behaves identically to
+   running that policy on its own.
+2. **a fleet wide traffic pass.** Every action is then trimmed against every other: speed capped to what
+   the UAV was allocated, and flight trimmed so no UAV ends its step on a cell another holds or has been
+   sent to. This is new capability, not just relocated code — `FirefighterPolicy` deconflicts its own team
+   but has no way of knowing about a UAV flying `defend-base` on the next cell, because that UAV was never
+   in its call. Without a fleet wide pass, a mixed allocation would collide *more* than either policy does
+   alone.
+
+## Where the managing system lives
+
+`MANAGING_SYSTEM` moves the whole loop, not one step of it:
+
+```
+MANAGING_SYSTEM = "none"      # no managing system; one policy for the whole run
+MANAGING_SYSTEM = "local"     # ManagingSystem: Analyse, Plan and Knowledge all in this process
+MANAGING_SYSTEM = "remote"    # RemoteManagingSystem: all of them on the server at MANAGING_SYSTEM_URL
+```
+
+`RemoteManagingSystem` presents the same surface as `ManagingSystem` — `tick()`, `adaptations()`, a
+`knowledge` attribute — so the model, the runner and the web interface cannot tell them apart, and none of
+them needed changing to support it.
+
+**Local** is microseconds per evaluation, reproducible under `--seed`, works unchanged under
+`headless.py --workers N`, and needs no network. Its weakness is that independence rests on the import
+rule rather than on physics.
+
+**Remote** makes the independence physical: a managing system on the other side of a socket cannot reach
+into the simulation even by accident, because all it is ever given is the JSON below. It also stops being
+Python — it can be a solver, another language, or a person at a dashboard. What it costs is a round trip
+per evaluation (raise `ADAPTATION_PERIOD` to trade reaction speed for it), reproducibility that now depends
+on the server too, and a set of failure modes that do not exist in-process.
+
+One consequence worth being explicit about: **a quiet step still reaches the server.** A local managing
+system stops after Analyse when nothing is wrong, and never plans. A remote one cannot, because deciding
+that nothing needs doing is the server's decision to make — that is what makes it the managing system
+rather than a remote helper the local side consults when it feels like it. So `remote` makes one request
+per evaluation where `local` does work only on eventful ones.
+
+### The remote contract
+
+The client POSTs `application/json` to `MANAGING_SYSTEM_URL`:
+
+```json
+{
+  "session": "3f9c1e02",
+  "step": 37,
+  "snapshot": { "step": 37, "grid_size": [50, 50],
+                "uavs": [{"uav_id": 0, "pos": [7, 8], "alive": true, "hp": 3, "water": 1,
+                          "policy": "firefighter", "params": {},
+                          "fuel": 122.5, "fuel_capacity": 150.0,
+                          "sees_fire": [[9, 9]], "sees_uavs": [[7, 9]], "sees_buildings": []}],
+                "base": {"cells": [[5, 5]], "burning_steps": 1, "bhp": 5, "destroyed": false,
+                         "serving": 0, "fire_near_base": [[6, 6]]} }
+}
+```
+
+`snapshot` is the whole of what the sensor read, and there is no analysis in the request: working out what
+is wrong is the server's job.
+
+`session` identifies one run. A server keeping a Knowledge base between requests — which it must, to know
+anything a single snapshot cannot tell it, such as whether the fire is closing on the base — has to key it
+by this, because `headless.py --workers N` puts N runs in flight against one server at once.
+
+The server answers `200` with:
+
+```json
+{
+  "step": 37,
+  "rationale": "base threat 2 (fire 1.4 cells off): 2 defend-base, 2 firefighter",
+  "directives": [
+    {"uav_id": 0, "policy": "defend-base", "params": {}},
+    {"uav_id": 2, "policy": "disperse", "params": {"separation": 2, "speed_cap": 1}}
+  ]
+}
+```
+
+A UAV left out of `directives` keeps flying whatever it already was, so `"directives": []` means "nothing
+to change" and a server that only wants to move one UAV sends one directive. `params` may be omitted.
+Nothing in the response is trusted: it is parsed and then validated directive by directive by the effector,
+which drops anything naming a UAV that does not exist, a UAV that has been destroyed, a policy that is not
+registered, or a parameter outside its bounds.
+
+**When the server is not there.** Every failure — connection refused, timeout, a 500, a body that is not
+JSON, JSON that is not an allocation — is caught and logged, and then answered according to
+`MANAGING_SYSTEM_FALLBACK`: `True` stands a local managing system in for that evaluation, so losing the
+server costs the run its adaptation quality rather than its adaptation; `False` leaves the team on what it
+was flying, which is the honest setting for an experiment about what a self-adaptive system does when its
+managing system goes away. Either way the run completes — a run against a server that is not listening at
+all finishes with the same results as `--managing local`.
+
+No server ships with this project. `sim/managing/remote.py` is the client and the contract; writing
+something that answers it is the exercise.
+
+## Running it
+
+```bash
+# the experiment the managing system exists for: the same fires, with and without it
+python3 headless.py --runs 30 --workers 4 --seed 1 --managing none  --output baseline.json
+python3 headless.py --runs 30 --workers 4 --seed 1 --managing local --output adaptive.json
+
+# run the managing system on a server instead of in this process
+python3 headless.py --managing remote --managing-url http://127.0.0.1:8600/manage
+```
+
+Same seeds mean the same fires, so the difference between the two runs is the managing system. The results
+carry `adaptations`, `policy_steps` (UAV-steps flown under each policy), `allocation_final`,
+`directives_rejected` and `managing_failures` alongside the usual metrics; the last two are zero on a
+healthy run and mean the result was produced with less managing than was asked for.
+
+On the web interface the sidebar gains a **Managing system** panel showing where the managing system is,
+how many adaptations there have been, what the team is flying right now and its own one line account of
+why, and each UAV's line shows the policy it has been allocated.
+
+### What it achieves
+
+Measured, not asserted. Both arms use identical seeds, so they see identical fires.
+
+**Goal (a), the home base**, 120 runs, 30×30 grid, 5 UAVs, `firefighter` baseline:
+
+| | base lost | base burn-steps |
+|---|---|---|
+| `--managing none` | 26 / 120 | 308 |
+| `--managing local` | **17 / 120** | **268** |
+
+**Goal (b), collisions**, 25 runs, 20×20 grid, 8 UAVs, on baselines that have no team level deconfliction
+of their own:
+
+| baseline | | collisions | UAVs lost | base lost |
+|---|---|---|---|---|
+| `follow-fire` | off | 160 | 135 | 25 / 25 |
+| `follow-fire` | on | **0** | **5** | **3 / 25** |
+| `random` | off | 140 | 108 | 25 / 25 |
+| `random` | on | **0** | 104 | **15 / 25** |
+
+The collision figures come from `SuperPolicy`'s fleet wide traffic pass together with `disperse`; the base
+figures from `defend-base` being allocated as the threat rises. The `random` baseline still loses UAVs
+under management because they run their tanks dry — `random` never goes home to refuel, and no reallocation
+of policies fixes a policy that does not.
+
+Note that MR2 *rises* under management. It counts pairs of UAVs flying closer than `SECURITY_DISTANCE`,
+un-normalised, so a run where the team survives 120 steps instead of being destroyed by step 30 has far
+more pairs to count. Read it alongside `uavs_lost` rather than on its own.
 
 # Common variables configuration
 
@@ -546,6 +839,29 @@ To try it from the command line, without editing `config.py`:
 ```bash
 python3 headless.py --policy firefighter --set ACTIVATE_FIREFIGHTING=True
 ```
+
+### Managing system
+
+Optional, and ignored entirely when `MANAGING_SYSTEM` is `'none'`. See
+[The managing system](#the-managing-system) for what these do.
+
+| Variable | Meaning | Bounds |
+|---|---|---|
+| `MANAGING_SYSTEM` | whether a MAPE-K managing system runs over the simulation, and where the whole loop lives. The starting value only: the web interface's `Managing system` dropdown and `headless.py --managing` both override it per run | `'none'`, `'local'`, `'remote'` |
+| `ADAPTATION_PERIOD` | simulation steps between runs of the loop; larger is cheaper and slower to react | integer `>= 1` |
+| `ADAPTATION_HYSTERESIS` | consecutive evaluations that must agree before a UAV's policy is changed; `1` disables the damping | integer `>= 1` |
+| `DEFAULT_UAV_POLICY` | the policy the local planner treats as normal, what an unallocated UAV flies, and what the team starts under | a registered policy name |
+| `BASE_SENSOR_RADIUS` | how far around the base the managing system sees the ground truth; `0` leaves it with only the UAV reports | integer `>= 0` |
+| `BASE_THREAT_RADIUS` | how close fire must get to the base to count as threatening it | integer `>= 1` |
+| `MANAGING_CROWDED_SPEED_CAP` | speed a UAV is held to while being moved out of a crowd | integer `>= 0` |
+| `MANAGING_KNOWLEDGE_HISTORY` | how many past snapshots the Knowledge base keeps | integer `>= 1` |
+| `MANAGING_SYSTEM_URL` | where a remote managing system lives; read only when `MANAGING_SYSTEM` is `'remote'` | an http(s) URL |
+| `MANAGING_SYSTEM_TIMEOUT` | seconds to wait for a remote managing system before giving up on it | float `> 0` |
+| `MANAGING_SYSTEM_FALLBACK` | whether an unreachable remote managing system is stood in for locally. `False` leaves the team on what it was flying, which is the honest setting for studying what happens when a managing system goes away | `True` / `False` |
+
+`DEFAULT_UAV_POLICY` is checked for being a name here and resolved when the model is built, because
+`config.py` cannot import the policy package — the policy package imports `config.py`. An unknown name
+raises a `KeyError` listing the policies that do exist.
 
 ### Colours
 

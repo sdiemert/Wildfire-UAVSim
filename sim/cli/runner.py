@@ -68,6 +68,23 @@ class RunResult:
     # whether the run had a base to lose at all, which is what makes 'lost' meaningful
     firefighting: bool = False
     lost: bool = False
+    # managing system (MAPE-K); all zero/empty when MANAGING_SYSTEM is 'none', which is what makes an
+    # A/B against the unmanaged simulation a matter of one setting
+    managing: bool = False
+    # where the managing system lived: 'none', 'local' or 'remote'
+    managing_system: str = "none"
+    # how many times the allocation actually changed over the run
+    adaptations: int = 0
+    # how many UAV-steps were flown under each policy, which is what says whether the managing system
+    # actually used the policies it was given or settled on one and stayed there
+    policy_steps: dict[str, int] = field(default_factory=dict)
+    # what each UAV was flying when the run ended, keyed by unique id as a string so the JSON survives
+    allocation_final: dict[str, str] = field(default_factory=dict)
+    # directives the effector refused, and evaluations a remote managing system could not answer. Both
+    # are zero on a healthy run; either being non zero means the result was produced with less managing
+    # than was asked for, which a reader has to know before comparing it with anything
+    directives_rejected: int = 0
+    managing_failures: int = 0
     error: str | None = None
 
     @property
@@ -112,20 +129,32 @@ def run_simulation(config: RunConfig) -> RunResult:
         policy = policy_module.build_policy(config.policy)
 
         log.info(
-            "starting: %d steps, %dx%d grid, %d UAVs, policy=%s, seed=%s",
+            "starting: %d steps, %dx%d grid, %d UAVs, policy=%s, managing=%s, seed=%s",
             config.steps,
             cfg.HEIGHT,
             cfg.WIDTH,
             cfg.NUM_AGENTS,
             policy,
+            cfg.MANAGING_SYSTEM,
             config.seed,
         )
 
         # the model prints to stdout on construction; route that into the log.
         # passing 'log' gives the model and its agents this run's logger, so agent level
         # messages are tagged with the run they belong to.
+        #
+        # AdaptiveWildFireModel is the plain WildFireModel with one turn of the MAPE-K loop in front of
+        # its step(). With MANAGING_SYSTEM 'none' it builds no sensor and no effector and behaves exactly
+        # as the model it subclasses, so one runner covers both arms of an A/B experiment.
+        from sim.adaptive import AdaptiveWildFireModel
+
         with contextlib.redirect_stdout(_LogWriter(log)):
-            model = wildfire_model.WildFireModel(log=log, policy=policy)
+            model = AdaptiveWildFireModel(log=log, policy=policy)
+
+        # UAV-steps flown under each policy, sampled once per step. Counted here rather than derived from
+        # the allocations because a UAV goes on flying its last allocation over the steps the loop does
+        # not run on, and it is the flying that the result is about.
+        policy_steps: dict[str, int] = {}
 
         steps_completed = 0
         for step in range(1, config.steps + 1):
@@ -139,6 +168,10 @@ def run_simulation(config: RunConfig) -> RunResult:
                 break
 
             steps_completed = step
+
+            for uav_id, name in model.allocation().items():
+                if model.uav_by_id(uav_id) is not None and model.uav_by_id(uav_id).is_alive():
+                    policy_steps[name] = policy_steps.get(name, 0) + 1
 
             # the model clears 'running' when it reaches its own BATCH_SIZE, and when the home
             # base is destroyed. The BATCH_SIZE case normally does not arise, because this loop
@@ -188,6 +221,13 @@ def run_simulation(config: RunConfig) -> RunResult:
             base_burning_steps=model.base.burning_steps if model.base is not None else 0,
             firefighting=cfg.ACTIVATE_FIREFIGHTING,
             lost=model.lost,
+            managing=model.managing is not None,
+            managing_system=model.managing_kind,
+            adaptations=model.adaptations(),
+            policy_steps=policy_steps,
+            allocation_final={str(uav_id): name for uav_id, name in model.allocation().items()},
+            directives_rejected=model.effector.rejected if model.effector is not None else 0,
+            managing_failures=getattr(model.managing, "failures", 0) if model.managing else 0,
         )
         log.info(
             "finished in %.2fs | fire at %s from step %d | MR1_total=%.4f MR2=%d burning=%d "
@@ -220,6 +260,18 @@ def run_simulation(config: RunConfig) -> RunResult:
             log.info(
                 "RUN %s | home base burned %d/%d step(s)",
                 result.outcome, result.base_burning_steps, cfg.BHP,
+            )
+        if result.managing:
+            log.info(
+                "managing | %s adaptations=%d | UAV-steps: %s%s",
+                result.managing_system, result.adaptations,
+                ", ".join(f"{name}={count}" for name, count in sorted(result.policy_steps.items()))
+                or "none",
+                # both are silent on a healthy run, and both change how the result should be read
+                (f" | REFUSED {result.directives_rejected} directive(s)"
+                 if result.directives_rejected else "")
+                + (f" | managing system unreachable {result.managing_failures} time(s)"
+                   if result.managing_failures else ""),
             )
         return result
 

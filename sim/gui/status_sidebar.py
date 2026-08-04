@@ -46,6 +46,9 @@ class StatusSidebar(VisualizationElement):
             sections.append(self.out_buildings(model))
         else:
             sections.append(self.note("Firefighting off: see ACTIVATE_FIREFIGHTING in config.py"))
+        # the managing system, when there is one. It goes above the team, because what it decided is what
+        # the lines below are the consequence of.
+        sections.append(self.managing(model))
         # the UAV health points exist whether or not the extension is on, so the team is always reported
         sections.append(self.uavs(model))
         return "".join(sections)
@@ -147,6 +150,49 @@ class StatusSidebar(VisualizationElement):
             cells.append(self.cell("&nbsp;", "safe", "value ok"))
         return cells
 
+    # the managing system: what it has decided, how often it has changed its mind, and why it last did.
+    # Nothing at all when the model is running without one, so the panel is unchanged for a plain run.
+    def managing(self, model):
+        # the plain WildFireModel has none of these attributes, and neither does the adaptive one with
+        # MANAGING_SYSTEM set to 'none'
+        if getattr(model, "managing", None) is None:
+            return ""
+
+        allocation = model.allocation()
+        flying = {uav.unique_id for uav in model.active_uavs()}
+        counts = {}
+        for uav_id, name in allocation.items():
+            if uav_id in flying:
+                counts[name] = counts.get(name, 0) + 1
+
+        html = [self.heading("Managing system", f"{model.adaptations()} adaptation(s)")]
+        # where it lives. Both ManagingSystem and RemoteManagingSystem carry a 'name', which is the one
+        # thing they are guaranteed to have in common; anything reached through one and not the other
+        # breaks the panel for whichever kind was not being looked at when it was written.
+        cells = [self.cell("Running", model.managing.name)]
+        # a run managed remotely is worth telling apart from one that fell back to the local stand-in
+        # because the server was not answering: the two produce the same kind of result and mean
+        # different things. Only a remote managing system has this, hence getattr.
+        failures = getattr(model.managing, "failures", 0)
+        if failures:
+            cells.append(self.cell("Fell back", f"{failures}x", "value crit"))
+        if model.effector is not None and model.effector.rejected:
+            cells.append(self.cell("Refused", model.effector.rejected, "value crit"))
+        html.append(self.grid(cells))
+
+        # what the team is flying right now, most common first
+        if counts:
+            html.append(self.grid([
+                self.cell(name, count)
+                for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            ]))
+
+        # the planner's own account of why, which is what makes the allocation above readable
+        rationale = model.rationale()
+        if rationale:
+            html.append(self.note(rationale))
+        return "".join(html)
+
     # the out buildings. The count in the heading covers the ones that are untouched, so only the buildings
     # that are burning or gone are worth a line of their own.
     def out_buildings(self, model):
@@ -185,6 +231,9 @@ class StatusSidebar(VisualizationElement):
         if not crew:
             return "".join(html + [self.note("none flying")])
 
+        # what each UAV has been allocated, which is empty for a run without a managing system
+        allocation = model.allocation() if hasattr(model, "allocation") else {}
+
         html.append('<div class="scroll">')
         # numbered by their position in the team rather than by unique_id, which starts after every Fire
         # agent has been created. This is the same numbering the MR1 scores use.
@@ -196,7 +245,11 @@ class StatusSidebar(VisualizationElement):
                 html.append(f'<span class="who">{index}</span>'
                             f'<span class="num crit">destroyed</span>')
             else:
-                html.append(f'<span class="who">{index} {uav.pos}</span>')
+                # the policy this UAV is flying is shown next to where it is, so that what it is doing
+                # can be read against what it was told to do
+                allocated = allocation.get(uav.unique_id, "")
+                html.append(f'<span class="who">{index} {uav.pos}'
+                            f'{f" {allocated}" if allocated else ""}</span>')
                 html.append(f'<span class="{self.health_class(uav.hp, config.UAV_HP)}">'
                             f'{uav.hp}/{config.UAV_HP}</span>')
                 if config.ACTIVATE_FUEL:

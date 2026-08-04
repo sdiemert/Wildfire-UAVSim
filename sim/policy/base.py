@@ -83,6 +83,24 @@ def avoid(pos, action, blocked):
     return Action(action.direction, speed)
 
 
+# helper that returns the cells within 'radius' of any of 'positions', the positions themselves included.
+# It is the cushion a UAV is asked to keep around the team mates it can see: 'blocked' with a radius of
+# zero is only the cells they stand on, which is the least that stops a collision, and each cell of radius
+# beyond that is a cell of clear air the UAV gives up speed to preserve.
+#
+# Distance is counted the way the UAVs fly, so the cushion is square rather than round.
+def halo(positions, radius=0):
+    if radius <= 0:
+        return {tuple(position) for position in positions}
+
+    cells = set()
+    for position in positions:
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                cells.add((position[0] + dx, position[1] + dy))
+    return cells
+
+
 class Policy(ABC):
     """Decides which direction each UAV flies at a given time step, and how fast.
 
@@ -92,6 +110,15 @@ class Policy(ABC):
 
     # identifier used by the registry, the CLI and the web interface dropdown
     name = "policy"
+
+    # takes the parameters this policy is to be flown under, before select_actions() is called. The base
+    # implementation ignores them, which is what lets every policy written before the managing system
+    # existed keep working unchanged: the two parameters that matter to all of them, the speed cap and the
+    # separation, are enforced by SuperPolicy after the policy has chosen, rather than being obeyed here.
+    #
+    # A policy that understands a setting of its own overrides this and reads it out of params.extra.
+    def configure(self, params):
+        return None
 
     @abstractmethod
     def select_actions(self, observations):

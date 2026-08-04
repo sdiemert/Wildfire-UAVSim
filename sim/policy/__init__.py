@@ -17,17 +17,22 @@ interface without any further change.
 # own python modules
 
 from .action import Action
-from .base import Policy, avoid, by_distance, flight_path, nearest, step_towards
+from .base import Policy, avoid, by_distance, flight_path, halo, nearest, step_towards
 from .observation import Observation
+from .params import PolicyParams
+from .defend_base import DefendBasePolicy
+from .disperse import DispersePolicy
 from .firefighter import FirefighterPolicy
 from .follow_fire import FollowFirePolicy
 from .random_policy import RandomPolicy
 
-# every policy the simulator knows about
+# every policy the simulator knows about, and every policy the managing system may allocate to a UAV
 REGISTERED = (
     RandomPolicy,
     FollowFirePolicy,
     FirefighterPolicy,
+    DefendBasePolicy,
+    DispersePolicy,
 )
 
 # name -> class, used by the --policy option and the web interface dropdown
@@ -41,6 +46,11 @@ def build_policy(name):
     return POLICIES[name]()
 
 
-__all__ = ["Action", "Policy", "Observation", "RandomPolicy", "FollowFirePolicy", "FirefighterPolicy",
-           "POLICIES", "REGISTERED", "build_policy", "avoid", "by_distance", "flight_path", "nearest",
-           "step_towards"]
+# imported last, because SuperPolicy builds the policies above through build_policy() and so needs this
+# module to be most of the way through importing before it can be defined
+from .super_policy import SuperPolicy
+
+__all__ = ["Action", "Policy", "Observation", "PolicyParams", "RandomPolicy", "FollowFirePolicy",
+           "FirefighterPolicy", "DefendBasePolicy", "DispersePolicy", "SuperPolicy",
+           "POLICIES", "REGISTERED", "build_policy", "avoid", "by_distance", "flight_path", "halo",
+           "nearest", "step_towards"]

@@ -14,6 +14,13 @@ Examples:
 
     # override simulation constants, log every step
     python3 headless.py --set NUM_AGENTS=4 --set ACTIVATE_WIND=True --log-every 1
+
+    # the experiment the managing system exists for: the same fires, with and without it
+    python3 headless.py --runs 30 --workers 4 --seed 1 --managing none  --output baseline.json
+    python3 headless.py --runs 30 --workers 4 --seed 1 --managing local --output adaptive.json
+
+    # run the managing system on a server instead of in this process
+    python3 headless.py --managing remote --managing-url http://127.0.0.1:8600/manage
 """
 
 from __future__ import annotations
@@ -80,7 +87,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--policy",
         default="random",
-        help="policy that chooses UAV directions, see the sim/policy/ package (default: random)",
+        help="policy that chooses UAV directions, see the sim/policy/ package (default: random). "
+             "With the managing system on this is only what the team starts under, before the first "
+             "adaptation",
+    )
+    parser.add_argument(
+        "--managing",
+        choices=("none", "local", "remote"),
+        default=None,
+        help="whether a MAPE-K managing system runs over the simulation, reallocating a policy to each "
+             "UAV as the run goes, and where it lives: 'none' is the unmanaged baseline, 'local' runs "
+             "the whole loop in this process, 'remote' runs it on the server at --managing-url "
+             "(default: MANAGING_SYSTEM from config.py)",
+    )
+    parser.add_argument(
+        "--managing-url",
+        default=None,
+        help="where a remote managing system lives, see sim/managing/remote.py for the contract "
+             "(default: MANAGING_SYSTEM_URL from config.py)",
     )
     parser.add_argument("--log-level", default="INFO",
                         choices=("DEBUG", "INFO", "WARNING", "ERROR"), help="console log level")
@@ -97,6 +121,15 @@ def main(argv: list[str] | None = None) -> int:
     log = configure_logging(args.log_level, args.log_file)
 
     overrides = dict(args.overrides)
+
+    # the managing system options are folded into the overrides rather than carried separately, because
+    # every one of them is already a setting in config.py and the overrides are how a run changes those.
+    # They are applied after --set, so an explicit flag wins over a --set of the same constant.
+    if args.managing is not None:
+        overrides["MANAGING_SYSTEM"] = args.managing
+    if args.managing_url is not None:
+        overrides["MANAGING_SYSTEM_URL"] = args.managing_url
+
     cfg, _, _, policy_module = _import_simulation()
     steps = args.steps if args.steps is not None else overrides.get("BATCH_SIZE", cfg.BATCH_SIZE)
 
