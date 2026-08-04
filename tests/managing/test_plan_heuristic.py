@@ -11,7 +11,7 @@ import config
 from sim.managing.analyze import HeuristicAnalyzer
 from sim.managing.contract import Symptoms
 from sim.managing.knowledge import Knowledge
-from sim.managing.plan.local import HeuristicPlanner
+from sim.managing.plan.heuristic import HeuristicPlanner
 
 
 @pytest.fixture

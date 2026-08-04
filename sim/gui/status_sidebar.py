@@ -166,10 +166,10 @@ class StatusSidebar(VisualizationElement):
                 counts[name] = counts.get(name, 0) + 1
 
         html = [self.heading("Managing system", f"{model.adaptations()} adaptation(s)")]
-        # where it lives. Both ManagingSystem and RemoteManagingSystem carry a 'name', which is the one
-        # thing they are guaranteed to have in common; anything reached through one and not the other
-        # breaks the panel for whichever kind was not being looked at when it was written.
-        cells = [self.cell("Running", model.managing.name)]
+        # which one is running, and where. Both ManagingSystem and RemoteManagingSystem carry a 'name' and
+        # a 'location', which is what they are guaranteed to have in common; anything reached through one
+        # and not the other breaks the panel for whichever kind was not being looked at when it was written.
+        cells = [self.cell("Running", f"{model.managing.name} ({model.managing_location})")]
         # a run managed remotely is worth telling apart from one that fell back to the local stand-in
         # because the server was not answering: the two produce the same kind of result and mean
         # different things. Only a remote managing system has this, hence getattr.
@@ -179,6 +179,15 @@ class StatusSidebar(VisualizationElement):
         if model.effector is not None and model.effector.rejected:
             cells.append(self.cell("Refused", model.effector.rejected, "value crit"))
         html.append(self.grid(cells))
+
+        # what it is made of. Worth showing because a managing system is a combination of interchangeable
+        # components and the dropdown only gives its name -- and because --mape can have produced a
+        # combination that no registered name describes. Empty for a remote one, whose components are the
+        # server's and are not reported to this side.
+        composition = model.composition()
+        if composition:
+            html.append(self.grid([self.cell(role.capitalize(), name)
+                                   for role, name in composition.items()]))
 
         # what the team is flying right now, most common first
         if counts:

@@ -1,4 +1,4 @@
-"""A planner that decides in this process, from rules written out longhand."""
+"""The planner the managing system uses unless it is told to use another one."""
 
 # python libraries
 
@@ -49,9 +49,22 @@ class HeuristicPlanner(Planner):
     The rules are deliberately legible rather than clever. This planner is the reference implementation and
     the fallback for the remote one, so what matters most about it is that its decisions can be read off
     the rationale it writes and checked against what the run then did.
+
+    defensive.py is the same shape with rules 2 and 3 weighted differently, and is what an argument about
+    that weighting is settled with. static.py is the planner that does none of this, and is what an
+    argument about whether any of it helps is settled with.
     """
 
-    name = "local"
+    name = "heuristic"
+
+    # whether rule 3 applies at all: a planner that would rather keep a crowded UAV on the mission and let
+    # SuperPolicy's traffic pass keep it from actually colliding turns this off
+    DISPERSE_CROWDED = True
+
+    # how much of the team each base threat level is worth, as a share of the UAVs still able to fly. Level
+    # 3 is not listed because it is always the whole team: the base is alight and there is nothing else
+    # left worth doing.
+    THREAT_SHARES = {1: 1 / 3, 2: 0.5}
 
     def plan(self, snapshot, symptoms, knowledge=None):
         flying = snapshot.alive()
@@ -81,9 +94,10 @@ class HeuristicPlanner(Planner):
             wanted[report.uav_id] = (config.DEFAULT_UAV_POLICY, {})
 
         # rule 3: crowded UAVs open the gap
-        for report in flying:
-            if report.uav_id in symptoms.crowding:
-                wanted[report.uav_id] = ("disperse", self.disperse_params(report))
+        if self.DISPERSE_CROWDED:
+            for report in flying:
+                if report.uav_id in symptoms.crowding:
+                    wanted[report.uav_id] = ("disperse", self.disperse_params(report))
 
         # rule 2: defenders, nearest the base first. Written over rule 3, because the base being lost ends
         # the run and a collision does not; a defender that is crowded is still kept apart mechanically by
@@ -138,7 +152,7 @@ class HeuristicPlanner(Planner):
             return 0
         if symptoms.base_threat >= 3:
             return flying
-        share = 0.5 if symptoms.base_threat == 2 else 1 / 3
+        share = self.THREAT_SHARES.get(symptoms.base_threat, 1 / 3)
         return max(1, math.ceil(flying * share))
 
     # how much room to ask for, and how slowly to take it. A UAV on its last health point is given a wider

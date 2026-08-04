@@ -188,7 +188,7 @@ def test_fuel_without_a_base_to_refuel_at_is_allowed(sim_config):
 # --- managing system --------------------------------------------------------
 
 
-@pytest.mark.parametrize("managing", ["local", "remote"])
+@pytest.mark.parametrize("managing", ["heuristic", "remote"])
 @pytest.mark.parametrize("setting, value", [
     ("ADAPTATION_PERIOD", 0),
     ("ADAPTATION_PERIOD", 1.5),
@@ -207,12 +207,19 @@ def test_out_of_bounds_managing_settings_are_refused(sim_config, managing, setti
         config.validate()
 
 
-def test_an_unknown_managing_system_is_refused(sim_config):
-    sim_config(MANAGING_SYSTEM="telepathy")
+# an unknown name is not this module's business: MANAGING_SYSTEM names a managing system registered in
+# sim/managing/systems.py, and config.py cannot import that package to look one up, because it imports
+# config.py. The name is resolved when the managing system is built, which raises listing the ones that
+# exist -- see tests/managing/test_systems.py. What is checked here is that it is a name at all.
+@pytest.mark.parametrize("value", [None, "", 3])
+def test_a_managing_system_that_is_not_a_name_is_refused(sim_config, value):
+    sim_config(MANAGING_SYSTEM=value)
     with pytest.raises(ValueError, match="MANAGING_SYSTEM"):
         config.validate()
 
 
+# 'remote' says the managing system being built is one that lives on a server, which is what puts these
+# settings in play. build_managing_system() passes it, because the selected managing system is what knows.
 @pytest.mark.parametrize("setting, value", [
     ("MANAGING_SYSTEM_URL", "not-a-url"),
     ("MANAGING_SYSTEM_TIMEOUT", 0),
@@ -220,11 +227,11 @@ def test_an_unknown_managing_system_is_refused(sim_config):
 def test_out_of_bounds_remote_settings_are_refused(sim_config, setting, value):
     sim_config(MANAGING_SYSTEM="remote", **{setting: value})
     with pytest.raises(ValueError, match=setting):
-        config.validate()
+        config.validate(remote=True)
 
 
 def test_the_remote_settings_are_ignored_by_a_local_managing_system(sim_config):
-    sim_config(MANAGING_SYSTEM="local", MANAGING_SYSTEM_URL="nonsense", MANAGING_SYSTEM_TIMEOUT=-1)
+    sim_config(MANAGING_SYSTEM="heuristic", MANAGING_SYSTEM_URL="nonsense", MANAGING_SYSTEM_TIMEOUT=-1)
     config.validate()
 
 
@@ -239,13 +246,13 @@ def test_the_check_can_be_asked_for_a_managing_system_the_file_does_not_have(sim
     sim_config(MANAGING_SYSTEM="none", ADAPTATION_PERIOD=0)
     config.validate()                                   # as configured, nothing reads it
     with pytest.raises(ValueError, match="ADAPTATION_PERIOD"):
-        config.validate(managing="local")               # ... but this caller is about to
+        config.validate(managing="heuristic")           # ... but this caller is about to
 
 
 # config.py cannot import the policy package to look the name up, because the policy package imports
 # config. The name is resolved when the model is built instead, which is where the useful error lives.
 def test_an_unknown_default_policy_is_caught_when_the_model_is_built(sim_config):
-    sim_config(MANAGING_SYSTEM="local", DEFAULT_UAV_POLICY="no-such-policy")
+    sim_config(MANAGING_SYSTEM="heuristic", DEFAULT_UAV_POLICY="no-such-policy")
     config.validate()   # the name is a string, so validate() is satisfied
 
     from sim.policy import SuperPolicy

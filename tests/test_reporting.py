@@ -44,7 +44,10 @@ def result(**overrides):
 
 def managed(**overrides):
     fields = dict(
-        managing=True, managing_system="local", adaptations=5,
+        managing=True, managing_system="heuristic", managing_location="local",
+        managing_components={"monitor": "default", "analyzer": "heuristic", "planner": "heuristic",
+                             "executor": "default", "knowledge": "default"},
+        adaptations=5,
         policy_steps={"firefighter": 60, "defend-base": 40},
         allocation_final={"0": "firefighter"},
         directives_rejected=0, managing_failures=0,
@@ -62,7 +65,9 @@ def test_a_managed_batch_can_be_summarised(log):
 
 
 def test_a_remote_batch_can_be_summarised(log):
-    log_summary([managed(managing_system="remote", managing_failures=3)], elapsed=1.0, log=log)
+    # a remote run reports no composition, because the components are the server's
+    log_summary([managed(managing_system="remote", managing_location="remote",
+                         managing_components={}, managing_failures=3)], elapsed=1.0, log=log)
 
 
 def test_a_batch_that_lost_its_managing_system_can_be_summarised(log):
@@ -109,10 +114,21 @@ def test_a_run_without_the_firefighting_extension_can_be_summarised(log):
 # --- what it actually reports ------------------------------------------------
 
 
-def test_the_summary_names_where_the_managing_system_was(log, caplog):
+def test_the_summary_names_the_managing_system_and_where_it_was(log, caplog):
     with caplog.at_level(logging.INFO, logger=log.name):
-        log_summary([managed(managing_system="remote")], elapsed=1.0, log=log)
+        log_summary([managed(managing_system="defensive", managing_location="remote")],
+                    elapsed=1.0, log=log)
+    assert "defensive" in caplog.text
     assert "remote" in caplog.text
+
+
+def test_the_summary_names_what_the_managing_system_was_made_of(log, caplog):
+    """--mape can produce a batch that no registered name describes, so the name alone is not enough."""
+    with caplog.at_level(logging.INFO, logger=log.name):
+        log_summary([managed(managing_components={"planner": "static", "analyzer": "cautious"})],
+                    elapsed=1.0, log=log)
+    assert "P=static" in caplog.text
+    assert "A=cautious" in caplog.text
 
 
 def test_the_summary_reports_uav_steps_per_policy(log, caplog):

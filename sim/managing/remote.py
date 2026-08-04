@@ -117,12 +117,17 @@ class RemoteManagingSystem:
     """
 
     name = "remote"
+    location = "remote"
 
-    # constructor. 'transport' and 'session' exist to be replaced in tests; 'fallback' is the local
-    # managing system to stand in when the server cannot be reached, built lazily by the caller-supplied
-    # factory so that a run which never loses the server never builds one.
-    def __init__(self, sensor, effector, url=None, timeout=None, period=None, fallback=None,
+    # constructor. 'name' is what the managing system is called in systems.py, which is not necessarily
+    # 'remote': any number of registered systems can live on a server. 'transport' and 'session' exist to
+    # be replaced in tests; 'fallback' is the local managing system to stand in when the server cannot be
+    # reached, built lazily by the caller-supplied factory so that a run which never loses the server never
+    # builds one.
+    def __init__(self, sensor, effector, name=None, url=None, timeout=None, period=None, fallback=None,
                  log=None, transport=None, session=None):
+        if name is not None:
+            self.name = str(name)
         self.sensor = sensor
         self.effector = effector
         self.url = config.MANAGING_SYSTEM_URL if url is None else url
@@ -211,5 +216,11 @@ class RemoteManagingSystem:
     def adaptations(self):
         return self.knowledge.adaptations
 
+    # what this managing system is made of. Empty, and honestly so: the components are the server's and
+    # this side is not told what they are. Callers that report a composition show nothing for a remote run
+    # rather than showing the local defaults, which would be a guess.
+    def composition(self):
+        return {}
+
     def __str__(self):
-        return f"remote MAPE-K at {self.url}, every {self.period} step(s)"
+        return f"{self.name} ({self.location}) at {self.url}, every {self.period} step(s)"

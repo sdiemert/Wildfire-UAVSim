@@ -25,18 +25,31 @@ because it was never able to reach the simulation in the first place. See plan/r
         Plan      snapshot + Symptoms    -> Allocation
         Execute   effector.apply()       -> Knowledge
 
+# Which managing system
+
+Each of the five steps is a role with several implementations to choose from, registered in the package it
+lives in, and a *managing system* is one named combination of them: which analyser, which planner, how
+often it evaluates and how hard it damps. They are listed in systems.py, `MANAGING_SYSTEM` names the one to
+run, and adding another is one entry in a tuple. That is what makes an experiment about how to manage this
+fleet a matter of running the same seeds against a different name.
+
+    'none'       no managing system; every UAV flies one policy for the whole run
+    'static'     the loop runs but never reallocates: the control arm
+    'heuristic'  the default: rules over threat to the base and crowding, damped by hysteresis
+    'defensive'  the base over everything else
+    'reactive'   the default components with the damping removed
+    'remote'     the whole loop on a server
+
 # Where it runs
 
-A managing system is in this process or on a server, as a whole. MANAGING_SYSTEM picks:
-
-    'none'    no managing system; every UAV flies one policy for the whole run
-    'local'   ManagingSystem, above: the four steps and the Knowledge base all run here
-    'remote'  RemoteManagingSystem (remote.py): the sensor is read here and the reading sent to a server,
-              which analyses it, plans against its own Knowledge base and answers with an allocation
+A managing system is in this process or on a server, as a whole -- its `location`. A local one is
+ManagingSystem (loop.py), with the four steps and the Knowledge base all here. A remote one is
+RemoteManagingSystem (remote.py): the sensor is read here and the reading sent to a server, which analyses
+it, plans against its own Knowledge base and answers with an allocation.
 
 The sensor and the effector stay local in both cases, because they are the simulation's own interface and
 can be nowhere else -- in a real deployment they would be the radio link to the fleet. Everything that
-could be called deciding is on whichever side MANAGING_SYSTEM names.
+could be called deciding is on whichever side the location names.
 
 The adapters that satisfy the two ports live in sim/adapters.py, which is the one module in the project
 that imports both the managing and the managed system.
@@ -44,17 +57,23 @@ that imports both the managing and the managed system.
 
 # own python modules
 
-from .analyze import Analyzer, HeuristicAnalyzer
+from .analyze import ANALYZERS, Analyzer, CautiousAnalyzer, HeuristicAnalyzer
 from .contract import Allocation, BaseReport, FleetSnapshot, Symptoms, UavDirective, UavReport
-from .execute import Executor
-from .knowledge import Knowledge
-from .loop import ManagingSystem, build_managing_system
-from .monitor import Monitor
-from .plan import HeuristicPlanner, Planner
+from .execute import EXECUTORS, Executor
+from .knowledge import KNOWLEDGE_BASES, Knowledge
+from .loop import ManagingSystem
+from .monitor import MONITORS, Monitor
+from .plan import PLANNERS, DefensivePlanner, HeuristicPlanner, Planner, StaticPlanner
 from .ports import Effector, Sensor
+from .registry import Registry
 from .remote import RemoteManagingSystem
+from .systems import (ALIASES, MANAGING_SYSTEMS, REGISTERED, REGISTRIES, ROLES, ManagingSystemSpec,
+                      build_local, build_managing_system, managing_system)
 
-__all__ = ["Allocation", "Analyzer", "BaseReport", "Effector", "Executor", "FleetSnapshot",
-           "HeuristicAnalyzer", "HeuristicPlanner", "Knowledge", "ManagingSystem", "Monitor",
-           "Planner", "RemoteManagingSystem", "Sensor", "Symptoms", "UavDirective", "UavReport",
-           "build_managing_system"]
+__all__ = ["ALIASES", "ANALYZERS", "Allocation", "Analyzer", "BaseReport", "CautiousAnalyzer",
+           "DefensivePlanner", "EXECUTORS", "Effector", "Executor", "FleetSnapshot", "HeuristicAnalyzer",
+           "HeuristicPlanner", "KNOWLEDGE_BASES", "Knowledge", "MANAGING_SYSTEMS", "MONITORS",
+           "ManagingSystem", "ManagingSystemSpec", "Monitor", "PLANNERS", "Planner", "REGISTERED",
+           "REGISTRIES", "ROLES", "Registry", "RemoteManagingSystem", "Sensor", "StaticPlanner",
+           "Symptoms", "UavDirective", "UavReport", "build_local", "build_managing_system",
+           "managing_system"]

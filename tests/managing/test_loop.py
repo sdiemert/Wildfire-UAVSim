@@ -12,9 +12,10 @@ import pytest
 
 from sim.managing.contract import Allocation, Symptoms, UavDirective
 from sim.managing.knowledge import Knowledge
-from sim.managing.loop import ManagingSystem, build_managing_system
+from sim.managing.loop import ManagingSystem
+from sim.managing.systems import build_managing_system
 from sim.managing.plan.base import Planner
-from sim.managing.plan.local import HeuristicPlanner
+from sim.managing.plan.heuristic import HeuristicPlanner
 from sim.managing.remote import RemoteManagingSystem
 from sim.managing.ports import Effector, Sensor
 
@@ -194,7 +195,7 @@ def test_the_history_is_bounded(snapshot):
 
 def test_the_factory_builds_a_local_managing_system(parts):
     sensor, effector = parts
-    system = build_managing_system(sensor, effector, managing="local")
+    system = build_managing_system(sensor, effector, managing="heuristic")
     assert isinstance(system, ManagingSystem)
     assert isinstance(system.planner, HeuristicPlanner)
 
@@ -229,5 +230,5 @@ def test_the_factory_builds_nothing_for_none(parts):
 
 def test_the_factory_rejects_a_managing_system_it_does_not_have(parts):
     sensor, effector = parts
-    with pytest.raises(KeyError, match="local"):
+    with pytest.raises(KeyError, match="heuristic"):
         build_managing_system(sensor, effector, managing="telepathy")

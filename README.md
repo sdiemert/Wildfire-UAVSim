@@ -124,13 +124,13 @@ With the firefighting extension on, an `Observation` also carries `has_water`, `
 
 This python package holds the managing system: a MAPE-K loop that watches how a run is going and decides which policy each UAV should be flying. It is described in full under [The managing system](#the-managing-system).
 
-`contract.py` holds the frozen messages that cross the boundary, `ports.py` the `Sensor` and `Effector` interfaces, `knowledge.py` the shared Knowledge base, and `monitor.py`, `analyze.py`, `plan/` and `execute.py` the four steps. `loop.py` ties them together into a `ManagingSystem` that runs here; `remote.py` is the same loop living on a server.
+`contract.py` holds the frozen messages that cross the boundary and `ports.py` the `Sensor` and `Effector` interfaces. The five MAPE-K parts have a sub-package each — `monitor/`, `analyze/`, `plan/`, `execute/` and `knowledge/` — and every one of them has the same shape: `base.py` defines the role, any siblings are alternative implementations of it, and `__init__.py` registers them all and says how to add another. `registry.py` is the name-to-class lookup they share, and `systems.py` is the catalogue of named managing systems built out of them — adding one is an entry in a tuple there. `loop.py` assembles the components of a managing system that runs here; `remote.py` is the whole loop living on a server.
 
 Nothing in this package imports the simulation — not the model, not the agents, not the policies, not mesa — and `tests/managing/test_independence.py` fails if that ever changes.
 
 ### `tests/`
 
-This directory holds the unit tests, grouped to mirror the package: `tests/agents/`, `tests/policy/` and `tests/managing/`, with the tests that cover a single module at the root of `sim` — or cut across everything — at the top. See [Running the tests](#running-the-tests).
+This directory holds the unit tests, grouped to mirror the package: `tests/agents/`, `tests/policy/`, `tests/managing/`, `tests/cli/` and `tests/gui/`, with the tests that cover a single module at the root of `sim` — or cut across everything — at the top. See [Running the tests](#running-the-tests).
 
 # Installation setup
 
@@ -270,7 +270,7 @@ Indicates the current time step of the simulation, beside the buttons that advan
 
 The panel down the left hand side reports the monitoring metrics, the state of the home base and the out buildings, and a line per UAV with its position, its health and the water it is carrying. Figures turn amber and then red as whatever they measure is used up.
 
-With `MANAGING_SYSTEM` set to `local` or `remote` it also gains a **Managing system** section: where the managing system is, how many adaptations there have been, how many UAVs are on each policy right now, and its own one line account of why. Each UAV's line then shows the policy it has been allocated next to its position, so what a UAV is doing can be read against what it was told to do. See [The managing system](#the-managing-system).
+With `MANAGING_SYSTEM` set to anything but `none` it also gains a **Managing system** section: which managing system is running, where it lives, which component is doing each of the five MAPE-K jobs, how many adaptations there have been, how many UAVs are on each policy right now, and its own one line account of why. Each UAV's line then shows the policy it has been allocated next to its position, so what a UAV is doing can be read against what it was told to do. See [The managing system](#the-managing-system).
 
 ### `Managing system` and `UAV policy`
 
@@ -281,7 +281,7 @@ Press `Reset` after changing either of them.
 
 | Control | Overrides | Values |
 |---|---|---|
-| `Managing system` | `MANAGING_SYSTEM` | `none` — no managing system, the unmanaged baseline; `local` — the whole MAPE-K loop in this process; `remote` — the whole loop on the server at `MANAGING_SYSTEM_URL` |
+| `Managing system` | `MANAGING_SYSTEM` | every managing system registered in `sim/managing/systems.py`: `none` — the unmanaged baseline; `static` — the loop without adaptation, the control arm; `heuristic` — the default; `defensive`; `reactive`; `remote` — the whole loop on the server at `MANAGING_SYSTEM_URL`. One added there appears here without any further change |
 | `UAV policy` | — | the rule each UAV flies |
 
 Being able to switch between the three from the page is what makes the comparison a matter of two clicks
@@ -302,7 +302,7 @@ The map is deliberately kept light. Vegetation runs from near white to a mid gre
 
 # The managing system
 
-Setting `MANAGING_SYSTEM` in `config.py` to `local` or `remote` turns the simulator from a **managed
+Setting `MANAGING_SYSTEM` in `config.py` to anything but `none` turns the simulator from a **managed
 system** into a **self-adaptive system**.
 
 With it at `none`, every UAV flies one policy, chosen before the run starts and never reconsidered however
@@ -310,13 +310,14 @@ the run goes. Otherwise a *managing system* watches the run and reallocates a po
 parameters — to each UAV as things change, with two goals: keep the home base from burning down, and keep
 the team from flying into itself.
 
-`local` and `remote` are the same managing system in two places, not two managing systems. The whole
-MAPE-K loop moves: with `remote`, the analysis, the planning and the Knowledge base are all on the server.
+There is more than one managing system. Each is a named combination of the five MAPE-K components, listed
+in [The managing systems there are](#the-managing-systems-there-are), and comparing them over the same
+seeds is what the whole arrangement is for.
 
 ## Managed and managing
 
 ```
-MANAGING_SYSTEM = 'local'                     MANAGING_SYSTEM = 'remote'
+a local managing system                       a remote one
 
 ┌───── MANAGING SYSTEM (sim/managing/) ─────┐  ┌──── server ─────────────────────┐
 │  Analyse ──▶ Plan          Knowledge      │  │  Analyse ─▶ Plan   Knowledge    │
@@ -339,7 +340,7 @@ MANAGING_SYSTEM = 'local'                     MANAGING_SYSTEM = 'remote'
 The sensor and the effector stay on this side either way, because they *are* the simulation's own
 interface — a sensor reads a model object and an effector writes to one, and neither can be anywhere else.
 In a real deployment they would be the radio link to the fleet. Everything that could be called deciding
-is on whichever side `MANAGING_SYSTEM` names.
+is on whichever side the selected managing system lives.
 
 The managing system reaches the simulation through exactly two things: a **sensor** that reads and an
 **effector** that writes. It has no other access, and this is enforced rather than merely intended —
@@ -351,19 +352,24 @@ the project that imports both halves.
 That independence is what makes `remote` possible without redesigning anything: code that was never able
 to reach the simulation loses nothing by being moved to another machine.
 
-## The loop
+## The loop, and the five parts it is made of
 
 `ManagingSystem.tick(step)` runs one turn, and `AdaptiveWildFireModel.step()` calls it once before each
 simulation step — so the loop always reads a settled world, and an allocation takes effect on the step
 after the reading that prompted it.
 
-| Step | What it does |
-|---|---|
-| **Monitor** | `sensor.read()` builds a `FleetSnapshot` and files it in the Knowledge base |
-| **Analyse** | judges the snapshot into `Symptoms`: base threat 0–3, which UAVs are crowded, which are at risk. If nothing is wrong the turn ends here, before Plan |
-| **Plan** | turns snapshot and symptoms into an `Allocation`: one directive per UAV, each a policy name and its parameters |
-| **Execute** | `effector.apply()` validates every directive and writes the ones that survive |
-| **Knowledge** | bounded history of snapshots, the allocation in force, and the hysteresis streaks |
+| Step | What it does | Where the implementations live |
+|---|---|---|
+| **Monitor** | `sensor.read()` builds a `FleetSnapshot` and files it in the Knowledge base | `monitor/` |
+| **Analyse** | judges the snapshot into `Symptoms`: base threat 0–3, which UAVs are crowded, which are at risk. If nothing is wrong the turn ends here, before Plan | `analyze/` |
+| **Plan** | turns snapshot and symptoms into an `Allocation`: one directive per UAV, each a policy name and its parameters | `plan/` |
+| **Execute** | `effector.apply()` validates every directive and writes the ones that survive | `execute/` |
+| **Knowledge** | bounded history of snapshots, the allocation in force, and the hysteresis streaks | `knowledge/` |
+
+Each of the five is a **role**, and every role has a registry of implementations to choose from. A managing
+system is one named combination of them, so which analyser and which planner are running is a property of
+the run rather than of the code — that is what makes comparing two ways of managing the same fleet a matter
+of `--managing <name>` rather than of editing a file.
 
 ### What the managing system is allowed to see
 
@@ -420,19 +426,77 @@ things:
    in its call. Without a fleet wide pass, a mixed allocation would collide *more* than either policy does
    alone.
 
+## The managing systems there are
+
+Each of the five MAPE-K steps is a **role** with a registry of implementations, and a **managing system** is
+one named combination of them. `MANAGING_SYSTEM` names the one to run; `python3 headless.py
+--list-managing` prints them all.
+
+| `--managing` | Analyse | Plan | Tuning | What it is for |
+|---|---|---|---|---|
+| `none` | — | — | — | no managing system at all: every UAV flies one policy for the whole run. The unmanaged baseline |
+| `static` | `heuristic` | `static` | — | the loop runs and never reallocates. The **control arm** |
+| `heuristic` | `heuristic` | `heuristic` | — | the default: base threat and crowding, damped by hysteresis |
+| `defensive` | `cautious` | `defensive` | — | the base over everything else |
+| `reactive` | `heuristic` | `heuristic` | hysteresis 1 | the default with the damping removed |
+| `remote` | — | — | — | the whole loop on a server; see below |
+
+`local` is still accepted and means `heuristic` — it was what the default managing system was called when
+there was only one of it and the setting said where it ran rather than which it was.
+
+`static` earns its place by being the arm that was missing. Turning the managing system on changes *two*
+things at once: policies start being reallocated, **and** the team starts flying under `SuperPolicy`, whose
+fleet wide traffic pass keeps UAVs off each other whatever they are flying. So a difference between `none`
+and `heuristic` cannot be attributed to either. `static` runs the whole loop and plans no change, which
+separates them:
+
+```
+--managing none        no SuperPolicy,  no adaptation      the simulation on its own
+--managing static      SuperPolicy,     no adaptation      what SuperPolicy alone is worth
+--managing heuristic   SuperPolicy,     adaptation         what the managing system is worth
+```
+
+### Adding one
+
+One entry in `REGISTERED` in `sim/managing/systems.py`, naming the components it wants:
+
+```python
+ManagingSystemSpec(
+    name="cautious-static",
+    analyzer="cautious",
+    planner="static",
+    description="what it is for, which --list-managing and the web interface show",
+)
+```
+
+It is then selectable from `config.py`, `headless.py --managing cautious-static` and the dropdown on the web
+interface, and is covered by the parametrised tests in `tests/managing/test_systems.py` — which build every
+registered system as they find it — without another line being written anywhere.
+
+A new *component* is the same shape one level down: a `Planner` subclass with a unique `name` in
+`sim/managing/plan/`, added to `PLANNERS` in that package's `__init__.py`. It then satisfies the contract
+tests in `tests/managing/test_component_contract.py` automatically, the same way a new policy is picked up
+by `tests/policy/test_policy_interface.py`.
+
+For a combination worth trying but not worth naming, override the components of a registered system for one
+batch:
+
+```bash
+python3 headless.py --managing heuristic --mape planner=defensive --mape analyzer=cautious
+```
+
+`ROLE` is one of `monitor`, `analyzer`, `planner`, `executor`, `knowledge`. A mistyped role or component
+name stops the batch before the first run, listing what was available.
+
 ## Where the managing system lives
 
-`MANAGING_SYSTEM` moves the whole loop, not one step of it:
+A managing system runs in this process or on a server, **as a whole**. That is its `location`, and it moves
+the whole loop rather than one step of it: with `remote`, the analysis, the planning and the Knowledge base
+are all over there.
 
-```
-MANAGING_SYSTEM = "none"      # no managing system; one policy for the whole run
-MANAGING_SYSTEM = "local"     # ManagingSystem: Analyse, Plan and Knowledge all in this process
-MANAGING_SYSTEM = "remote"    # RemoteManagingSystem: all of them on the server at MANAGING_SYSTEM_URL
-```
-
-`RemoteManagingSystem` presents the same surface as `ManagingSystem` — `tick()`, `adaptations()`, a
-`knowledge` attribute — so the model, the runner and the web interface cannot tell them apart, and none of
-them needed changing to support it.
+`RemoteManagingSystem` presents the same surface as `ManagingSystem` — `tick()`, `adaptations()`, `name`,
+`location`, a `knowledge` attribute — so the model, the runner and the web interface cannot tell them apart,
+and none of them needed changing to support it.
 
 **Local** is microseconds per evaluation, reproducible under `--seed`, works unchanged under
 `headless.py --workers N`, and needs no network. Its weakness is that independence rests on the import
@@ -447,8 +511,8 @@ on the server too, and a set of failure modes that do not exist in-process.
 One consequence worth being explicit about: **a quiet step still reaches the server.** A local managing
 system stops after Analyse when nothing is wrong, and never plans. A remote one cannot, because deciding
 that nothing needs doing is the server's decision to make — that is what makes it the managing system
-rather than a remote helper the local side consults when it feels like it. So `remote` makes one request
-per evaluation where `local` does work only on eventful ones.
+rather than a remote helper the local side consults when it feels like it. So a remote managing system makes
+one request per evaluation where a local one does work only on eventful ones.
 
 ### The remote contract
 
@@ -500,7 +564,7 @@ JSON, JSON that is not an allocation — is caught and logged, and then answered
 server costs the run its adaptation quality rather than its adaptation; `False` leaves the team on what it
 was flying, which is the honest setting for an experiment about what a self-adaptive system does when its
 managing system goes away. Either way the run completes — a run against a server that is not listening at
-all finishes with the same results as `--managing local`.
+all finishes with the same results as `--managing heuristic`.
 
 No server ships with this project. `sim/managing/remote.py` is the client and the contract; writing
 something that answers it is the exercise.
@@ -508,51 +572,70 @@ something that answers it is the exercise.
 ## Running it
 
 ```bash
-# the experiment the managing system exists for: the same fires, with and without it
-python3 headless.py --runs 30 --workers 4 --seed 1 --managing none  --output baseline.json
-python3 headless.py --runs 30 --workers 4 --seed 1 --managing local --output adaptive.json
+# what there is to choose from
+python3 headless.py --list-managing
+
+# the experiment the managing system exists for: the same fires, one arm per managing system
+for m in none static heuristic defensive reactive; do
+  python3 headless.py --runs 30 --workers 4 --seed 1 --policy firefighter --managing $m --output $m.json
+done
+
+# a combination that is not worth registering
+python3 headless.py --managing heuristic --mape planner=defensive
 
 # run the managing system on a server instead of in this process
 python3 headless.py --managing remote --managing-url http://127.0.0.1:8600/manage
 ```
 
-Same seeds mean the same fires, so the difference between the two runs is the managing system. The results
-carry `adaptations`, `policy_steps` (UAV-steps flown under each policy), `allocation_final`,
-`directives_rejected` and `managing_failures` alongside the usual metrics; the last two are zero on a
-healthy run and mean the result was produced with less managing than was asked for.
+Same seeds mean the same fires, so the difference between two arms is the managing system. The results carry
+`managing_system` and `managing_components` — which arm produced this file — alongside `adaptations`,
+`policy_steps` (UAV-steps flown under each policy), `allocation_final`, `directives_rejected` and
+`managing_failures`; the last two are zero on a healthy run and mean the result was produced with less
+managing than was asked for.
 
-On the web interface the sidebar gains a **Managing system** panel showing where the managing system is,
-how many adaptations there have been, what the team is flying right now and its own one line account of
-why, and each UAV's line shows the policy it has been allocated.
+On the web interface the sidebar gains a **Managing system** panel showing which managing system is running,
+where it lives, what it is made of, how many adaptations there have been, what the team is flying right now
+and its own one line account of why, and each UAV's line shows the policy it has been allocated.
 
 ### What it achieves
 
-Measured, not asserted. Both arms use identical seeds, so they see identical fires.
+Measured, not asserted. Every arm uses identical seeds, so they all see identical fires.
 
-**Goal (a), the home base**, 120 runs, 30×30 grid, 5 UAVs, `firefighter` baseline:
+**Goal (a), the home base.** 120 runs, `--seed 1`, 30×30 grid, 5 UAVs, `firefighter` baseline:
 
-| | base lost | base burn-steps |
-|---|---|---|
-| `--managing none` | 26 / 120 | 308 |
-| `--managing local` | **17 / 120** | **268** |
+| `--managing` | base lost | base burn-steps | adaptations / run |
+|---|---|---|---|
+| `none` | 23 / 120 | 307 | — |
+| `static` | 23 / 120 | 307 | 1 |
+| `heuristic` | **14 / 120** | **233** | 36 |
+| `defensive` | 16 / 120 | 267 | 31 |
+| `reactive` | **14 / 120** | 289 | 29 |
 
-**Goal (b), collisions**, 25 runs, 20×20 grid, 8 UAVs, on baselines that have no team level deconfliction
-of their own:
+**Goal (b), collisions.** 25 runs, `--seed 1`, 20×20 grid, 8 UAVs, `follow-fire` baseline — a policy with
+no team level deconfliction of its own, on a grid crowded enough to need some:
 
-| baseline | | collisions | UAVs lost | base lost |
+| `--managing` | collisions | UAVs lost | base lost | base burn-steps |
 |---|---|---|---|---|
-| `follow-fire` | off | 160 | 135 | 25 / 25 |
-| `follow-fire` | on | **0** | **5** | **3 / 25** |
-| `random` | off | 140 | 108 | 25 / 25 |
-| `random` | on | **0** | 104 | **15 / 25** |
+| `none` | 155 | 125 | 25 / 25 | 125 |
+| `static` | **0** | **0** | 25 / 25 | 125 |
+| `heuristic` | **0** | **0** | **7 / 25** | **64** |
 
-The collision figures come from `SuperPolicy`'s fleet wide traffic pass together with `disperse`; the base
-figures from `defend-base` being allocated as the threat rises. The `random` baseline still loses UAVs
-under management because they run their tanks dry — `random` never goes home to refuel, and no reallocation
-of policies fixes a policy that does not.
+Read the two `static` rows together, because that arm is what makes the rest of the table interpretable.
+
+* In (b) it removes **every** collision and saves **every** UAV while changing the base outcome not at all.
+  So the collision result is entirely `SuperPolicy`'s fleet wide traffic pass, and none of it is adaptation
+  — which the `none` versus `heuristic` comparison on its own could not have told you.
+* In (a) it is byte for byte identical to `none`. Five UAVs on a 30×30 grid rarely come within
+  `SECURITY_DISTANCE` of each other, so there is nothing for the traffic pass to do, and the whole of the
+  9-run improvement is `defend-base` being allocated as the threat rises.
+
+`defensive` defends earlier and with more of the team, and is slightly *worse* at both configurations than
+the default. `reactive` matches it on bases lost while leaving the base burning longer. Neither is a
+failure of the mechanism: they are the answers to two questions about how to manage this fleet, which is
+what the registry exists to make askable.
 
 Note that MR2 *rises* under management. It counts pairs of UAVs flying closer than `SECURITY_DISTANCE`,
-un-normalised, so a run where the team survives 120 steps instead of being destroyed by step 30 has far
+un-normalised, so a run where the team survives 100 steps instead of being destroyed by step 30 has far
 more pairs to count. Read it alongside `uavs_lost` rather than on its own.
 
 # Common variables configuration
@@ -847,10 +930,10 @@ Optional, and ignored entirely when `MANAGING_SYSTEM` is `'none'`. See
 
 | Variable | Meaning | Bounds |
 |---|---|---|
-| `MANAGING_SYSTEM` | whether a MAPE-K managing system runs over the simulation, and where the whole loop lives. The starting value only: the web interface's `Managing system` dropdown and `headless.py --managing` both override it per run | `'none'`, `'local'`, `'remote'` |
-| `ADAPTATION_PERIOD` | simulation steps between runs of the loop; larger is cheaper and slower to react | integer `>= 1` |
-| `ADAPTATION_HYSTERESIS` | consecutive evaluations that must agree before a UAV's policy is changed; `1` disables the damping | integer `>= 1` |
-| `DEFAULT_UAV_POLICY` | the policy the local planner treats as normal, what an unallocated UAV flies, and what the team starts under | a registered policy name |
+| `MANAGING_SYSTEM` | which MAPE-K managing system runs over the simulation. The starting value only: the web interface's `Managing system` dropdown and `headless.py --managing` both override it per run | a name registered in `sim/managing/systems.py`; `python3 headless.py --list-managing` prints them |
+| `ADAPTATION_PERIOD` | simulation steps between runs of the loop; larger is cheaper and slower to react. A managing system may state its own, as `reactive` does | integer `>= 1` |
+| `ADAPTATION_HYSTERESIS` | consecutive evaluations that must agree before a UAV's policy is changed; `1` disables the damping, which is what `reactive` does by stating its own | integer `>= 1` |
+| `DEFAULT_UAV_POLICY` | the policy a local planner treats as normal, what an unallocated UAV flies, and what the team starts under | a registered policy name |
 | `BASE_SENSOR_RADIUS` | how far around the base the managing system sees the ground truth; `0` leaves it with only the UAV reports | integer `>= 0` |
 | `BASE_THREAT_RADIUS` | how close fire must get to the base to count as threatening it | integer `>= 1` |
 | `MANAGING_CROWDED_SPEED_CAP` | speed a UAV is held to while being moved out of a crowd | integer `>= 0` |

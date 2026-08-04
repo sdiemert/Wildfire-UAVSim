@@ -31,6 +31,10 @@ class RunConfig:
     log_every: int = 10
     # policy name, resolved to an instance inside the worker; a plain string keeps RunConfig picklable
     policy: str = "random"
+    # MAPE-K components overriding those of the selected managing system, as {role: name}. These are not
+    # settings in config.py -- they name registered components -- so they travel here rather than in
+    # 'overrides'. Empty means the managing system runs as it is registered.
+    managing_components: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -71,8 +75,13 @@ class RunResult:
     # managing system (MAPE-K); all zero/empty when MANAGING_SYSTEM is 'none', which is what makes an
     # A/B against the unmanaged simulation a matter of one setting
     managing: bool = False
-    # where the managing system lived: 'none', 'local' or 'remote'
+    # which managing system ran, and where it lived ('none', 'local' or 'remote'). Both are recorded
+    # because the name is the arm of the experiment and the location is how the result was produced.
     managing_system: str = "none"
+    managing_location: str = "none"
+    # which component did each of the five MAPE-K jobs. Empty for an unmanaged run, and for a remote one,
+    # whose components are the server's and are not reported to this side.
+    managing_components: dict[str, str] = field(default_factory=dict)
     # how many times the allocation actually changed over the run
     adaptations: int = 0
     # how many UAV-steps were flown under each policy, which is what says whether the managing system
@@ -149,7 +158,8 @@ def run_simulation(config: RunConfig) -> RunResult:
         from sim.adaptive import AdaptiveWildFireModel
 
         with contextlib.redirect_stdout(_LogWriter(log)):
-            model = AdaptiveWildFireModel(log=log, policy=policy)
+            model = AdaptiveWildFireModel(log=log, policy=policy,
+                                          components=config.managing_components)
 
         # UAV-steps flown under each policy, sampled once per step. Counted here rather than derived from
         # the allocations because a UAV goes on flying its last allocation over the steps the loop does
@@ -223,6 +233,8 @@ def run_simulation(config: RunConfig) -> RunResult:
             lost=model.lost,
             managing=model.managing is not None,
             managing_system=model.managing_kind,
+            managing_location=model.managing_location,
+            managing_components=model.composition(),
             adaptations=model.adaptations(),
             policy_steps=policy_steps,
             allocation_final={str(uav_id): name for uav_id, name in model.allocation().items()},
@@ -264,7 +276,13 @@ def run_simulation(config: RunConfig) -> RunResult:
         if result.managing:
             log.info(
                 "managing | %s adaptations=%d | UAV-steps: %s%s",
-                result.managing_system, result.adaptations,
+                # the composition is named as well as the system, because --mape can have made this run a
+                # combination that no registered system describes
+                f"{result.managing_system} ({result.managing_location})" + (
+                    " " + " ".join(f"{role[0].upper()}={name}"
+                                   for role, name in result.managing_components.items())
+                    if result.managing_components else ""),
+                result.adaptations,
                 ", ".join(f"{name}={count}" for name, count in sorted(result.policy_steps.items()))
                 or "none",
                 # both are silent on a healthy run, and both change how the result should be read

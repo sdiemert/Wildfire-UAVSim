@@ -14,6 +14,11 @@ Two things in here earn their keep:
     otherwise be given a new policy every evaluation and spend the run turning round instead of flying
     anywhere. Counting how many evaluations in a row have wanted the same thing, and only acting once that
     reaches ADAPTATION_HYSTERESIS, costs a step or two of reaction time and buys stability.
+
+Knowledge is both the role and the only implementation of it so far, which is why this file is called
+base.py and holds a concrete class rather than an abstract one. A knowledge base that remembers something
+else -- or nothing, or the whole run -- would be a sibling of it here, and would be registered alongside it
+in __init__.py.
 """
 
 # python libraries
@@ -29,10 +34,17 @@ import config
 class Knowledge:
     """What the managing system knows, and how sure it is of it."""
 
+    # the name this knowledge base is registered and selected under
+    name = "default"
+
     # constructor. 'history' bounds how many snapshots are kept; it defaults to the configured value, read
-    # at construction because the deque has to be sized once.
-    def __init__(self, history=None):
+    # at construction because the deque has to be sized once. 'hysteresis' is how many evaluations in a row
+    # have to agree before a UAV is actually turned around, and is held here rather than read from config
+    # at each decision so that a managing system can be composed with a different one -- 'reactive' in
+    # systems.py is exactly that system, with the damping turned off.
+    def __init__(self, history=None, hysteresis=None):
         limit = config.MANAGING_KNOWLEDGE_HISTORY if history is None else history
+        self.hysteresis = max(1, int(config.ADAPTATION_HYSTERESIS if hysteresis is None else hysteresis))
         self.history = deque(maxlen=max(1, int(limit)))
         # the allocation currently in force, and the last one that was actually applied to the managed
         # system. They differ when an effector rejected part of a plan.
@@ -91,7 +103,7 @@ class Knowledge:
         streak = self.want(uav_id, policy_name)
         if current == policy_name:
             return True
-        return streak >= max(1, config.ADAPTATION_HYSTERESIS)
+        return streak >= self.hysteresis
 
     # forgets a UAV, so that one destroyed mid run does not hold a streak for the rest of it
     def forget(self, uav_id):
@@ -115,3 +127,6 @@ class Knowledge:
             return None
         directive = self.current.for_uav(uav_id)
         return directive.policy if directive is not None else None
+
+    def __str__(self):
+        return self.name

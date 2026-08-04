@@ -1,39 +1,12 @@
-"""The A of MAPE-K: turn a reading into a judgement about what is wrong.
-
-Analysis is kept apart from planning on purpose. What counts as a threatened base or a crowded UAV is a
-statement about the managed system, and stays the same whoever is doing the planning; what to *do* about it
-is where a heuristic, a solver and a remote service differ. Splitting them means the remote planner can be
-handed both the raw snapshot and this reading of it, and use whichever it prefers.
-"""
-
-# python libraries
-
-from abc import ABC, abstractmethod
+"""The analyser the managing system uses unless it is told to use another one."""
 
 # own python modules
 
 # see the note in sim/policy/random_policy.py about importing config as a module
 import config
 
-from .contract import Symptoms
-
-
-class Analyzer(ABC):
-    """Decides what, if anything, is wrong with the managed system."""
-
-    @abstractmethod
-    def analyze(self, snapshot, knowledge):
-        """Return the Symptoms present in a snapshot.
-
-        Args:
-            snapshot: contract.FleetSnapshot, the reading just taken.
-            knowledge: the Knowledge base, for anything that needs more than one reading to see -- whether
-                the fire near the base is closing in, for instance, which a single snapshot cannot say.
-
-        Returns:
-            contract.Symptoms. Symptoms.requires_adaptation() being False short circuits the loop before
-            Plan runs at all.
-        """
+from ..contract import Symptoms
+from .base import Analyzer
 
 
 class HeuristicAnalyzer(Analyzer):
@@ -52,11 +25,28 @@ class HeuristicAnalyzer(Analyzer):
     Separately, a UAV low on health points or nearly out of fuel is reported as at risk. It has not done
     anything wrong and may not be crowded at all, but it is worth more to the run intact than busy, and a
     planner that knows which UAVs those are can spend the sound ones instead.
+
+    Every threshold below is a class attribute rather than a literal, so that an analyser which measures the
+    same things and draws its lines somewhere else is a subclass of a few lines rather than a copy of this
+    one. cautious.py is that subclass.
     """
+
+    name = "heuristic"
 
     # the share of BHP already spent past which the base is treated one threat level more urgently at the
     # same distance, because it has that much less margin for the next front
     URGENT_DAMAGE = 0.6
+
+    # what BASE_THREAT_RADIUS is multiplied by before a fire counts as threatening the base at all. Above 1
+    # is an analyser that starts worrying further out.
+    THREAT_SCALE = 1.0
+
+    # the share of that radius inside which a fire is threat level 2 rather than 1
+    CLOSE_SHARE = 1 / 3
+
+    # what SECURITY_DISTANCE is multiplied by before two UAVs count as crowding each other. Above 1 is an
+    # analyser that asks for more room than a collision strictly requires.
+    CROWDING_SCALE = 1.0
 
     def analyze(self, snapshot, knowledge=None):
         flying = snapshot.alive()
@@ -92,15 +82,15 @@ class HeuristicAnalyzer(Analyzer):
             return 3
 
         distance = base.nearest_fire_distance()
-        radius = config.BASE_THREAT_RADIUS
+        radius = config.BASE_THREAT_RADIUS * self.THREAT_SCALE
         if distance > radius:  # nothing the base can see is close enough to matter
             return 0
 
         if distance <= 0:  # the footprint itself is alight, which is damage being taken this very step
             return 3
 
-        # inside a third of the radius is level 2, inside the whole of it level 1
-        level = 2 if distance <= radius / 3 else 1
+        # inside CLOSE_SHARE of the radius is level 2, inside the whole of it level 1
+        level = 2 if distance <= radius * self.CLOSE_SHARE else 1
 
         # a front that is closing counts for one more than where it happens to have got to. This is what
         # the Knowledge base is for: one snapshot cannot tell a fire sweeping toward the base from one
@@ -124,7 +114,7 @@ class HeuristicAnalyzer(Analyzer):
     # being in danger on the first step of every run, when they are simply all still on the pad, and would
     # have the managing system scatter them before they had done anything.
     def crowding(self, flying, base=None):
-        limit_squared = config.SECURITY_DISTANCE ** 2
+        limit_squared = (config.SECURITY_DISTANCE * self.CROWDING_SCALE) ** 2
         shared = set(base.cells) if base is not None else set()
         crowded = {}
 

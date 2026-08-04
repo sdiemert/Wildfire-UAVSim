@@ -36,7 +36,7 @@ node = pytest.mark.skipif(shutil.which("node") is None, reason="node is needed t
 
 # a DOM stub that renders a Choice the way Mesa's addChoiceInput() does, plus the handful of methods the
 # gate uses. Returns whatever the harness printed as JSON.
-def run_gate(managing_value, choices=("none", "local", "remote"),
+def run_gate(managing_value, choices=("none", "heuristic", "remote"),
              policy_value="random", policy_choices=("firefighter", "random"),
              disabled_value="firefighter", switch_to=None):
     gate = ControlGate(param="policy", depends_on="managing", enabled_for=["none"],
@@ -134,7 +134,7 @@ def test_the_policy_control_is_usable_when_the_managing_system_is_none():
 
 
 @node
-@pytest.mark.parametrize("managing", ["local", "remote"])
+@pytest.mark.parametrize("managing", ["heuristic", "remote"])
 def test_the_policy_control_is_locked_while_a_managing_system_runs(managing):
     assert run_gate(managing_value=managing)["policy_disabled"] is True
 
@@ -142,7 +142,7 @@ def test_the_policy_control_is_locked_while_a_managing_system_runs(managing):
 @node
 def test_nothing_undefined_is_ever_submitted():
     """The other half of the bug: a deselected control submitted undefined, and the server raised."""
-    for managing in ("none", "local", "remote"):
+    for managing in ("none", "heuristic", "remote"):
         result = run_gate(managing_value=managing)
         assert result["policy_selected_index"] >= 0, "the control must never be left deselected"
         for message in result["submitted"]:
@@ -154,13 +154,13 @@ def test_nothing_undefined_is_ever_submitted():
 
 @node
 def test_a_locked_control_shows_the_policy_that_will_be_used():
-    result = run_gate(managing_value="local", policy_value="random", disabled_value="firefighter")
+    result = run_gate(managing_value="heuristic", policy_value="random", disabled_value="firefighter")
     assert result["policy_label"] == "firefighter"
 
 
 @node
 def test_the_change_is_announced_so_the_server_agrees_with_the_page():
-    result = run_gate(managing_value="local", policy_value="random", disabled_value="firefighter")
+    result = run_gate(managing_value="heuristic", policy_value="random", disabled_value="firefighter")
     assert {"param": "policy_id", "value": "firefighter"} in result["submitted"]
 
 
@@ -174,7 +174,7 @@ def test_an_unlocked_control_is_left_on_whatever_was_chosen():
 @node
 def test_a_default_that_is_not_among_the_options_leaves_the_control_alone():
     # guards the deselection that caused the KeyError: a mismatch must be a no-op, not a wipe
-    result = run_gate(managing_value="local", policy_value="random", disabled_value="no-such-policy")
+    result = run_gate(managing_value="heuristic", policy_value="random", disabled_value="no-such-policy")
     assert result["policy_selected_index"] >= 0
     assert result["policy_label"] == "random"
 
@@ -184,7 +184,7 @@ def test_a_default_that_is_not_among_the_options_leaves_the_control_alone():
 
 @node
 def test_switching_to_none_unlocks_the_policy_control():
-    result = run_gate(managing_value="local", switch_to="none")
+    result = run_gate(managing_value="heuristic", switch_to="none")
     assert result["policy_disabled"] is False
 
 

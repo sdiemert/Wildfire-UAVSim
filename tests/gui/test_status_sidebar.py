@@ -19,8 +19,11 @@ from sim.gui.canvas_grid import CanvasGrid
 from sim.gui.portrayal import agent_portrayal
 from sim.gui.status_sidebar import StatusSidebar
 from sim.gui.top_bar import TopBar
+from sim.managing import MANAGING_SYSTEMS
 
-MANAGING_KINDS = ["none", "local", "remote"]
+# every managing system that can be picked from the dropdown, read from the registry rather than listed,
+# so that one added to sim/managing/systems.py is rendered here before anybody sees it in a browser
+MANAGING_KINDS = sorted(MANAGING_SYSTEMS)
 
 
 @pytest.fixture
@@ -87,11 +90,27 @@ def test_an_unmanaged_run_gets_no_managing_section(model):
     assert "Managing system" not in StatusSidebar().render(model("none", steps=3))
 
 
-@pytest.mark.parametrize("managing", ["local", "remote"])
-def test_a_managed_run_says_where_the_managing_system_is(model, managing):
+@pytest.mark.parametrize("managing", [name for name in MANAGING_KINDS if name != "none"])
+def test_a_managed_run_says_which_managing_system_is_running_and_where(model, managing):
     panel = StatusSidebar().render(model(managing, steps=3))
     assert "Managing system" in panel
-    assert managing in panel
+    assert managing in panel, "the panel has to name the managing system that was selected"
+    assert ("remote" if managing == "remote" else "local") in panel
+
+
+@pytest.mark.parametrize("managing", [name for name in MANAGING_KINDS
+                                      if name not in ("none", "remote")])
+def test_a_locally_managed_run_says_what_it_is_made_of(model, managing):
+    """A managing system is a combination of interchangeable parts; its name alone does not say which."""
+    built = model(managing, steps=3)
+    panel = StatusSidebar().render(built)
+    for role, name in built.composition().items():
+        assert name in panel, f"the panel does not say which {role} is running"
+
+
+def test_a_remotely_managed_run_does_not_claim_components_it_cannot_know(model):
+    """They are the server's. Showing the local defaults would be a guess presented as a fact."""
+    assert model("remote", steps=3).composition() == {}
 
 
 def test_a_remote_run_that_fell_back_says_so(model):

@@ -1,4 +1,11 @@
-"""The E of MAPE-K: put the plan into effect, and record what actually took."""
+"""The E of MAPE-K: put the plan into effect, and record what actually took.
+
+Executor is both the role and the only implementation of it so far, which is why this file is called
+base.py and holds a concrete class rather than an abstract one. An executor that stages a plan, applies
+part of it, or logs it without applying anything would be a sibling of it here, and would be registered
+alongside it in __init__.py; nothing else would change, because the loop only ever asks its executor to
+execute() an allocation.
+"""
 
 
 class Executor:
@@ -10,6 +17,9 @@ class Executor:
     plans against what the managed system is actually doing rather than against what the last plan hoped it
     would be doing -- which is the difference between a closed loop and an open one.
     """
+
+    # the name this executor is registered and selected under
+    name = "default"
 
     # constructor
     def __init__(self, effector, knowledge, log=None):
@@ -29,3 +39,6 @@ class Executor:
                 self.log.warning("only %d of %d directive(s) were applied",
                                  applied, len(allocation.directives))
         return applied
+
+    def __str__(self):
+        return self.name

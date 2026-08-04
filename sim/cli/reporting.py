@@ -102,8 +102,16 @@ def log_summary(results, elapsed: float, log: logging.Logger) -> None:
         managed = [result for result in ok if result.managing]
         if managed:
             adaptations = [result.adaptations for result in managed]
+            # named from the first managed run: a batch is one arm of an experiment, so every run in it was
+            # managed the same way. The composition is named too, because --mape can have made this batch a
+            # combination that no registered managing system describes.
+            first = managed[0]
+            composition = " ".join(f"{role[0].upper()}={name}"
+                                   for role, name in first.managing_components.items())
             log.info("managing    : %d of %d run(s) managed, %s | adaptations: mean=%.1f min=%d max=%d",
-                     len(managed), len(ok), managed[0].managing_system,
+                     len(managed), len(ok),
+                     f"{first.managing_system} ({first.managing_location})"
+                     + (f" {composition}" if composition else ""),
                      _mean(adaptations), min(adaptations), max(adaptations))
             # UAV-steps per policy, summed over the batch, which says whether the managing system used
             # the policies it was given or settled on one and stayed there

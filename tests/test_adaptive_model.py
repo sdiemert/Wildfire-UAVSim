@@ -30,13 +30,13 @@ def adaptive(sim_config):
 
     Usage:
         adaptive(NUM_AGENTS=6)                            # config overrides
-        adaptive(MANAGING_SYSTEM="none", managing="local")  # ... and a per model override
+        adaptive(MANAGING_SYSTEM="none", managing="heuristic")  # ... and a per model override
     """
 
     def _make(policy=None, managing=None, url=None, **overrides):
         settings = {"WIDTH": 20, "HEIGHT": 20, "NUM_AGENTS": 4, "BATCH_SIZE": 10_000,
                     "DENSITY_PROB": 1.0, "FIRE_START_POSITION": None, "FIRE_START_STEP": 0,
-                    "MANAGING_SYSTEM": "local", "ACTIVATE_FIREFIGHTING": True,
+                    "MANAGING_SYSTEM": "heuristic", "ACTIVATE_FIREFIGHTING": True,
                     "ADAPTATION_HYSTERESIS": 1}
         settings.update(overrides)
         sim_config(**settings)
@@ -69,42 +69,45 @@ def test_nothing_is_built_for_none(adaptive):
 
 
 def test_the_web_interface_can_start_a_managing_system(adaptive):
-    """config.py says none, the dropdown says local: the dropdown wins, for this model alone."""
-    model = adaptive(MANAGING_SYSTEM="none", managing="local")
+    """config.py says none, the dropdown says heuristic: the dropdown wins, for this model alone."""
+    model = adaptive(MANAGING_SYSTEM="none", managing="heuristic")
     assert model.managing is not None
-    assert model.managing_kind == "local"
+    assert model.managing_kind == "heuristic"
     # and the configuration is left exactly as it was, so the next model built is unaffected
     assert config.MANAGING_SYSTEM == "none"
 
 
 def test_the_web_interface_can_stop_the_managing_system(adaptive):
-    model = adaptive(MANAGING_SYSTEM="local", managing="none")
+    model = adaptive(MANAGING_SYSTEM="heuristic", managing="none")
     assert model.managing is None
     assert model.managing_kind == "none"
-    assert config.MANAGING_SYSTEM == "local"
+    assert config.MANAGING_SYSTEM == "heuristic"
 
 
 def test_the_web_interface_can_move_it_to_a_server(adaptive):
     from sim.managing.remote import RemoteManagingSystem
 
-    model = adaptive(MANAGING_SYSTEM="local", managing="remote", url="http://server/manage")
+    model = adaptive(MANAGING_SYSTEM="heuristic", managing="remote", url="http://server/manage")
     assert isinstance(model.managing, RemoteManagingSystem)
     assert model.managing.url == "http://server/manage"
-    assert config.MANAGING_SYSTEM == "local"
+    assert config.MANAGING_SYSTEM == "heuristic"
 
 
 def test_without_an_override_the_configuration_decides(adaptive):
-    assert adaptive(MANAGING_SYSTEM="local").managing is not None
+    assert adaptive(MANAGING_SYSTEM="heuristic").managing is not None
     assert adaptive(MANAGING_SYSTEM="none").managing is None
 
 
 @pytest.mark.parametrize("value, kind", [
-    ("none", "none"), ("local", "local"), ("remote", "remote"),
-    ("LOCAL", "local"), (" none ", "none"),
-    (True, "local"), (False, "none"),
+    ("none", "none"), ("heuristic", "heuristic"), ("remote", "remote"), ("static", "static"),
+    ("HEURISTIC", "heuristic"), (" none ", "none"),
+    (True, "heuristic"), (False, "none"),
+    # 'local' is what the default managing system was called when there was only one of them
+    ("local", "heuristic"),
 ])
 def test_the_dropdown_value_is_understood(adaptive, value, kind):
-    # mesa hands a Choice over as a string; booleans are accepted for callers in python
+    # mesa hands a Choice over as a string; booleans are accepted for callers in python. An alias is
+    # reported under the name of what actually ran, not under the name it was asked for.
     assert adaptive(managing=value).managing_kind == kind
 
 
@@ -118,7 +121,7 @@ def test_an_unknown_managing_system_is_refused(adaptive):
 # skip bounds a headless one enforces.
 def test_starting_one_validates_the_managing_settings(adaptive):
     with pytest.raises(ValueError, match="ADAPTATION_PERIOD"):
-        adaptive(MANAGING_SYSTEM="none", ADAPTATION_PERIOD=0, managing="local")
+        adaptive(MANAGING_SYSTEM="none", ADAPTATION_PERIOD=0, managing="heuristic")
 
 
 def test_stopping_it_ignores_the_managing_settings(adaptive):
@@ -127,7 +130,7 @@ def test_stopping_it_ignores_the_managing_settings(adaptive):
 
 
 def test_a_model_without_one_is_the_plain_simulation(adaptive):
-    model = adaptive(MANAGING_SYSTEM="local", managing="none")
+    model = adaptive(MANAGING_SYSTEM="heuristic", managing="none")
     assert model.sensor is None and model.effector is None
     assert not isinstance(model.policy, SuperPolicy)
     assert model.allocation() == {} and model.adaptations() == 0 and model.rationale() == ""
@@ -135,14 +138,14 @@ def test_a_model_without_one_is_the_plain_simulation(adaptive):
 
 
 def test_a_model_without_one_still_steps(adaptive):
-    model = adaptive(MANAGING_SYSTEM="local", managing="none")
+    model = adaptive(MANAGING_SYSTEM="heuristic", managing="none")
     for _ in range(5):
         model.step()
     assert model.evaluation_timesteps_counter == 5
 
 
 def test_the_team_starts_on_the_policy_it_was_given(adaptive, sim_config):
-    sim_config(MANAGING_SYSTEM="local")
+    sim_config(MANAGING_SYSTEM="heuristic")
     from sim.adaptive import AdaptiveWildFireModel
 
     sim_config(WIDTH=20, HEIGHT=20, NUM_AGENTS=2, DENSITY_PROB=1.0,
@@ -300,7 +303,7 @@ def test_the_managing_system_keeps_uavs_from_colliding(sim_config):
         return model
 
     unmanaged = [run(seed, "none") for seed in range(6)]
-    managed = [run(seed, "local") for seed in range(6)]
+    managed = [run(seed, "heuristic") for seed in range(6)]
 
     unmanaged_collisions = sum(model.collisions for model in unmanaged)
     managed_collisions = sum(model.collisions for model in managed)

@@ -403,9 +403,9 @@ OUT_BUILDING_HP = 5
 # ## Managing system (MAPE-K)
 #
 # Optional. The simulation on its own is a *managed system*: every UAV flies one policy, chosen before the
-# run starts and never revisited. Setting `MANAGING_SYSTEM` to `local` or `remote` adds a *managing system* over
-# it, which decides at runtime which policy each UAV should be flying, so as to keep the home base standing
-# and keep the team from flying into itself.
+# run starts and never revisited. Setting `MANAGING_SYSTEM` to anything but `none` adds a *managing system*
+# over it, which decides at runtime which policy each UAV should be flying, so as to keep the home base
+# standing and keep the team from flying into itself.
 #
 # It is built as a MAPE-K loop (Monitor, Analyse, Plan, Execute over a shared Knowledge base) and lives in
 # `sim/managing/`. It never touches the simulation directly: it reads through a *sensor* and writes through
@@ -416,36 +416,46 @@ OUT_BUILDING_HP = 5
 # setting below is ignored and the whole team flies whichever single policy was selected.
 # =====================================================================================================
 
-# ### `MANAGING_SYSTEM` -- whether a managing system runs, and where it lives.
+# ### `MANAGING_SYSTEM` -- which managing system runs over the simulation.
 #
-#   * `'none'`   -- no managing system. Every UAV flies the one policy the model was given, for the whole
-#                   run, exactly as the simulator behaved before any of this existed. This is the
-#                   unmanaged baseline a managed run is compared against.
-#   * `'local'`  -- the whole MAPE-K loop runs in this process.
-#   * `'remote'` -- the whole MAPE-K loop runs on the server at `MANAGING_SYSTEM_URL`. What stays here is
-#                   the sensor and the effector, which are the simulation's own interface and cannot be
-#                   anywhere else; every decision -- what is wrong, what to do about it, and what to
-#                   remember -- is made there. See `sim/managing/remote.py`.
+# A managing system is one named combination of the five MAPE-K components, and they are registered in
+# `sim/managing/systems.py`, where `python3 headless.py --list-managing` will print them. As they stand:
 #
-# `'local'` and `'remote'` are the same managing system in two places, not two managing systems. The point
-# of `'remote'` is that a managing system on the other side of a socket provably cannot reach into the
-# simulation, and need not be written in Python.
+#   * `'none'`      -- no managing system. Every UAV flies the one policy the model was given, for the
+#                      whole run, exactly as the simulator behaved before any of this existed. The
+#                      unmanaged baseline a managed run is compared against.
+#   * `'static'`    -- the loop runs but never reallocates. The control arm: it separates what `SuperPolicy`
+#                      is worth from what adapting is worth, which `'none'` cannot.
+#   * `'heuristic'` -- the default. Rules over threat to the base and crowding, damped by hysteresis.
+#   * `'defensive'` -- the base over everything else: threat reported further out, a larger detachment sent
+#                      to defend it, crowding left to `SuperPolicy`.
+#   * `'reactive'`  -- the default components with the damping removed.
+#   * `'remote'`    -- the whole MAPE-K loop runs on the server at `MANAGING_SYSTEM_URL`. What stays here is
+#                      the sensor and the effector, which are the simulation's own interface and cannot be
+#                      anywhere else; every decision -- what is wrong, what to do about it, and what to
+#                      remember -- is made there. See `sim/managing/remote.py`.
+#
+# `'local'` is still accepted, and means `'heuristic'`.
 #
 # This is the starting value rather than the last word: the web interface has a `Managing system` dropdown
-# that overrides it for a single run, and `headless.py --managing none|local|remote` does the same, so the
-# three can be compared without editing this file.
-# **Bounds:** one of `MANAGING_SYSTEMS` below.
-MANAGING_SYSTEM = "local"
+# that overrides it for a single run, and `headless.py --managing <name>` does the same, so any two of them
+# can be compared over the same seeds without editing this file.
+# **Bounds:** a registered managing system name. Like `DEFAULT_UAV_POLICY` below, the name is checked when
+# the managing system is built rather than here, because this file cannot import `sim/managing/` (the
+# managing system imports this one).
+MANAGING_SYSTEM = "heuristic"
 
 # ### `ADAPTATION_PERIOD` -- how many simulation steps pass between runs of the MAPE-K loop.
 # `1` re-evaluates the allocation every step. Larger values make the managing system slower to react but
-# cheaper, which matters most with `MANAGING_SYSTEM = 'remote'`, where every evaluation is a round trip.
+# cheaper, which matters most with a remote managing system, where every evaluation is a round trip.
+# A managing system may state its own, in which case this is what the ones that do not get.
 # **Bounds:** integer `>= 1`.
 ADAPTATION_PERIOD = 1
 
 # ### `ADAPTATION_HYSTERESIS` -- consecutive evaluations that must agree before a UAV's policy is changed.
 # Without it a UAV on the edge of a threshold flips policy every step and spends the run turning round
-# instead of flying anywhere. `1` disables the damping and applies every decision immediately.
+# instead of flying anywhere. `1` disables the damping and applies every decision immediately, which is
+# what the `reactive` managing system does by stating its own.
 # **Bounds:** integer `>= 1`.
 ADAPTATION_HYSTERESIS = 2
 
@@ -481,8 +491,8 @@ MANAGING_CROWDED_SPEED_CAP = 1
 MANAGING_KNOWLEDGE_HISTORY = 20
 
 # ### `MANAGING_SYSTEM_URL` -- where a remote managing system lives.
-# Ignored unless `MANAGING_SYSTEM` is `'remote'`. The request and response format is documented in
-# `sim/managing/remote.py`.
+# Ignored unless the selected managing system is a remote one. The request and response format is
+# documented in `sim/managing/remote.py`.
 # **Bounds:** an http:// or https:// URL.
 MANAGING_SYSTEM_URL = "http://127.0.0.1:8600/manage"
 
@@ -567,17 +577,16 @@ COLORS_LEN = len(VEGETATION_COLORS)
 # every direction the wind logic understands, in agents.Wind and in fire_spread.build_kernel()
 WIND_DIRECTIONS = ('north', 'south', 'east', 'west')
 
-# where a managing system can live. 'none' is no managing system at all, which is the unmanaged baseline.
-MANAGING_SYSTEMS = ('none', 'local', 'remote')
-
 
 # checks the configuration over, raising ValueError describing everything that is wrong with it rather
 # than only the first thing found, so that a badly set up run is fixed in one pass.
 #
-# 'managing' overrides MANAGING_SYSTEM for the check alone. The web interface can start a managing system
-# for a single model without touching this file, and its settings then have to be checked even though the
-# file says they are unused; passing 'local' or 'remote' here is how that caller asks for it.
-def validate(managing=None):
+# 'managing' overrides MANAGING_SYSTEM for the check alone, and 'remote' says whether the managing system
+# being built is one that lives on a server, which is what decides whether the remote settings are in play.
+# Both are passed by build_managing_system() in sim/managing/systems.py: the selected managing system is
+# what knows which of these settings it is actually going to use, and it can be selected for a single run
+# -- from the web interface, or with --managing -- without this file saying so.
+def validate(managing=None, remote=False):
     problems = []
     managing = MANAGING_SYSTEM if managing is None else str(managing)
 
@@ -683,13 +692,14 @@ def validate(managing=None):
     # refuel, which turns UAV_FUEL into a hard endurance limit on the whole run. See the note against
     # ACTIVATE_FUEL above.
 
-    # managing system. DEFAULT_UAV_POLICY is only checked for being a name at all: this module cannot
-    # import the policy package to look it up, because the policy package imports this one. The name is
-    # resolved when the model is built, which raises a KeyError listing the policies that do exist.
-    require(managing in MANAGING_SYSTEMS,
-            f"MANAGING_SYSTEM must be one of {MANAGING_SYSTEMS}, got {managing!r}")
+    # managing system. MANAGING_SYSTEM and DEFAULT_UAV_POLICY are only checked for being names at all:
+    # this module cannot import the packages they are registered in to look them up, because both of those
+    # import this one. They are resolved when the managing system and the model are built, which raises a
+    # KeyError listing the names that do exist.
+    require(isinstance(managing, str) and managing != "",
+            f"MANAGING_SYSTEM must be a registered managing system name, got {managing!r}")
 
-    if managing in ("local", "remote"):
+    if managing != "none":
         require(isinstance(ADAPTATION_PERIOD, int) and ADAPTATION_PERIOD >= 1,
                 f"ADAPTATION_PERIOD must be an integer >= 1, got {ADAPTATION_PERIOD!r}")
         require(isinstance(ADAPTATION_HYSTERESIS, int) and ADAPTATION_HYSTERESIS >= 1,
@@ -704,7 +714,7 @@ def validate(managing=None):
                 f"MANAGING_CROWDED_SPEED_CAP must be an integer >= 0, got {MANAGING_CROWDED_SPEED_CAP!r}")
         require(isinstance(MANAGING_KNOWLEDGE_HISTORY, int) and MANAGING_KNOWLEDGE_HISTORY >= 1,
                 f"MANAGING_KNOWLEDGE_HISTORY must be an integer >= 1, got {MANAGING_KNOWLEDGE_HISTORY!r}")
-        if managing == "remote":
+        if remote:
             require(isinstance(MANAGING_SYSTEM_URL, str)
                     and MANAGING_SYSTEM_URL.startswith(("http://", "https://")),
                     f"MANAGING_SYSTEM_URL must be an http(s) URL, got {MANAGING_SYSTEM_URL!r}")

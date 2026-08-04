@@ -18,7 +18,8 @@ module imports the managing system, and the managing system imports nothing from
 import config
 
 from sim.adapters import AllocationEffector, ModelSensor
-from sim.managing.loop import build_managing_system
+# aliased, because 'managing_system' is also the name of this class's argument for a prebuilt loop
+from sim.managing.systems import build_managing_system, managing_system as managing_spec
 from sim.model import WildFireModel
 from sim.policy import SuperPolicy
 
@@ -31,10 +32,10 @@ class AdaptiveWildFireModel(WildFireModel):
     nothing but call its parent. That is what makes an A/B comparison between the managed and the
     self-adaptive system a matter of one setting.
 
-    With it set to 'local' or 'remote', the team flies a SuperPolicy instead and a managing system decides
-    what each UAV is on. The two differ only in where that managing system lives; this class builds the
-    same sensor and effector either way, because they are the simulation's own interface and belong here
-    whatever is doing the deciding.
+    With it set to any of the managing systems registered in sim/managing/systems.py, the team flies a
+    SuperPolicy instead and that managing system decides what each UAV is on. This class builds the same
+    sensor and effector whichever one it is, and whether it runs here or on a server, because they are the
+    simulation's own interface and belong here whatever is doing the deciding.
 
     The 'policy' argument then names the policy every UAV *starts* under, before the first evaluation, and
     the managing system reallocates from there. What an unallocated UAV falls back to inside the local
@@ -43,25 +44,21 @@ class AdaptiveWildFireModel(WildFireModel):
     """
 
     # constructor. 'managing' and 'url' override MANAGING_SYSTEM and MANAGING_SYSTEM_URL for this model
-    # alone, which is what the web interface dropdown and the --managing option hand in.
-    # 'managing_system' injects a prebuilt loop instead of building one, which is for tests.
+    # alone, which is what the web interface dropdown and the --managing option hand in, and 'components'
+    # overrides individual MAPE-K components of whichever managing system that names, which is what --mape
+    # hands in. 'managing_system' injects a prebuilt loop instead of building one, which is for tests.
     #
     # The overrides are held on the instance and never written back to config, so that pressing Reset on
     # the web interface with a different setting builds a different model rather than quietly changing the
     # configuration for everything built afterwards -- and so that the runner's worker processes, which do
     # apply their overrides to config, are unaffected by any of this.
-    def __init__(self, log=None, policy=None, managing=None, url=None, managing_system=None):
+    def __init__(self, log=None, policy=None, managing=None, url=None, components=None,
+                 managing_system=None):
         self.managing = None
         self.sensor = None
         self.effector = None
         self.managing_kind = self.resolve_managing(managing)
-
-        # the managing settings are only checked by config.validate() when the configuration asks for a
-        # managing system. Starting one for this model alone has to ask for them to be checked anyway, or
-        # a run started from the web interface would skip bounds a headless one enforces.
-        # WildFireModel.__init__() validates everything else, below.
-        if self.managing_kind != config.MANAGING_SYSTEM:
-            config.validate(managing=self.managing_kind)
+        self.managing_components = dict(components or {})
 
         if self.managing_kind == "none":
             # nothing to manage with: behave exactly as the plain model does
@@ -78,32 +75,46 @@ class AdaptiveWildFireModel(WildFireModel):
         self.sensor = ModelSensor(self, super_policy)
         self.effector = AllocationEffector(super_policy, self, log=self.log)
         self.managing = managing_system if managing_system is not None else build_managing_system(
-            sensor=self.sensor, effector=self.effector,
-            managing=self.managing_kind, url=url, log=self.log,
+            sensor=self.sensor, effector=self.effector, managing=self.managing_kind,
+            components=self.managing_components, url=url, log=self.log,
         )
 
         self.log.info("managing system ready: %s, UAVs start on %s", self.managing, bootstrap)
 
-    # decides which managing system this model runs: 'none', 'local' or 'remote'. None defers to
-    # MANAGING_SYSTEM; anything else overrides it for this model alone. The web interface hands its
-    # dropdown over as a string, and booleans are accepted so that a caller in python can say True/False
-    # without knowing the names.
+    # decides which managing system this model runs, by name. None defers to MANAGING_SYSTEM; anything else
+    # overrides it for this model alone. The web interface hands its dropdown over as a string, and
+    # booleans are accepted so that a caller in python can say True/False without knowing the names.
+    #
+    # The name is resolved through the registry rather than merely checked, so that an alias is reported
+    # under the name of what actually ran: --managing local produces a model that says 'heuristic'.
     def resolve_managing(self, managing):
-        if managing is None:
-            return str(config.MANAGING_SYSTEM)
         if isinstance(managing, bool):
-            return "local" if managing else "none"
+            managing = "heuristic" if managing else "none"
+        elif managing is None:
+            managing = config.MANAGING_SYSTEM
 
-        name = str(managing).strip().lower()
-        if name not in config.MANAGING_SYSTEMS:
-            raise KeyError(f"unknown managing system {managing!r}, "
-                           f"available: {', '.join(config.MANAGING_SYSTEMS)}")
-        return name
+        return managing_spec(str(managing).strip().lower()).name
 
     # whether this model has a managing system at all, which the runner and the interface ask
     @property
     def managing_enabled(self):
         return self.managing_kind != "none"
+
+    # where the managing system runs: 'none', 'local' or 'remote'. Reported alongside its name, because the
+    # name says which managing system is running and this says whether the deciding happens in this process.
+    @property
+    def managing_location(self):
+        return getattr(self.managing, "location", "none")
+
+    # which component is doing each of the five MAPE-K jobs, as {role: name}. Empty when there is no
+    # managing system, and empty for a remote one, whose components are the server's.
+    #
+    # Both of these are read through getattr because they are reported from inside mesa's render loop,
+    # where an AttributeError does not surface as a failed test but as a dead websocket and a simulation
+    # that silently stops. A managing system injected by a test is not obliged to have either.
+    def composition(self):
+        composition = getattr(self.managing, "composition", None)
+        return dict(composition()) if composition is not None else {}
 
     # resolves the policy the team starts under. A name or an instance is accepted, the same way
     # WildFireModel accepts them, because the web interface hands its dropdown selection over as a string.

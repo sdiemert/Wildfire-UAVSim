@@ -1,4 +1,10 @@
-"""The M of MAPE-K: take a reading and remember it."""
+"""The M of MAPE-K: take a reading and remember it.
+
+Monitor is both the role and the only implementation of it so far, which is why this file is called base.py
+and holds a concrete class rather than an abstract one. A monitor that samples, ages or filters readings
+would be a sibling of it here, and would be registered alongside it in __init__.py; nothing else would
+change, because the loop only ever asks its monitor to observe().
+"""
 
 
 class Monitor:
@@ -9,6 +15,9 @@ class Monitor:
     sensor, on the managed side, because that is a property of the system being managed rather than of the
     thing managing it. Monitor's job is to say when a reading is taken and where it goes.
     """
+
+    # the name this monitor is registered and selected under
+    name = "default"
 
     # constructor
     def __init__(self, sensor, knowledge, log=None):
@@ -31,3 +40,6 @@ class Monitor:
             self.log.debug("monitored step %d: %d UAV(s) flying, %d known fire cell(s)",
                            snapshot.step, len(snapshot.alive()), len(snapshot.known_fire()))
         return snapshot
+
+    def __str__(self):
+        return self.name

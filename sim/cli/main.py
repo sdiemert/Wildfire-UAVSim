@@ -16,8 +16,14 @@ Examples:
     python3 headless.py --set NUM_AGENTS=4 --set ACTIVATE_WIND=True --log-every 1
 
     # the experiment the managing system exists for: the same fires, with and without it
-    python3 headless.py --runs 30 --workers 4 --seed 1 --managing none  --output baseline.json
-    python3 headless.py --runs 30 --workers 4 --seed 1 --managing local --output adaptive.json
+    python3 headless.py --runs 30 --workers 4 --seed 1 --managing none      --output baseline.json
+    python3 headless.py --runs 30 --workers 4 --seed 1 --managing heuristic --output adaptive.json
+
+    # every managing system there is, and one arm of the experiment per line
+    python3 headless.py --list-managing
+
+    # a combination nobody has registered: the default system with one component swapped
+    python3 headless.py --managing heuristic --mape planner=defensive --mape analyzer=cautious
 
     # run the managing system on a server instead of in this process
     python3 headless.py --managing remote --managing-url http://127.0.0.1:8600/manage
@@ -93,18 +99,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--managing",
-        choices=("none", "local", "remote"),
         default=None,
-        help="whether a MAPE-K managing system runs over the simulation, reallocating a policy to each "
-             "UAV as the run goes, and where it lives: 'none' is the unmanaged baseline, 'local' runs "
-             "the whole loop in this process, 'remote' runs it on the server at --managing-url "
-             "(default: MANAGING_SYSTEM from config.py)",
+        metavar="NAME",
+        help="which MAPE-K managing system runs over the simulation, reallocating a policy to each UAV as "
+             "the run goes; 'none' is the unmanaged baseline. See --list-managing for the ones there are, "
+             "and sim/managing/systems.py to add another (default: MANAGING_SYSTEM from config.py)",
+    )
+    parser.add_argument(
+        "--mape",
+        dest="components",
+        action="append",
+        type=parse_override,
+        default=[],
+        metavar="ROLE=NAME",
+        help="override one MAPE-K component of the selected managing system, e.g. --mape planner=static "
+             "(repeatable). ROLE is one of monitor, analyzer, planner, executor, knowledge. This is for a "
+             "combination worth trying but not worth naming; a combination worth naming goes in "
+             "sim/managing/systems.py",
     )
     parser.add_argument(
         "--managing-url",
         default=None,
         help="where a remote managing system lives, see sim/managing/remote.py for the contract "
              "(default: MANAGING_SYSTEM_URL from config.py)",
+    )
+    parser.add_argument(
+        "--list-managing",
+        action="store_true",
+        help="print the managing systems that can be selected with --managing, and what each is made of",
     )
     parser.add_argument("--log-level", default="INFO",
                         choices=("DEBUG", "INFO", "WARNING", "ERROR"), help="console log level")
@@ -120,7 +142,18 @@ def main(argv: list[str] | None = None) -> int:
 
     log = configure_logging(args.log_level, args.log_file)
 
+    # the managing systems are read from the registry rather than listed here, so this stays right as they
+    # are added. It is answered before anything else, because it is a question about the code and not a run.
+    if args.list_managing:
+        from sim.managing.systems import REGISTERED
+
+        for spec in REGISTERED:
+            print(f"  {spec.describe()}")
+            print(f"      {spec.description}")
+        return 0
+
     overrides = dict(args.overrides)
+    components = dict(args.components)
 
     # the managing system options are folded into the overrides rather than carried separately, because
     # every one of them is already a setting in config.py and the overrides are how a run changes those.
@@ -137,6 +170,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.policy not in policy_module.POLICIES:
         log.error("unknown policy %r, available: %s",
                   args.policy, ", ".join(sorted(policy_module.POLICIES)))
+        return 2
+
+    # likewise for the managing system and any component overrides: resolving them here reports a mistyped
+    # name once, before the batch starts, rather than as N identical failed runs
+    from sim.managing.systems import managing_system
+
+    try:
+        managing_system(overrides.get("MANAGING_SYSTEM", cfg.MANAGING_SYSTEM)).with_components(components)
+    except KeyError as exc:
+        log.error("%s", exc.args[0] if exc.args else exc)
         return 2
 
     # likewise for the overrides: applying them here checks the whole configuration once, so a typo or an
@@ -165,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
             overrides=overrides,
             log_every=args.log_every,
             policy=args.policy,
+            managing_components=components,
         )
         for run_id in range(args.runs)
     ]

@@ -1,8 +1,8 @@
 """The P of MAPE-K: decide what the team should be flying.
 
 Planning is where the interesting decisions are, and a planner is pluggable so that the heuristic in
-local.py can be replaced by a solver, a learned policy or anything else without the rest of the loop
-noticing.
+heuristic.py can be replaced by a solver, a learned policy or anything else without the rest of the loop
+noticing. Which one a managing system uses is named in its entry in sim/managing/systems.py.
 
 Note that this is not where local and remote part company. A managing system is remote as a whole or not
 at all: when MANAGING_SYSTEM is 'remote', the analysis, the planning and the Knowledge base are all on the
