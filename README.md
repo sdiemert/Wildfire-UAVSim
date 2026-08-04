@@ -270,7 +270,14 @@ Indicates the current time step of the simulation, beside the buttons that advan
 
 The panel down the left hand side reports the monitoring metrics, the state of the home base and the out buildings, and a line per UAV with its position, its health and the water it is carrying. Figures turn amber and then red as whatever they measure is used up.
 
-With `MANAGING_SYSTEM` set to anything but `none` it also gains a **Managing system** section: which managing system is running, where it lives, which component is doing each of the five MAPE-K jobs, how many adaptations there have been, how many UAVs are on each policy right now, and its own one line account of why. Each UAV's line then shows the policy it has been allocated next to its position, so what a UAV is doing can be read against what it was told to do. See [The managing system](#the-managing-system).
+With `MANAGING_SYSTEM` set to anything but `none` it also gains a **Managing system** section, kept to a few lines because vertical space beside the map is the scarce thing:
+
+* **which managing system is running**, and where it lives, on a line of its own — `defensive · local`.
+* **what it is made of**, but only the components that are *not* the default for their role: `cautious · defensive`. A system built entirely from the defaults says nothing here, because its name has already said it. This is also what shows a combination `--mape` produced that no registered name describes.
+* **what the team is flying right now**, as one proportional bar of the whole team in the same colours the UAVs are drawn in on the map, so the panel doubles as the map's key. One line however many policies are in play.
+* **why**, in the planner's own words, held to two lines with the whole of it on hover.
+
+Anything that means the run is being managed less than it was asked to be — a remote system that fell back, directives the effector refused — appears in red only when it happens. Each UAV's line then shows the policy it has been allocated, in that policy's colour, next to its position. See [The managing system](#the-managing-system).
 
 ### `Managing system` and `UAV policy`
 
@@ -298,7 +305,9 @@ If you want an unmanaged `random` baseline, set `Managing system` to `none` and 
 
 ### `Colours`
 
-The map is deliberately kept light. Vegetation runs from near white to a mid green, and the fire from pale yellow to a bright red orange, so that the things worth finding at a glance stay the darkest marks on it: the UAVs are near black, the home base is a deep blue block, and the out buildings are brown. A UAV is outlined in white, which is what keeps it visible on the two backgrounds as dark as it is — the base and burnt ground — and the square marking what it can see is drawn in a lighter slate, so that a team of any size does not bury the map under its own observation windows. All of it is in the `Colours` section of `config.py`.
+The map is deliberately kept light. Vegetation runs from near white to a mid green, and the fire from pale yellow to a bright red orange, so that the things worth finding at a glance stay the darkest marks on it: the UAVs are dark, the home base is a deep blue block, and the out buildings are brown. A UAV is outlined in white, which is what keeps it visible on the two backgrounds as dark as it is — the base and burnt ground — and the square marking what it can see is drawn in a lighter slate, so that a team of any size does not bury the map under its own observation windows. All of it is in the `Colours` section of `config.py`.
+
+With `COLOUR_UAVS_BY_POLICY` on, which is the default, a UAV is drawn in the colour of the policy it is flying rather than all of them in the same near black. Which policy each UAV is on *is* the whole of what the managing system decided, and reading it off the panel means looking away from the map to find out what the map is showing; in `POLICY_COLORS` the allocation becomes a shape — a team turning crimson as fire closes on the base is the managing system working, seen at a glance. Every colour in that ramp is dark for the reason the near black was: a lighter one disappears into the vegetation. `firefighter` keeps the old near black, so an unmanaged run looks exactly as it always did, and a policy with no colour of its own is drawn as an ordinary UAV. Set `COLOUR_UAVS_BY_POLICY = False` for the plainer map, where a UAV is a UAV and nothing else.
 
 # The managing system
 

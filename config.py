@@ -524,11 +524,40 @@ MANAGING_SYSTEM_FALLBACK = True
 
 BASE_COLOR = "#1d4ed8"  # blue, as the home base is shown on the map
 BASE_BURNING_COLOR = "#6d28d9"
-# UAVs are always drawn in the same near black, which is what keeps them findable over the light map. The
-# water a UAV carries is shown by how big it is drawn rather than by another colour: colouring the load in
-# would mean drawing a loaded UAV in something lighter, which is what made it hard to find in the first
-# place. See agent_portrayal() in main.py.
+# UAVs are drawn in the same near black unless COLOUR_UAVS_BY_POLICY says otherwise, which is what keeps
+# them findable over the light map. The water a UAV carries is shown by how big it is drawn rather than by
+# another colour: colouring the load in would mean drawing a loaded UAV in something lighter, which is what
+# made it hard to find in the first place. See agent_portrayal() in sim/gui/portrayal.py.
 UAV_COLOR = "#111827"  # near black, the darkest thing on the map
+# also what a UAV is drawn in when its policy has no colour of its own, below
+
+# ### `COLOUR_UAVS_BY_POLICY` -- whether a UAV is drawn in the colour of the policy it is flying.
+# With a managing system running, which policy each UAV is on *is* the whole of what the managing system
+# decided, and reading it off a text panel means looking away from the map to find out what the map is
+# showing. Colouring the UAVs by it puts the decision where the run is being watched, and makes the
+# allocation legible as a shape: a team turning red as fire closes on the base is the managing system
+# working, seen at a glance.
+#
+# The cost is the one thing the near black was for. A colour has to be dark enough to stay findable over
+# the light map, which is why the ramp below is all dark; anything lighter would undo it. Set this to False
+# for the older, plainer map, where a UAV is a UAV and nothing else.
+# **Bounds:** True or False.
+COLOUR_UAVS_BY_POLICY = True
+
+# ### `POLICY_COLORS` -- the colour of each policy, on the map and in the status panel's legend.
+# One palette for both, so the panel doubles as the map's key. Every entry is dark enough to be picked out
+# over the vegetation, and each is kept clear of what else the map draws in that hue: the fire ramp
+# (yellow through red), the home base (blue), a burning base (violet), the out buildings (brown) and
+# extinguished cells (cyan). A policy with no entry here is drawn in `UAV_COLOR`, so adding a policy costs
+# nothing until it is worth telling apart.
+# **Bounds:** policy name -> "#rrggbb".
+POLICY_COLORS = {
+    "firefighter": "#111827",  # near black: the working policy, and what the map looked like before
+    "defend-base": "#9d174d",  # deep crimson, well below the fire ramp in lightness
+    "disperse": "#0f766e",     # dark teal, clear of the extinguished cyan
+    "follow-fire": "#1e3a8a",  # navy, darker than the home base blue
+    "random": "#4b5563",       # slate
+}
 # hairline drawn around a UAV, so that it keeps an edge over the base and over burnt ground, which are the
 # only two things on the map anywhere near as dark as it is
 UAV_OUTLINE_COLOR = "#f8fafc"
