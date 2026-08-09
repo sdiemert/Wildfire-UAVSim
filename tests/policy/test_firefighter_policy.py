@@ -30,21 +30,67 @@ def directions(actions):
     return [action.direction for action in actions]
 
 
+# --- down to the fuel reserve the UAV breaks off ----------------------------
+
+
+@pytest.fixture
+def low_on_fuel(sim_config):
+    """Switch the fuel extension on with a quarter tank as the reserve.
+
+    Written when POL-FF-1 was harvested out of the class docstring and turned out to have no test behind
+    it: `defend-base` had one for the same rung of the same ladder and this policy did not.
+    """
+    sim_config(ACTIVATE_FUEL=True, UAV_FUEL_RESERVE=0.25)
+
+
+@pytest.mark.verifies("POL-FF-1", "POL-FF-14")
+def test_a_uav_down_to_the_reserve_breaks_off_for_home(policy, observation, low_on_fuel):
+    # carrying water, with a fire right underneath it: every other rung of the ladder says dump
+    obs = observation(pos=(5, 5), burning=[(5, 5)], base_pos=(1, 5), has_water=True,
+                      fuel=10, fuel_capacity=150)
+    assert directions(policy.select_actions([obs])) == [ACTION_LEFT]
+
+
+@pytest.mark.verifies("POL-FF-1")
+def test_a_uav_above_the_reserve_carries_on_firefighting(policy, observation, low_on_fuel):
+    obs = observation(pos=(5, 5), burning=[(5, 5)], base_pos=(1, 5), has_water=True,
+                      fuel=100, fuel_capacity=150)
+    assert directions(policy.select_actions([obs])) == [ACTION_DUMP_WATER]
+
+
+@pytest.mark.verifies("POL-FF-1")
+def test_the_reserve_never_fires_with_the_fuel_extension_off(policy, observation):
+    # fuel of None is what "not being tracked" looks like, and must not read as an empty tank
+    obs = observation(pos=(5, 5), burning=[(5, 5)], base_pos=(1, 5), has_water=True)
+    assert directions(policy.select_actions([obs])) == [ACTION_DUMP_WATER]
+
+
+@pytest.mark.verifies("POL-FF-3")
+def test_a_low_uav_waits_on_the_base_until_the_tank_is_full(policy, observation, low_on_fuel):
+    # leaving as soon as it landed would mean never staying the BASE_REFUEL_STEPS it takes to be served,
+    # so it would fly off exactly as dry as it arrived
+    obs = observation(pos=(1, 5), base_pos=(1, 5), has_water=True, fuel=10, fuel_capacity=150)
+    assert directions(policy.select_actions([obs])) == [ACTION_STAY]
+
+
 # --- with an empty tank the UAV goes home -----------------------------------
 
 
+@pytest.mark.verifies("POL-FF-2", "POL-FF-14")
 def test_empty_uav_flies_back_to_the_base(policy, observation):
     obs = observation(pos=(5, 5), burning=[(6, 5)], base_pos=(1, 5), has_water=False)
     # the fire is right there, but with no water the only useful thing to do is refill
     assert directions(policy.select_actions([obs])) == [ACTION_LEFT]
 
 
+@pytest.mark.verifies("POL-FF-3")
 def test_empty_uav_waits_at_the_base_while_it_refills(policy, observation):
     obs = observation(pos=(1, 5), base_pos=(1, 5), has_water=False)
     # refilling is not an action: standing still on the base is what triggers it
     assert directions(policy.select_actions([obs])) == [ACTION_STAY]
 
 
+@pytest.mark.verifies("POL-FF-4")
 def test_empty_uav_without_a_base_holds_position(policy, observation):
     # happens when the policy is selected while the extension is switched off
     obs = observation(pos=(5, 5), burning=[(6, 5)], has_water=False)
@@ -54,28 +100,33 @@ def test_empty_uav_without_a_base_holds_position(policy, observation):
 # --- with water the UAV attacks the fire ------------------------------------
 
 
+@pytest.mark.verifies("POL-FF-5")
 def test_dumps_water_when_the_fire_is_within_drop_range(policy, observation):
     obs = observation(pos=(5, 5), burning=[(5, 5)], base_pos=(1, 1), has_water=True)
     assert directions(policy.select_actions([obs])) == [ACTION_DUMP_WATER]
 
 
+@pytest.mark.verifies("POL-FF-5")
 def test_dumps_water_on_a_fire_at_the_edge_of_the_drop_radius(policy, observation):
     fire = (5 + config.WATER_DROP_RADIUS, 5)
     obs = observation(pos=(5, 5), burning=[fire], base_pos=(1, 1), has_water=True)
     assert directions(policy.select_actions([obs])) == [ACTION_DUMP_WATER]
 
 
+@pytest.mark.verifies("POL-FF-6")
 def test_flies_toward_a_fire_that_is_out_of_drop_range(policy, observation):
     fire = (5 + config.WATER_DROP_RADIUS + 2, 5)
     obs = observation(pos=(5, 5), burning=[fire], base_pos=(1, 1), has_water=True)
     assert directions(policy.select_actions([obs])) == [ACTION_RIGHT]
 
 
+@pytest.mark.verifies("POL-FF-9")
 def test_holds_position_when_there_is_nothing_to_extinguish(policy, observation):
     obs = observation(pos=(5, 5), unburnt=[(4, 5), (6, 5)], base_pos=(1, 1), has_water=True)
     assert directions(policy.select_actions([obs])) == [ACTION_STAY]
 
 
+@pytest.mark.verifies("POL-FF-7")
 def test_targets_the_nearest_fire(policy, observation):
     far = (5, 5 - config.WATER_DROP_RADIUS - 4)
     near = (5, 5 + config.WATER_DROP_RADIUS + 1)
@@ -86,6 +137,7 @@ def test_targets_the_nearest_fire(policy, observation):
 # --- protecting the out buildings -------------------------------------------
 
 
+@pytest.mark.verifies("POL-FF-8", "POL-FF-14")
 def test_defends_a_threatened_building_over_closer_open_vegetation(policy, observation):
     # a fire two cells away on one side, and a fire right next to a building further away on the other
     building = (5, 12)
@@ -97,6 +149,7 @@ def test_defends_a_threatened_building_over_closer_open_vegetation(policy, obser
     assert directions(policy.select_actions([obs])) == [ACTION_UP]
 
 
+@pytest.mark.verifies("POL-FF-8")
 def test_ignores_buildings_that_are_not_threatened(policy, observation):
     # the building is in view but no fire is anywhere near it, so the nearest fire wins
     obs = observation(pos=(5, 5), burning=[(1, 5)], building_positions=[(5, 20)],
@@ -107,6 +160,7 @@ def test_ignores_buildings_that_are_not_threatened(policy, observation):
 # --- several UAVs -----------------------------------------------------------
 
 
+@pytest.mark.verifies("POL-GEN-1")
 def test_returns_one_action_per_uav_in_order(policy, observation):
     observations = [
         observation(pos=(5, 5), burning=[(5, 5)], base_pos=(1, 1), has_water=True, uav_id=0),
@@ -123,6 +177,7 @@ def test_no_uavs_gives_no_actions(policy):
 # --- how fast the UAV flies -------------------------------------------------
 
 
+@pytest.mark.verifies("POL-FF-2")
 def test_closes_the_whole_gap_to_the_base_in_one_step(policy, observation, uav_speed):
     uav_speed(6)
     obs = observation(pos=(5, 5), base_pos=(1, 5), has_water=False)
@@ -146,6 +201,7 @@ def test_dumping_water_and_waiting_carry_no_speed(policy, observation):
 # --- keeping out of the way of a UAV in view --------------------------------
 
 
+@pytest.mark.verifies("POL-FF-11")
 def test_stops_short_of_a_uav_standing_in_the_way(policy, observation, uav_speed):
     uav_speed(5)
     # the fire is five cells east, and a teammate is parked three cells along that line
@@ -154,6 +210,7 @@ def test_stops_short_of_a_uav_standing_in_the_way(policy, observation, uav_speed
     assert policy.select_actions([obs]) == [Action(ACTION_RIGHT, 2)]
 
 
+@pytest.mark.verifies("POL-FF-11")
 def test_holds_position_when_the_very_next_cell_is_taken(policy, observation, uav_speed):
     uav_speed(5)
     obs = observation(pos=(5, 5), burning=[(10, 5)], uavs=[(6, 5)], base_pos=(1, 1), has_water=True)
@@ -161,6 +218,7 @@ def test_holds_position_when_the_very_next_cell_is_taken(policy, observation, ua
     assert policy.select_actions([obs]) == [Action.stay()]
 
 
+@pytest.mark.verifies("POL-FF-11")
 def test_a_uav_off_the_flight_path_costs_no_speed(policy, observation, uav_speed, sim_config):
     uav_speed(5)
     sim_config(UAV_OBSERVATION_RADIUS=5)  # so that the sight limit below does not trim the flight instead
@@ -170,6 +228,7 @@ def test_a_uav_off_the_flight_path_costs_no_speed(policy, observation, uav_speed
     assert policy.select_actions([obs]) == [Action(ACTION_RIGHT, 5)]
 
 
+@pytest.mark.verifies("POL-FF-12")
 def test_a_uav_on_the_home_base_is_flown_over_rather_than_avoided(policy, observation, uav_speed):
     uav_speed(4)
     # heading home to refill, with a teammate already queueing on the base
@@ -180,6 +239,7 @@ def test_a_uav_on_the_home_base_is_flown_over_rather_than_avoided(policy, observ
     assert policy.select_actions([obs]) == [Action(ACTION_LEFT, 4)]
 
 
+@pytest.mark.verifies("POL-FF-13")
 def test_a_uav_is_never_sent_further_than_it_can_see(policy, observation, uav_speed, sim_config):
     # a UAV that flies further than its observation window lands on a cell it was told nothing about,
     # where a teammate it never saw may be standing
@@ -190,6 +250,7 @@ def test_a_uav_is_never_sent_further_than_it_can_see(policy, observation, uav_sp
     assert policy.select_actions([obs]) == [Action(ACTION_RIGHT, 3)]
 
 
+@pytest.mark.verifies("POL-FF-13")
 def test_a_blind_uav_holds_position(policy, observation, uav_speed, sim_config):
     uav_speed(5)
     sim_config(UAV_OBSERVATION_RADIUS=0)
@@ -201,6 +262,7 @@ def test_a_blind_uav_holds_position(policy, observation, uav_speed, sim_config):
 # --- keeping the team apart from each other ---------------------------------
 
 
+@pytest.mark.verifies("POL-FF-10")
 def test_two_uavs_are_not_sent_to_the_same_fire(policy, observation, uav_speed):
     uav_speed(1)  # one cell a step, so neither reaches its fire this step
     fires = [(5, 11), (5, 2)]
@@ -214,6 +276,7 @@ def test_two_uavs_are_not_sent_to_the_same_fire(policy, observation, uav_speed):
     assert [action.direction for action in policy.select_actions(observations)] == [ACTION_DOWN, ACTION_UP]
 
 
+@pytest.mark.verifies("POL-FF-9", "POL-FF-10")
 def test_two_uavs_over_the_same_fire_do_not_both_dump_on_it(policy, observation):
     # both are right on top of one burning cell, and it is the only one in view
     obs = [observation(pos=(5, 5), burning=[(5, 5)], base_pos=(1, 1), has_water=True, uav_id=index)
@@ -226,6 +289,7 @@ def test_two_uavs_over_the_same_fire_do_not_both_dump_on_it(policy, observation)
     assert actions[1] == Action.stay()
 
 
+@pytest.mark.verifies("POL-FF-10")
 def test_each_uav_of_a_team_takes_a_fire_of_its_own(policy, observation):
     fires = [(5, 5), (6, 5), (7, 5)]
     obs = [observation(pos=cell, burning=fires, base_pos=(1, 1), has_water=True, uav_id=index)
@@ -235,6 +299,7 @@ def test_each_uav_of_a_team_takes_a_fire_of_its_own(policy, observation):
     assert [action.direction for action in policy.select_actions(obs)] == [ACTION_DUMP_WATER] * 3
 
 
+@pytest.mark.verifies("POL-FF-11")
 def test_two_uavs_are_not_sent_to_the_same_cell(policy, observation, uav_speed):
     uav_speed(3)
     # one fire each, but the routes to them end on the same cell
@@ -250,6 +315,7 @@ def test_two_uavs_are_not_sent_to_the_same_cell(policy, observation, uav_speed):
     assert not first_path & second_path, "the two UAVs were sent through the same cells"
 
 
+@pytest.mark.verifies("POL-FF-9")
 def test_a_team_with_nothing_in_view_holds_together_without_colliding(policy, observation):
     obs = [observation(pos=(5, 5), base_pos=(1, 1), has_water=True, uav_id=index) for index in range(3)]
     assert policy.select_actions(obs) == [Action.stay()] * 3

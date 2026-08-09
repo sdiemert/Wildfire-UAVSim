@@ -44,3 +44,8 @@ testpaths = ["tests"]
 # from the tests: that is where config.py and the sim package live
 pythonpath = ["."]
 addopts = "-v"
+# the verification leg of the requirement trace: a test carrying this marker is the evidence offered for
+# the requirements it names. See specs/README.md; tests/test_traceability.py fails when a link breaks.
+markers = [
+    "verifies(*ids): requirement ids from specs/ that this test provides verification evidence for",
+]

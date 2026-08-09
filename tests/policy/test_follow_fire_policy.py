@@ -33,16 +33,19 @@ def fixed_speed(uav_speed):
 # --- holding position -------------------------------------------------------
 
 
+@pytest.mark.verifies("POL-FOL-1")
 def test_holds_position_when_nothing_is_visible(policy, observation):
     # a UAV over ground with no vegetation in range sees no cells at all
     assert policy.select_actions([observation(pos=(5, 5))]) == [Action.stay()]
 
 
+@pytest.mark.verifies("POL-FOL-1")
 def test_holds_position_when_no_visible_cell_is_burning(policy, observation):
     obs = observation(pos=(5, 5), unburnt=[(4, 5), (6, 5), (5, 4), (5, 6)])
     assert policy.select_actions([obs]) == [Action.stay()]
 
 
+@pytest.mark.verifies("POL-FOL-4")
 def test_holds_position_when_already_over_the_fire(policy, observation):
     # the UAV's own cell is burning, so the nearest fire is at distance zero
     obs = observation(pos=(5, 5), burning=[(5, 5)], unburnt=[(6, 5)])
@@ -56,6 +59,7 @@ def test_holding_position_carries_no_speed(policy, observation):
 # --- moving toward a single fire -------------------------------------------
 
 
+@pytest.mark.verifies("POL-FOL-5")
 @pytest.mark.parametrize(
     "fire, expected",
     [
@@ -71,12 +75,14 @@ def test_moves_toward_fire_on_each_axis(policy, observation, fire, expected):
     assert policy.select_actions([obs]) == [Action(expected, 3)]
 
 
+@pytest.mark.verifies("POL-FOL-5")
 def test_flies_only_as_far_as_the_fire(policy, observation):
     # one cell away means a speed of one, not a full speed run past the target
     obs = observation(pos=(5, 5), burning=[(6, 5)])
     assert policy.select_actions([obs]) == [Action(ACTION_RIGHT, 1)]
 
 
+@pytest.mark.verifies("POL-FOL-5")
 def test_speed_is_capped_by_what_a_uav_can_fly(policy, observation, uav_speed):
     uav_speed(5)
     obs = observation(pos=(0, 0), burning=[(9, 0)])
@@ -87,6 +93,7 @@ def test_speed_is_capped_by_what_a_uav_can_fly(policy, observation, uav_speed):
     assert policy.select_actions([obs]) == [Action(ACTION_RIGHT, 2)]
 
 
+@pytest.mark.verifies("POL-FOL-5")
 def test_a_grounded_fleet_never_moves(policy, observation, uav_speed):
     uav_speed(0)
     obs = observation(pos=(5, 5), burning=[(9, 5)])
@@ -96,18 +103,21 @@ def test_a_grounded_fleet_never_moves(policy, observation, uav_speed):
 # --- choosing between several fires ----------------------------------------
 
 
+@pytest.mark.verifies("POL-FOL-2")
 def test_targets_the_nearest_burning_cell(policy, observation):
     # one cell to the right, a cluster further to the left: the near one wins
     obs = observation(pos=(5, 5), burning=[(6, 5), (1, 5), (0, 5), (1, 6)])
     assert policy.select_actions([obs]) == [Action(ACTION_RIGHT, 1)]
 
 
+@pytest.mark.verifies("POL-FOL-3")
 def test_ignores_unburnt_cells_when_choosing_a_target(policy, observation):
     # the closest cell overall is unburnt and to the left; the fire is further away to the right
     obs = observation(pos=(5, 5), burning=[(9, 5)], unburnt=[(4, 5), (3, 5)])
     assert policy.select_actions([obs]) == [Action(ACTION_RIGHT, 4)]
 
 
+@pytest.mark.verifies("POL-FOL-5")
 def test_closes_the_larger_gap_first(policy, observation):
     # dx = 3, dy = 1, so the horizontal gap is closed first, all three cells of it
     obs = observation(pos=(5, 5), burning=[(8, 6)])
@@ -121,11 +131,13 @@ def test_closes_the_larger_gap_first(policy, observation):
 # --- diagonal tie breaking --------------------------------------------------
 
 
+@pytest.mark.verifies("POL-FOL-6")
 def test_diagonal_target_picks_one_of_the_two_valid_axes(policy, observation):
     obs = observation(pos=(5, 5), burning=[(7, 7)])
     assert policy.select_actions([obs])[0].direction in (ACTION_RIGHT, ACTION_UP)
 
 
+@pytest.mark.verifies("POL-FOL-6")
 def test_diagonal_tie_break_is_random_not_fixed(policy, observation, seed_rng):
     # an equal gap on both axes must not always resolve the same way, otherwise every UAV would drift
     # along the same diagonal
@@ -137,6 +149,7 @@ def test_diagonal_tie_break_is_random_not_fixed(policy, observation, seed_rng):
     assert seen == {ACTION_RIGHT, ACTION_UP}
 
 
+@pytest.mark.verifies("POL-FOL-6")
 def test_diagonal_tie_break_is_reproducible_under_a_seed(policy, observation, seed_rng):
     obs = observation(pos=(5, 5), burning=[(3, 3)])
 
@@ -150,6 +163,7 @@ def test_diagonal_tie_break_is_reproducible_under_a_seed(policy, observation, se
 # --- multiple UAVs ----------------------------------------------------------
 
 
+@pytest.mark.verifies("POL-GEN-1")
 def test_returns_one_action_per_uav_in_order(policy, observation):
     observations = [
         observation(pos=(5, 5), burning=[(8, 5)], uav_id=0),   # fire three cells to the right

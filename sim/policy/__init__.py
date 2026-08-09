@@ -6,12 +6,17 @@ it once per time step, in step().
 
 To add your own policy:
 
-  1. create sim/policy/my_policy.py with a Policy subclass that has a unique 'name' and implements
+  1. write specs/policies/my-policy.md, named after the policy, saying what it is required to do.
+     specs/README.md is the authoring contract; a registered policy with no specification fails
+     `python3 tools/trace.py check`
+  2. create sim/policy/my_policy.py with a Policy subclass that has a unique 'name' and implements
      select_actions(observations)
-  2. import it below and add the class to the REGISTERED tuple
+  3. import it below and add the class to the REGISTERED tuple
+  4. mark the tests that demonstrate each requirement with @pytest.mark.verifies("POL-...")
 
 It is then available as `python3 headless.py --policy my-policy`, and appears in the dropdown on the web
-interface without any further change.
+interface without any further change. The obligations in specs/policies/_contract.md come for free: the
+contract suite in tests/policy/test_policy_interface.py is parametrised over REGISTERED.
 """
 
 # own python modules
