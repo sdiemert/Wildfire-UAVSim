@@ -454,7 +454,7 @@ ACTIVATE_POSITION_ERROR = True
 # **Bounds:** integer `>= 0`. `0` gives every UAV a perfectly calibrated receiver, leaving the per step
 # noise below as the only error. Values approaching the grid size are legal, but spend most of their range
 # against the clamp.
-UAV_POSITION_BIAS_MAX = 2
+UAV_POSITION_BIAS_MAX = 0
 
 # ### `UAV_POSITION_NOISE_MAX` -- largest per step positioning jitter, in cells per axis.
 # Renewed for every UAV on every step, uniformly from the integers in
