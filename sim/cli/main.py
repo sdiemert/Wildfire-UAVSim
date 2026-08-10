@@ -59,7 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--steps",
         type=int,
         default=None,
-        help="steps per simulation (default: BATCH_SIZE from config.py)",
+        help="how long each simulation lasts, in steps; an alias for --set BATCH_SIZE=N, which is the "
+             "one setting that decides a run length (default: BATCH_SIZE from config.py)",
     )
     parser.add_argument(
         "--workers",
@@ -164,7 +165,25 @@ def main(argv: list[str] | None = None) -> int:
         overrides["MANAGING_SYSTEM_URL"] = args.managing_url
 
     cfg, _, _, policy_module = _import_simulation()
-    steps = args.steps if args.steps is not None else overrides.get("BATCH_SIZE", cfg.BATCH_SIZE)
+
+    # --steps is BATCH_SIZE under another name, and is folded into the overrides so that it really is one
+    # number rather than two that can disagree. It used to be an independent count of how many times this
+    # runner called step(), which was a trap in both directions: the model stops itself once its own
+    # BATCH_SIZE is reached, so a --steps above BATCH_SIZE did nothing at all, and a --steps below it cut
+    # the loop short before the model had finished -- and a run cut short has not lost its base yet, so it
+    # was scored WON. A sweep over --steps 120, 150 and 200 duly returned three identical win rates, which
+    # reads exactly like a run length that does not matter; it is the opposite of the truth, run length
+    # being the strongest difficulty dial there is. Setting the constant the model itself reads removes
+    # both halves of that.
+    if args.steps is not None:
+        if "BATCH_SIZE" in overrides and overrides["BATCH_SIZE"] != args.steps:
+            log.error(
+                "--steps %d and --set BATCH_SIZE=%s are the same setting and disagree; pass one of them",
+                args.steps, overrides["BATCH_SIZE"],
+            )
+            return 2
+        overrides["BATCH_SIZE"] = args.steps
+    steps = overrides.get("BATCH_SIZE", cfg.BATCH_SIZE)
 
     # fail fast on an unknown policy name, rather than once per worker
     if args.policy not in policy_module.POLICIES:

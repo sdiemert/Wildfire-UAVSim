@@ -25,6 +25,9 @@ class RunConfig:
     """Everything a worker needs to execute one simulation."""
 
     run_id: int
+    # how many steps to run, which is always the run's BATCH_SIZE: headless.py resolves --steps and
+    # --set BATCH_SIZE into one number before building this, because a loop bound that disagreed with
+    # the constant the model stops on is exactly how a run length gets silently ignored
     steps: int
     seed: int | None = None
     overrides: dict[str, Any] = field(default_factory=dict)
@@ -183,9 +186,11 @@ def run_simulation(config: RunConfig) -> RunResult:
                 if model.uav_by_id(uav_id) is not None and model.uav_by_id(uav_id).is_alive():
                     policy_steps[name] = policy_steps.get(name, 0) + 1
 
-            # the model clears 'running' when it reaches its own BATCH_SIZE, and when the home
-            # base is destroyed. The BATCH_SIZE case normally does not arise, because this loop
-            # stops first unless --steps is larger than it.
+            # the model clears 'running' when it reaches its own BATCH_SIZE, and when the home base is
+            # destroyed. config.steps is that same BATCH_SIZE -- headless.py folds --steps into the
+            # overrides rather than counting separately -- so the first case is how a full length run
+            # ends, on the last step this loop would have run anyway. The loop bound is kept as a
+            # backstop, so a model that never clears 'running' cannot spin here forever.
             if not model.running:
                 # a lost run has already logged why it stopped, and reports it again below
                 if not model.lost:
