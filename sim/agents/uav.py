@@ -82,17 +82,22 @@ class UAV(mesa.Agent):
     def has_full_tank(self):
         return self.fuel >= config.UAV_FUEL
 
-    # burns the fuel one step of flight cost this UAV, given the cells it actually covered. The cost comes
-    # from fuel_burn_cost() in sim/formulas.py, which the policies read as well. The tank is clamped at
-    # zero, so an empty one lands exactly on 0.0 rather than drifting negative. Returns the fuel burned.
-    def burn_fuel(self, cells_moved):
+    # burns the fuel one step of flight cost this UAV, given the cells it actually covered and the water it
+    # was carrying while it covered them. The cost comes from fuel_burn_cost() in sim/formulas.py, which the
+    # policies read as well. 'water_load' left at None charges the payload the UAV has right now; advance()
+    # passes the one it started the step with instead, which is the charge that means anything. The tank is
+    # clamped at zero, so an empty one lands exactly on 0.0 rather than drifting negative. Returns the fuel
+    # burned.
+    def burn_fuel(self, cells_moved, water_load=None):
         if not config.ACTIVATE_FUEL:
             return 0.0
 
-        burned = min(self.fuel, formulas.fuel_burn_cost(cells_moved, at_base=self.model.at_base(self.pos)))
+        carried = self.water_load() if water_load is None else water_load
+        burned = min(self.fuel, formulas.fuel_burn_cost(cells_moved, at_base=self.model.at_base(self.pos),
+                                                        water_load=carried))
         self.fuel -= burned
-        self.model.log.debug("UAV %d burned %.2f fuel over %d cell(s), %.2f left",
-                             self.unique_id, burned, cells_moved, self.fuel)
+        self.model.log.debug("UAV %d burned %.2f fuel over %d cell(s) at %.0f%% load, %.2f left",
+                             self.unique_id, burned, cells_moved, carried * 100, self.fuel)
         return burned
 
     # fills the tank, which the home base does once a refuel has taken BASE_REFUEL_STEPS steps
@@ -102,6 +107,15 @@ class UAV(mesa.Agent):
     # checks whether this UAV still carries water to dump | True if it does, False if it is empty
     def has_water(self):
         return self.water > 0
+
+    # how much of a full load of water this UAV is carrying, as a fraction. This is the one definition of
+    # the payload: the fuel burn is charged against it and the observation reports it, so a policy working
+    # out what a step will cost gets the same number the model charges. Zero when the firefighting
+    # extension is off, where there is no water to carry in the first place.
+    def water_load(self):
+        if not config.ACTIVATE_FIREFIGHTING or config.UAV_WATER_CAPACITY <= 0:
+            return 0.0
+        return max(0.0, min(1.0, self.water / config.UAV_WATER_CAPACITY))
 
     # refills this UAV, which the home base does once a refill has taken BASE_REFILL_STEPS steps
     def refill(self):
@@ -247,6 +261,7 @@ class UAV(mesa.Agent):
                            uav_positions=neighbours,
                            fuel=fuel, fuel_capacity=capacity,
                            has_water=self.has_water(),
+                           water=self.water, water_capacity=config.UAV_WATER_CAPACITY,
                            base_pos=self.model.base.pos if self.model.base else None,
                            base_cells=list(self.model.base.cells) if self.model.base else [],
                            building_positions=buildings)
@@ -315,6 +330,12 @@ class UAV(mesa.Agent):
         if not self.is_alive():
             return
 
+        # the payload is read here, before anything this step can change it. dump_water() empties the tank
+        # the UAV spent the step carrying, so charging what is left at the end would let a UAV fly out
+        # loaded and dump for the price of an empty one. The base filling it up again is the other way
+        # round, and moot: a UAV being served is standing on the base, where the step costs nothing at all.
+        carried = self.water_load()
+
         # dumping water takes the whole step, so the UAV does not move as well
         cells_moved = 0
         if config.ACTIVATE_FIREFIGHTING and self.selected_dir == config.ACTION_DUMP_WATER:
@@ -332,4 +353,4 @@ class UAV(mesa.Agent):
         # grid edge or by another UAV is not charged for the flight it did not make. Running the tank dry
         # does not kill the UAV here: WildFireModel.resolve_fuel() settles that once the whole schedule has
         # run, because destroying an agent mid schedule would mutate what the scheduler is iterating over.
-        self.burn_fuel(cells_moved)
+        self.burn_fuel(cells_moved, water_load=carried)

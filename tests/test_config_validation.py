@@ -145,6 +145,7 @@ def test_out_of_bounds_uav_settings_are_refused(sim_config, setting, value):
 @pytest.mark.parametrize("setting, value", [
     ("UAV_FUEL", 0),
     ("UAV_FUEL_IDLE_BURN", -1),
+    ("UAV_FUEL_WATER_PENALTY", -0.1),
     ("UAV_FUEL_RESERVE", 1.5),
 ])
 def test_out_of_bounds_fuel_settings_are_refused(sim_config, setting, value):

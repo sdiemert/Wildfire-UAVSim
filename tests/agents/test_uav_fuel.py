@@ -3,10 +3,12 @@
 A UAV burns fuel to stay in the air, and one that runs dry loses every health point it has left and is
 destroyed, exactly as a fatal collision destroys it. The cost of a step is
 
-    idle + UAV_FUEL_BURN_PER_CELL * cells ** UAV_FUEL_SPEED_EXPONENT
+    (idle + UAV_FUEL_BURN_PER_CELL * cells ** UAV_FUEL_SPEED_EXPONENT)
+        * (1 + UAV_FUEL_WATER_PENALTY * water_load)
 
 where the idle burn is charged for staying up at all and waived for a UAV parked on the home base. With
-the exponent above 1, covering ground in one fast dash costs more than covering it slowly.
+the exponent above 1, covering ground in one fast dash costs more than covering it slowly, and the water
+aboard multiplies the whole lot, so a loaded UAV pays more for the same flight than an empty one.
 
 The whole thing is behind ACTIVATE_FUEL, which is off by default, so the first section here pins that a
 run without it behaves exactly as it did before the extension existed.
@@ -59,9 +61,30 @@ def fleet(make_model):
                     "FIRE_START_STEP": 10_000, "UAV_SPEED": 5,
                     "ACTIVATE_FUEL": True, "UAV_FUEL": 100.0,
                     "UAV_FUEL_IDLE_BURN": 1.0, "UAV_FUEL_BURN_PER_CELL": 1.0,
-                    "UAV_FUEL_SPEED_EXPONENT": 1.5, "UAV_FUEL_RESERVE": 0.25}
+                    "UAV_FUEL_SPEED_EXPONENT": 1.5, "UAV_FUEL_WATER_PENALTY": 0.3,
+                    "UAV_FUEL_RESERVE": 0.25}
         settings.update(overrides)
         return make_model(**settings)
+
+    return _make
+
+
+@pytest.fixture
+def loaded_fleet(fleet):
+    """The same model with the firefighting extension on, so that its UAVs are carrying water.
+
+    The base is anchored in the corner and the team is moved off it, because a UAV standing on the base
+    burns nothing whatever it carries, which would hide every payload charge these tests are about.
+    """
+
+    def _make(count=1, **overrides):
+        settings = {"ACTIVATE_FIREFIGHTING": True, "BASE_POSITION": (0, 0), "BASE_SIZE": (1, 1),
+                    "UAV_WATER_CAPACITY": 1}
+        settings.update(overrides)
+        model = fleet(count=count, **settings)
+        for index, drone in enumerate(model.uavs):
+            model.grid.move_agent(drone, (4, 2 + index))  # spread out, so nobody collides
+        return model
 
     return _make
 
@@ -167,7 +190,9 @@ def test_only_the_cells_actually_covered_are_charged(fleet):
 
 
 def test_dumping_water_costs_the_idle_burn(fleet):
-    model = fleet(count=1, ACTIVATE_FIREFIGHTING=True, BASE_POSITION=(0, 0))
+    """A step spent dumping is still a step spent airborne. The payload penalty is off here, so that this
+    stays about the idle burn alone; what the water aboard adds to it is pinned further down."""
+    model = fleet(count=1, ACTIVATE_FIREFIGHTING=True, BASE_POSITION=(0, 0), UAV_FUEL_WATER_PENALTY=0.0)
     drone = model.uavs[0]
     model.grid.move_agent(drone, (5, 5))  # off the base, or the idle burn would be waived
 
@@ -193,6 +218,73 @@ def test_a_uav_parked_on_the_base_burns_nothing(fleet):
 
     assert fly(model, ACTION_STAY, 0) == 0
     assert drone.fuel == config.UAV_FUEL
+
+
+# --- carrying water ---------------------------------------------------------
+
+
+def test_a_loaded_uav_burns_more_than_an_empty_one_over_the_same_flight(loaded_fleet):
+    """The point of the payload penalty: the outbound leg costs more than the leg home."""
+    outbound = loaded_fleet()
+    homebound = loaded_fleet()
+    homebound.uavs[0].water = 0
+
+    assert fly(outbound, ACTION_RIGHT, 3) > fly(homebound, ACTION_RIGHT, 3)
+
+
+def test_the_payload_multiplies_the_whole_step_cost(loaded_fleet):
+    model = loaded_fleet()
+
+    # (1 idle + 1.0 * 3 ** 1.5) * (1 + 0.3 * 1.0)
+    assert fly(model, ACTION_RIGHT, 3) == pytest.approx((1.0 + 3 ** 1.5) * 1.3)
+
+
+def test_holding_station_loaded_costs_more_than_holding_station_empty(loaded_fleet):
+    """The idle burn is penalised too: carrying the water costs lift whether or not it is going anywhere."""
+    model = loaded_fleet()
+
+    assert fly(model, ACTION_STAY, 0) == pytest.approx(1.0 * 1.3)
+
+
+def test_a_part_load_pays_part_of_the_penalty(loaded_fleet):
+    model = loaded_fleet(UAV_WATER_CAPACITY=2)
+    model.uavs[0].water = 1  # half of a full load
+
+    assert fly(model, ACTION_RIGHT, 3) == pytest.approx((1.0 + 3 ** 1.5) * 1.15)
+
+
+def test_a_zero_penalty_makes_water_free_to_carry(loaded_fleet):
+    """How the extension behaved before the payload penalty existed, which a run can still ask for."""
+    model = loaded_fleet(UAV_FUEL_WATER_PENALTY=0.0)
+
+    assert model.uavs[0].has_water()
+    assert fly(model, ACTION_RIGHT, 3) == pytest.approx(1.0 + 3 ** 1.5)
+
+
+def test_a_loaded_uav_parked_on_the_base_still_burns_nothing(loaded_fleet):
+    """The base waiver survives the penalty: a multiple of nothing is nothing."""
+    model = loaded_fleet()
+    model.grid.move_agent(model.uavs[0], (0, 0))  # onto the base footprint
+
+    assert model.uavs[0].has_water()
+    assert fly(model, ACTION_STAY, 0) == 0
+
+
+def test_the_step_a_uav_dumps_on_is_charged_for_the_water_it_carried(loaded_fleet):
+    """The payload is the one the step started with: dumping does not make the step it was dumped on free."""
+    model = loaded_fleet()
+
+    burned = fly(model, config.ACTION_DUMP_WATER, 0)
+
+    assert not model.uavs[0].has_water()
+    assert burned == pytest.approx(1.0 * 1.3)
+
+
+def test_there_is_no_payload_to_charge_with_the_firefighting_extension_off(fleet):
+    model = fleet()  # firefighting off, so there is no water in the simulation at all
+
+    assert model.uavs[0].water_load() == 0.0
+    assert fly(model, ACTION_RIGHT, 3) == pytest.approx(1.0 + 3 ** 1.5)
 
 
 # --- running out ------------------------------------------------------------
@@ -346,6 +438,19 @@ def test_observations_report_the_tank(fleet):
     assert observation.fuel_capacity == 100.0
     assert observation.fuel_fraction() == pytest.approx(0.4)
     assert not observation.low_fuel()
+
+
+def test_observations_report_the_water_aboard(loaded_fleet):
+    """A policy estimating what a step will cost needs the payload the model will charge it for."""
+    model = loaded_fleet(UAV_WATER_CAPACITY=2)
+    model.uavs[0].water = 1
+
+    observation = model.uavs[0].observe()
+
+    assert observation.water == 1
+    assert observation.water_capacity == 2
+    assert observation.water_fraction() == pytest.approx(0.5)
+    assert observation.has_water
 
 
 def test_low_fuel_is_reported_at_the_reserve(observation):

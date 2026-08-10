@@ -118,7 +118,7 @@ by_distance(pos, positions)       # positions ordered nearest first, for picking
 
 It also never asks a UAV to fly further than `UAV_OBSERVATION_RADIUS`. This matters whenever `UAV_SPEED` is the larger of the two, as it is by default (`5` against `4`): a flight that ends outside the observation window lands on a cell `uav_positions` said nothing about, so the UAV can fly into a teammate it was never told was there. Giving up the last cell of speed is cheaper than the collision.
 
-With the firefighting extension on, an `Observation` also carries `has_water`, `base_pos`, `base_cells` and `building_positions`; `at_base()` is true anywhere on the base footprint. With the fuel extension on it carries `fuel` and `fuel_capacity`, read through `fuel_fraction()` and `low_fuel()`; both are `None` when fuel is not being tracked, and `low_fuel()` is then always `False`, so a policy that ignores fuel flies exactly as it did before. With the [positioning error extension](#positioning-error-extension) on, `pos` and `uav_positions` are positions that were *measured* and can be several cells out, while `cells`, `base_cells` and `building_positions` stay in true grid coordinates; a policy needs no special case for it, but `at_base()` can then be wrong in both directions and `occupied()` can call a cell clear that has a UAV on it.
+With the firefighting extension on, an `Observation` also carries `has_water`, `water`, `water_capacity`, `base_pos`, `base_cells` and `building_positions`; `at_base()` is true anywhere on the base footprint, and `water_fraction()` is the share of a full load aboard, which is what the fuel burn is charged against. With the fuel extension on it carries `fuel` and `fuel_capacity`, read through `fuel_fraction()` and `low_fuel()`; both are `None` when fuel is not being tracked, and `low_fuel()` is then always `False`, so a policy that ignores fuel flies exactly as it did before. With the [positioning error extension](#positioning-error-extension) on, `pos` and `uav_positions` are positions that were *measured* and can be several cells out, while `cells`, `base_cells` and `building_positions` stay in true grid coordinates; a policy needs no special case for it, but `at_base()` can then be wrong in both directions and `occupied()` can call a cell clear that has a UAV on it.
 
 ### `sim/managing/`
 
@@ -221,7 +221,7 @@ def test_moves_toward_a_fire_on_its_right(observation, uav_speed):
     assert policy.select_actions([obs]) == [Action(ACTION_RIGHT, 3)]
 ```
 
-`pos` is where the UAV is, `burning` and `unburnt` are the cells it can see; cells outside its observation radius are simply left out. `uavs=[(5, 7)]` puts other UAVs in view, for testing that a policy keeps its team apart, and `fuel=10` gives the UAV a part empty tank, defaulting the capacity to `UAV_FUEL`. The `uav_speed` fixture pins `UAV_SPEED` for the test, so an expected speed does not depend on what `config.py` is set to. For a policy that makes random choices, the `seed_rng` fixture replaces `config.SYSTEM_RANDOM` with a seeded generator so the result is reproducible:
+`pos` is where the UAV is, `burning` and `unburnt` are the cells it can see; cells outside its observation radius are simply left out. `uavs=[(5, 7)]` puts other UAVs in view, for testing that a policy keeps its team apart, and `fuel=10` gives the UAV a part empty tank, defaulting the capacity to `UAV_FUEL`. `has_water=True` is enough to say the UAV is carrying water, and `water=1, water_capacity=2` says it is carrying half a load. The `uav_speed` fixture pins `UAV_SPEED` for the test, so an expected speed does not depend on what `config.py` is set to. For a policy that makes random choices, the `seed_rng` fixture replaces `config.SYSTEM_RANDOM` with a seeded generator so the result is reproducible:
 
 ```python
 def test_is_reproducible(observation, seed_rng):
@@ -814,22 +814,26 @@ A UAV that runs its tank dry **loses every health point it has left and is destr
 #### What a step costs
 
 ```
-cost = idle + UAV_FUEL_BURN_PER_CELL * cells_moved ** UAV_FUEL_SPEED_EXPONENT
+cost = (idle + UAV_FUEL_BURN_PER_CELL * cells_moved ** UAV_FUEL_SPEED_EXPONENT)
+           * (1 + UAV_FUEL_WATER_PENALTY * water_load)
 ```
 
 The **idle burn** is charged for staying in the air at all, so holding position and dumping water are cheap but not free. It is waived for a UAV parked on the home base footprint — engines off — which is what makes flying home worth the trip.
 
 `cells_moved` is the distance **actually covered**, so a UAV stopped early by the edge of the grid or by another UAV pays only for the flight it really made.
 
-Because the exponent is above `1`, **each extra cell of speed costs more than the last**, the way the power a real airframe draws climbs steeply with airspeed. Covering ground in one fast dash costs more than covering it slowly, which gives a policy a genuine reason to cruise:
+Because the exponent is above `1`, **each extra cell of speed costs more than the last**, the way the power a real airframe draws climbs steeply with airspeed. Covering ground in one fast dash costs more than covering it slowly, which gives a policy a genuine reason to cruise.
 
-| flight | fuel at the defaults |
-| --- | --- |
-| hold position | `1.0` |
-| 1 cell | `2.0` |
-| 3 cells in one step | `6.2` |
-| 5 cells in one step | `12.2` |
-| 5 cells, one per step over 5 steps | `10.0` |
+`water_load` is the share of a full load of water aboard, `water / UAV_WATER_CAPACITY`, and it multiplies the **whole** cost rather than the distance alone: carrying mass costs lift whether or not the UAV is going anywhere, so a loaded UAV pays the penalty for holding station too. It is the payload the UAV *started* the step with, so the step it dumps its load on is charged as loaded — it carried the water for the whole of that step. The base waiver survives it, since a multiple of nothing is nothing, and with `ACTIVATE_FIREFIGHTING = False` there is no water in the simulation and the term is always `1`.
+
+| flight | empty | carrying a full load |
+| --- | --- | --- |
+| hold position | `1.0` | `1.3` |
+| 1 cell | `2.0` | `2.6` |
+| 3 cells in one step | `6.2` | `8.1` |
+| 5 cells in one step | `12.2` | `15.8` |
+| 5 cells, one per step over 5 steps | `10.0` | `13.0` |
+| anything, parked on the base | `0.0` | `0.0` |
 
 `ACTIVATE_FUEL`: Master switch for the extension.
 
@@ -840,6 +844,8 @@ Because the exponent is above `1`, **each extra cell of speed costs more than th
 `UAV_FUEL_BURN_PER_CELL`: Fuel burned per cell of flight, before the speed penalty. `0` makes movement free, leaving the idle burn as a pure clock.
 
 `UAV_FUEL_SPEED_EXPONENT`: How much harder each extra cell of speed is on the tank. `1.0` is flat, so five cells cost five times one cell however they are flown; `1.5` is the default; `2.0` makes sprinting a serious decision. Below `1` it rewards sprinting instead, which is not physical but is a legitimate thing to experiment with.
+
+`UAV_FUEL_WATER_PENALTY`: How much more a UAV burns for a full load of water, as a share of the whole cost of the step, scaled by the fraction of a load actually aboard. `0` makes water free to carry, which is how the extension behaved before this existed; `1` makes a full load double every step. Needs `ACTIVATE_FIREFIGHTING` for there to be any water at all.
 
 `UAV_FUEL_RESERVE`: The share of a tank at or below which a policy should turn for home. **Advisory only** — nothing in the simulation enforces it. `Observation.low_fuel()` reports it, and the `firefighter` policy acts on it.
 
@@ -858,7 +864,10 @@ An `Observation` carries `fuel` and `fuel_capacity`, both `None` when the extens
 ```python
 observation.fuel_fraction()   # how much of a full tank is left, 1.0 when fuel is not tracked
 observation.low_fuel()        # at or below UAV_FUEL_RESERVE; always False when fuel is not tracked
+observation.water_fraction()  # the payload the burn is charged against, 0.0 for an empty UAV
 ```
+
+A policy that wants to work out what a step will actually cost, rather than reading the flat reserve, passes `water_fraction()` to `formulas.fuel_burn_cost()` along with the distance, and gets exactly the figure the model will charge.
 
 The `firefighter` policy acts on the reserve: a UAV down to it breaks off whatever it was doing, flies home with its water still aboard, and **waits on the base until the tank is full** — landing is not enough, since a visit takes `BASE_REFUEL_STEPS`. The reserve is a flat share of the tank, not an estimate of the fuel needed to reach the base, so a UAV that strays far enough from home can still run dry on the way back; sizing the reserve against how far the team ranges is left to whoever configures the run. `random` and `follow-fire` take no notice of fuel at all and will fly themselves into the ground.
 

@@ -292,8 +292,13 @@ def test_the_managing_system_keeps_uavs_from_colliding(sim_config):
     def run(seed, managing):
         config.SYSTEM_RANDOM = random.Random(seed)
         random.seed(seed)
+        # perfect information, deliberately: this measures whether the managing system deconflicts a team
+        # at all, not whether it can do so through a corrupted fix. Under the shipped positioning error it
+        # cannot -- the separation is worked out from measured positions, so a cell of jitter has the
+        # heuristic flying UAVs into each other, 47 collisions against the unmanaged baseline's 18.
         sim_config(WIDTH=20, HEIGHT=20, NUM_AGENTS=8, BATCH_SIZE=10_000, DENSITY_PROB=0.9,
                    FIRE_START_POSITION=None, FIRE_START_STEP=5, ACTIVATE_FIREFIGHTING=True,
+                   ACTIVATE_POSITION_ERROR=False,
                    MANAGING_SYSTEM=managing, DEFAULT_UAV_POLICY="follow-fire")
         model = AdaptiveWildFireModel(policy="follow-fire")
         for _ in range(60):

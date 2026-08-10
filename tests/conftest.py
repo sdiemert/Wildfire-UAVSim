@@ -36,18 +36,26 @@ def observation():
 
     'has_water', 'base_pos', 'base_cells' and 'building_positions' belong to the firefighting extension,
     and keep the defaults they have when it is switched off.
+
+    'water' and 'water_capacity' are the loads aboard, which the fuel burn is charged against. A test that
+    only cares whether there is water at all can leave them alone and say has_water=True: 'water' then
+    follows it, and water_fraction() answers 1.0 or 0.0 without a capacity. Pass them to say a UAV is
+    carrying a part load.
     """
 
     def _make(pos, burning=(), unburnt=(), uav_id=0, uavs=(), fuel=None, fuel_capacity=None,
-              has_water=False, base_pos=None, base_cells=(), building_positions=()):
+              has_water=False, water=None, water_capacity=None, base_pos=None, base_cells=(),
+              building_positions=()):
         cells = [(tuple(cell), 1) for cell in burning]
         cells += [(tuple(cell), 0) for cell in unburnt]
         if fuel is not None and fuel_capacity is None:
             fuel_capacity = float(config.UAV_FUEL)
+        if water is None:
+            water = 1 if has_water else 0
         return Observation(uav_id=uav_id, pos=tuple(pos), cells=cells,
                            uav_positions=[tuple(cell) for cell in uavs],
                            fuel=fuel, fuel_capacity=fuel_capacity,
-                           has_water=has_water,
+                           has_water=has_water, water=water, water_capacity=water_capacity,
                            base_pos=None if base_pos is None else tuple(base_pos),
                            base_cells=[tuple(cell) for cell in base_cells],
                            building_positions=[tuple(cell) for cell in building_positions])
@@ -134,8 +142,16 @@ def make_model(sim_config):
         # the ignition itself override them. The density is pinned as well, so that every cell holds a
         # Fire agent: at the shipped density a test that lights a named cell fails whenever the draw
         # happened to leave that cell bare.
+        #
+        # The positioning error is pinned off for the same reason, and it is the one that bites hardest:
+        # config.py ships it on with a cell of jitter, so a UAV's *measured* position wanders, and every
+        # test that asks where a UAV is -- at_base(), the UAVs in view, what the sensor reports -- fails at
+        # random rather than failing honestly. Nothing here seeds SYSTEM_RANDOM, so the same test passed and
+        # failed between runs. Tests about the error switch it back on and say what magnitudes they want,
+        # the way tests/agents/test_uav_position_error.py does.
         settings = {"WIDTH": 9, "HEIGHT": 9, "NUM_AGENTS": 1, "BATCH_SIZE": 10_000,
-                    "DENSITY_PROB": 1.0, "FIRE_START_POSITION": None, "FIRE_START_STEP": 0}
+                    "DENSITY_PROB": 1.0, "FIRE_START_POSITION": None, "FIRE_START_STEP": 0,
+                    "ACTIVATE_POSITION_ERROR": False}
         settings.update(overrides)
         sim_config(**settings)
 

@@ -98,3 +98,27 @@ def test_a_uav_on_any_cell_of_the_footprint_is_at_the_base():
 
     outside = Observation(uav_id=0, pos=(4, 2), base_pos=(2, 2), base_cells=footprint)
     assert not outside.at_base()
+
+
+# --- the water aboard -------------------------------------------------------
+
+
+def test_a_full_load_is_the_whole_payload():
+    obs = Observation(uav_id=0, pos=(5, 5), has_water=True, water=2, water_capacity=2)
+    assert obs.water_fraction() == 1.0
+
+
+def test_a_part_load_is_reported_as_the_share_of_a_full_one():
+    obs = Observation(uav_id=0, pos=(5, 5), has_water=True, water=1, water_capacity=4)
+    assert obs.water_fraction() == 0.25
+
+
+def test_an_empty_uav_carries_no_payload():
+    obs = Observation(uav_id=0, pos=(5, 5), has_water=False, water=0, water_capacity=2)
+    assert obs.water_fraction() == 0.0
+
+
+def test_the_payload_falls_back_to_the_boolean_without_a_capacity():
+    # how an Observation built by hand, or by a caller that predates the payload, reports the water
+    assert Observation(uav_id=0, pos=(5, 5), has_water=True).water_fraction() == 1.0
+    assert Observation(uav_id=0, pos=(5, 5), has_water=False).water_fraction() == 0.0

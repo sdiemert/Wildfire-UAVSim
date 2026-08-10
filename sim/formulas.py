@@ -103,20 +103,30 @@ def position_noise(seed, step, magnitude):
     return draw_position_offset(magnitude, source=random.Random(f"{seed}:{step}"))
 
 
-# function that gives the fuel one step of flight costs a UAV, from the cells it actually covered and
-# whether it ended the step parked on the home base. The cost is
+# function that gives the fuel one step of flight costs a UAV, from the cells it actually covered, the
+# water it was carrying while it covered them and whether it ended the step parked on the home base. The
+# cost is
 #
-#     idle + UAV_FUEL_BURN_PER_CELL * cells ** UAV_FUEL_SPEED_EXPONENT
+#     (idle + UAV_FUEL_BURN_PER_CELL * cells ** UAV_FUEL_SPEED_EXPONENT)
+#         * (1 + UAV_FUEL_WATER_PENALTY * water_load)
 #
 # so with the exponent above 1 each extra cell of speed costs more than the last, and covering ground in
 # one fast dash costs more than covering it slowly over several steps. A UAV that did not move pays the
 # idle burn alone, since zero to any positive power is zero; one parked on the base pays nothing, which
-# is what makes flying home to refuel worth the trip. Policies read this too, to work out how far the
-# fuel they have left will take them, so the estimate and the charge cannot drift apart.
-def fuel_burn_cost(cells_moved, at_base=False):
+# is what makes flying home to refuel worth the trip.
+#
+# 'water_load' is the share of a full load aboard, in [0, 1], and multiplies the whole cost rather than
+# the distance alone: carrying mass costs lift whether or not the UAV is going anywhere, so a loaded UAV
+# holding station burns more than an empty one doing the same. The base waiver survives it, since a
+# multiple of zero is zero. Policies read all of this too, to work out how far the fuel they have left
+# will take them, so the estimate and the charge cannot drift apart -- Observation.water_fraction() is
+# what a policy passes here.
+def fuel_burn_cost(cells_moved, at_base=False, water_load=0.0):
     idle = 0.0 if at_base else max(0.0, config.UAV_FUEL_IDLE_BURN)
     cells = max(0, int(cells_moved))
-    return idle + max(0.0, config.UAV_FUEL_BURN_PER_CELL) * (cells ** max(0.0, config.UAV_FUEL_SPEED_EXPONENT))
+    flight = idle + max(0.0, config.UAV_FUEL_BURN_PER_CELL) * (cells ** max(0.0, config.UAV_FUEL_SPEED_EXPONENT))
+    payload = max(0.0, min(1.0, water_load))
+    return flight * (1.0 + max(0.0, config.UAV_FUEL_WATER_PENALTY) * payload)
 
 
 # function that calculates the grade of influence of cell s' over cell s, based on a distance_limit

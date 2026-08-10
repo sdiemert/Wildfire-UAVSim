@@ -307,6 +307,20 @@ UAV_FUEL_BURN_PER_CELL = 1.0
 # legitimate thing to experiment with.
 UAV_FUEL_SPEED_EXPONENT = 1.5
 
+# ### `UAV_FUEL_WATER_PENALTY` -- how much more a UAV burns for the water it is carrying.
+# The whole cost of the step, the idle burn included, is multiplied by `1 + this * load`, where `load` is
+# the share of a full load aboard (`water / UAV_WATER_CAPACITY`). Carrying mass costs lift whether or not
+# the UAV is going anywhere, so a loaded UAV holding station pays it too; one parked on the base still
+# burns nothing, since the whole cost is zero there. At the default a UAV flies out to the fire 30% more
+# expensively than it flies home empty, which is what makes a wasted sortie cost something.
+#
+# The payload is the one the UAV started the step with, so the step it dumps its load on is charged as
+# loaded: it carried the water for the whole of that step. Needs `ACTIVATE_FIREFIGHTING` for there to be
+# any water at all: without it every UAV is permanently empty and this changes nothing.
+# **Bounds:** number `>= 0`. `0` makes water free to carry, which is how the extension behaved before this
+# existed. `1` makes a full load double the cost of every step.
+UAV_FUEL_WATER_PENALTY = 0.3
+
 # ### `UAV_FUEL_RESERVE` -- the share of a tank at or below which a policy should turn for home.
 # Advisory only: nothing in the simulation enforces it. `Observation.low_fuel()` reports it, and the
 # `firefighter` policy breaks off whatever it is doing and flies back to the base once it is reached.
@@ -756,6 +770,8 @@ def validate(managing=None, remote=False):
                 f"UAV_FUEL_BURN_PER_CELL must be >= 0, got {UAV_FUEL_BURN_PER_CELL!r}")
         require(UAV_FUEL_SPEED_EXPONENT >= 0,
                 f"UAV_FUEL_SPEED_EXPONENT must be >= 0, got {UAV_FUEL_SPEED_EXPONENT!r}")
+        require(UAV_FUEL_WATER_PENALTY >= 0,
+                f"UAV_FUEL_WATER_PENALTY must be >= 0, got {UAV_FUEL_WATER_PENALTY!r}")
         require(0.0 <= UAV_FUEL_RESERVE <= 1.0,
                 f"UAV_FUEL_RESERVE must be in [0, 1], got {UAV_FUEL_RESERVE!r}")
         require(isinstance(BASE_REFUEL_STEPS, int) and BASE_REFUEL_STEPS >= 0,

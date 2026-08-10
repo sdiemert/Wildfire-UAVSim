@@ -25,6 +25,11 @@ class Observation:
     fuel extension is switched off, which is what tells a policy that fuel is not being tracked at all
     rather than that the tank is empty; fuel_fraction() and low_fuel() answer sensibly either way.
 
+    'water' is the loads aboard and 'water_capacity' what a full load is, read through water_fraction().
+    They matter to more than the firefighting: the fuel a step costs is multiplied by the payload, so a
+    policy estimating how far its fuel will take it has to pass water_fraction() to fuel_burn_cost() along
+    with the distance. 'has_water' stays the boolean the ladders are written against.
+
     With the positioning error extension on, 'pos' is the position the UAV *measured* rather than where it
     really is, and each entry of 'uav_positions' is what that team mate measured about itself; 'cells',
     'base_pos', 'base_cells' and 'building_positions' stay in true grid coordinates, because the error
@@ -44,6 +49,12 @@ class Observation:
 
     # the fields below belong to the firefighting extension and keep their defaults when it is switched off
     has_water: bool = False
+
+    # loads of water aboard and what a full load is, which is what the fuel burn is charged against.
+    # 'water_capacity' is None on an Observation built without it, and water_fraction() then falls back to
+    # has_water, so a policy reading the payload works either way
+    water: int = 0
+    water_capacity: int = None
     base_pos: tuple = None
     base_cells: list = field(default_factory=list)
     building_positions: list = field(default_factory=list)
@@ -77,6 +88,16 @@ class Observation:
         if self.fuel is None:
             return False
         return self.fuel_fraction() <= config.UAV_FUEL_RESERVE
+
+    # how much of a full load of water this UAV is carrying, as a fraction. The fuel burn is charged
+    # against exactly this, so a policy working out what a step will cost passes it straight to
+    # formulas.fuel_burn_cost() and gets the number the model will charge. An Observation built without a
+    # capacity -- which is every one a policy test writes by hand -- falls back to the boolean, so it still
+    # answers 1.0 for a UAV carrying water and 0.0 for an empty one.
+    def water_fraction(self):
+        if not self.water_capacity:
+            return 1.0 if self.has_water else 0.0
+        return max(0.0, min(1.0, self.water / self.water_capacity))
 
     # whether another UAV in view is standing on a given cell, which is where flying would be a collision
     def occupied(self, cell):
