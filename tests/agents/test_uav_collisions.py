@@ -239,6 +239,16 @@ def test_a_cheap_collision_does_not_always_destroy_a_uav(fleet, seed_rng):
 
 
 def test_a_cheap_collision_still_destroys_a_uav_eventually(fleet, seed_rng):
+    """Half a health point on average is not half a health point: the roll lands late, not never.
+
+    Only the first UAV to go is asserted on. Once one of a stacked pair is destroyed the other has nobody
+    left to collide with, so both being lost needs the two rolls to land in the same step, which happens
+    about a third of the time -- this test used to ask for it, and passed only because the seed it names
+    was one of the lucky ones. It stopped being lucky when FIRE_SPREAD_SPEED came down to 1: the fire is
+    kept out of the way here, but Fire.step() draws from SYSTEM_RANDOM on every fire update whether or not
+    anything is burning, so twice as many updates left the damage rolls reading a different part of the
+    sequence. Sixty steps of a coin flip is what makes the assertion below safe from that.
+    """
     model = fleet(count=2, UAV_HP=1, UAV_COLLISION_DAMAGE_MEAN=0.5, policy=ScriptedPolicy())
     seed_rng(4)
     place(model, [(4, 4), (4, 4)])
@@ -246,11 +256,11 @@ def test_a_cheap_collision_still_destroys_a_uav_eventually(fleet, seed_rng):
     # stacked and holding position, so they collide every step until the rolls land
     for _ in range(60):
         model.step()
-        if not model.active_uavs():
+        if model.uavs_lost:
             break
 
-    assert model.active_uavs() == []
-    assert model.uavs_lost == 2
+    assert model.uavs_lost >= 1
+    assert len(model.active_uavs()) < 2
 
 
 # --- the home base is shared airspace ---------------------------------------

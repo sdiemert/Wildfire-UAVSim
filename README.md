@@ -667,18 +667,67 @@ Any variable can also be overridden for a single run from the command line, with
 python3 headless.py --set DENSITY_PROB=0.6 --set 'FIRE_START_POSITION=(3, 3)'
 ```
 
+## How hard the defaults are, and why
+
+Six of the defaults — `WIDTH`, `HEIGHT`, `BATCH_SIZE`, `FIRE_SPREAD_SPEED`, `BHP` and the two `WATER_EXTINGUISH_PROB_*` — were chosen together rather than separately, so that an unmanaged `firefighter` team saves the home base in about one run in ten. Hard, but a scenario a basic policy can still win, which is what leaves a self-adaptive managing system something to demonstrate.
+
+Measured over 1000 runs on seeds the values were not fitted to (`--seed 500000`), no overrides:
+
+| policy | `--managing none` | `--managing heuristic` |
+|---|---|---|
+| `firefighter` | **10.9%** (9.1 – 13.0) | 17.5% (15.3 – 20.0) |
+| `defend-base` | 19.6% (17.3 – 22.2) | 18.4% (16.1 – 20.9) |
+| `follow-fire` | 0.0% (0.0 – 0.8) | — |
+| `random` | 0.0% (0.0 – 0.8) | — |
+
+Brackets are 95% Wilson intervals. The heuristic managing system is worth 6.6 points to a `firefighter` team and nothing at all to a `defend-base` one, which is a result about the managing system rather than about the configuration.
+
+Four things about the difficulty surface are worth knowing before turning any of these dials, because none of them is what it looks like.
+
+**The run length is the strongest dial there is.** A wildfire on a 100×100 map is never actually put out, so a run is won by outlasting `BATCH_SIZE`, not by winning: 10% of runs won at 100 steps, 4.2% at 125, 2.5% at 150, 0.5% at 200, and none at all by 300. `BATCH_SIZE` is the only run length there is: `headless.py --steps N` is an alias for `--set BATCH_SIZE=N`, and passing both with different values is an error rather than a silent winner. It used to be a second, independent count of runner iterations, which is a mistake worth knowing about because of how it reads — above `BATCH_SIZE` it did nothing, so a sweep over 120, 150 and 200 steps returned three identical win rates and looked like evidence that run length does not matter; below `BATCH_SIZE` it cut the run off early, and a run cut off early has not lost its base yet, so it scored as won.
+
+**A bigger grid makes the scenario easier, not harder.** `FIRE_START_POSITION = "random"` draws uniformly over the map, so on a larger grid the fire usually ignites further from the base. At the original `FIRE_SPREAD_SPEED = 2` a firefighter team won 37% of runs at 50×50 and 80% at 150×150. The default spread speed of `1` is fast enough that the fire crosses the map either way, which is what makes the size roughly independent of the difficulty now — 5% at 50×50, 10% at 100×100, 12.5% at 150×150.
+
+**Most settings are cliffs rather than slopes**, and cannot be used for fine adjustment. From the tuned defaults, one step of `UAV_POSITION_NOISE_MAX`, `WATER_DROP_RADIUS`, `REIGNITION_DELAY` or `BASE_REFILL_STEPS` takes the scenario from difficult to unwinnable. The two `WATER_EXTINGUISH_PROB_*` are the exception, and are what the calibration was done on.
+
+**Stronger wind makes it easier, and the fuel extension does nothing.** `MU = 0.8` doubles the win rate, because a strong wind turns the fire into a directed ray that usually misses the base. And fuel never binds: a firefighter goes back to the base for water so often that it refuels for free on the way, finishing with 120 of its 150 units unused. `UAV_FUEL` can be cut to 40 and `UAV_FUEL_WATER_PENALTY` raised to 1.0 without moving the win rate at all. Smoke is not a difficulty setting either — see [Smoke](#smoke).
+
+Roughly half the remaining difficulty is the positioning error. With `UAV_POSITION_NOISE_MAX = 0` the same team wins 21% instead of 10%.
+
+### Retuning it
+
+`tools/sweep.py` measures a configuration rather than guessing at it. `scan` maps the cartesian product of some axes; `calibrate` bisects one knob for a target win rate. Both write one CSV row per run with the swept parameters joined on, and report 95% Wilson intervals — at these sample sizes the normal approximation is wide of the mark near a 10% rate.
+
+```bash
+# the surface the defaults were picked off: 32 arms, 100 runs each, about three minutes
+python3 tools/sweep.py scan --policy firefighter --managing none --runs 100 --seed 1000 \
+    --base WIDTH=100 --base HEIGHT=100 --base BATCH_SIZE=100 \
+    --axis FIRE_SPREAD_SPEED=1,2 --axis BHP=2,3,4,5 --axis EXTINGUISH_SCALE=1.0,0.85,0.75,0.65 \
+    --out experiments/coarse
+
+# then the fine dial, to a target
+python3 tools/sweep.py calibrate --policy firefighter --managing none --knob EXTINGUISH_SCALE \
+    --low 0.65 --high 1.0 --target 0.10 --runs 400 --seed 1000 \
+    --base WIDTH=100 --base HEIGHT=100 --base FIRE_SPREAD_SPEED=1 --base BHP=4 \
+    --out experiments/calibrate
+```
+
+`EXTINGUISH_SCALE` and `GRID` are derived axes: one number that moves several constants together, because sweeping `WATER_EXTINGUISH_PROB_CENTRE` and `_EDGE` independently spends most of the arms on combinations nobody wants. They are listed in `DERIVED` at the top of `tools/sweep.py`, which is where to add more.
+
+Every arm shares a seed block, so the arms see the same fires and the comparison between them is paired. That also means a calibrated value is fitted to one set of fires: confirm it on a disjoint block before adopting it.
+
 ## Variables description
 
 ### Forest area
 
 | Variable | Meaning | Bounds | Default |
 |---|---|---|---|
-| `BATCH_SIZE` | How long a run lasts, in time steps | integer `>= 1` | `100` |
-| `WIDTH`, `HEIGHT` | Grid size (forest area size), in cells | integers `>= 1` | `60`, `60` |
+| `BATCH_SIZE` | How long a run lasts, in time steps; `headless.py --steps` is an alias for it. The strongest difficulty dial there is, see [How hard the defaults are](#how-hard-the-defaults-are-and-why) | integer `>= 1` | `100` |
+| `WIDTH`, `HEIGHT` | Grid size (forest area size), in cells | integers `>= 1` | `100`, `100` |
 | `FUEL_UPPER_LIMIT` | Most burnable fuel a cell can start with | integer `>= FUEL_BOTTOM_LIMIT`, and `> 0` | `10` |
 | `FUEL_BOTTOM_LIMIT` | Least burnable fuel a cell can start with | integer, `1 <= it <= FUEL_UPPER_LIMIT` | `7` |
 | `BURNING_RATE` | Fuel a burning cell loses per fire update | integer `>= 1` | `1` |
-| `FIRE_SPREAD_SPEED` | Time steps between fire updates | integer `>= 1` | `2` |
+| `FIRE_SPREAD_SPEED` | Time steps between fire updates | integer `>= 1` | `1` |
 | `DENSITY_PROB` | Share of the grid covered by vegetation | float in `[0, 1]` | `0.9` |
 
 Each cell draws its fuel uniformly from `[FUEL_BOTTOM_LIMIT, FUEL_UPPER_LIMIT]` and burns for that many fire updates. `FUEL_UPPER_LIMIT` also scales the vegetation and fire colour ramps, so it has to stay above zero.
@@ -747,16 +796,18 @@ Wind raises the chance of the fire spreading downwind and lowers it upwind, by a
 
 | Variable | Meaning | Bounds | Default |
 |---|---|---|---|
-| `ACTIVATE_SMOKE` | Whether smoke is part of the simulation | `True` / `False` | `False` |
+| `ACTIVATE_SMOKE` | Whether smoke is drawn over burning cells | `True` / `False` | `True` |
 | `SMOKE_PRE_DISPELLING_COUNTER` | Steps between a cell catching fire and its smoke appearing | integer `>= 0` | `2` |
 
 The smoke then lasts for the cell's initial fuel, set as `self.dispelling_counter_start_value` in `Smoke.__init__()` in `sim/environment.py`. Keep the sum of the two above `FUEL_UPPER_LIMIT`, or the smoke clears before the cell has finished burning.
+
+**Smoke is presentation only.** `Smoke` is read by `sim/gui/portrayal.py` and by nothing else: it does not obscure a UAV's observation, does not reach the managing system, and takes no part in how the fire spreads. Switching it off changes what the canvas looks like and nothing about the run, so it is not a way to vary observability or difficulty. Making smoke occlude what a UAV can see would be a worthwhile extension, and would be a change to `UAV.observe()` and `Observation` rather than a setting.
 
 ### UAV
 
 | Variable | Meaning | Bounds | Default |
 |---|---|---|---|
-| `NUM_AGENTS` | UAVs flying over the forest area | integer `>= 0`, and `<= WIDTH * HEIGHT` | `10` |
+| `NUM_AGENTS` | UAVs flying over the forest area | integer `>= 0`, and `<= WIDTH * HEIGHT` | `4` |
 | `N_ACTIONS` | Size of the movement action space a policy draws from | `4`, or `5` to include `ACTION_STAY` | `4` |
 | `UAV_SPEED` | Most cells a UAV can cover in one time step | integer `>= 0` | `5` |
 | `UAV_OBSERVATION_RADIUS` | How far a UAV sees, in cells | integer `>= 0` | `4` |
@@ -903,13 +954,13 @@ When it is switched on:
 | `ACTIVATE_FIREFIGHTING` | Master switch for the whole extension | `True` / `False` | `True` |
 | `BASE_POSITION` | Cell the home base is anchored on | `(x, y)` inside the grid, or `None` | `None` |
 | `BASE_SIZE` | Footprint of the base, as `(width, height)` | pair of integers `>= 1` | `(2, 2)` |
-| `BHP` | Base health points | integer `>= 1` | `5` |
+| `BHP` | Base health points | integer `>= 1` | `4` |
 | `BASE_REFILL_STEPS` | Steps a UAV must spend at the base to refill | integer `>= 1` | `1` |
 | `BASE_CAPACITY` | UAVs that can refill at the same time | integer `>= 1` | `1` |
 | `UAV_WATER_CAPACITY` | Loads of water a UAV can carry at once | integer `>= 1` | `1` |
 | `WATER_DROP_RADIUS` | How far a drop reaches, in cells | integer `>= 0` | `2` |
-| `WATER_EXTINGUISH_PROB_CENTRE` | Chance of extinguishing the cell under the drop | float in `[0, 1]` | `0.95` |
-| `WATER_EXTINGUISH_PROB_EDGE` | Chance of extinguishing a cell at `WATER_DROP_RADIUS` | float in `[0, 1]` | `0.60` |
+| `WATER_EXTINGUISH_PROB_CENTRE` | Chance of extinguishing the cell under the drop | float in `[0, 1]` | `0.76` |
+| `WATER_EXTINGUISH_PROB_EDGE` | Chance of extinguishing a cell at `WATER_DROP_RADIUS` | float in `[0, 1]` | `0.48` |
 | `REIGNITION_DELAY` | Steps an extinguished cell is immune | integer `>= 0` | `8` |
 | `SPONTANEOUS_REIGNITION_PROB` | Per step chance an extinguished cell relights on its own | float in `[0, 1]`, keep low | `0.005` |
 | `NUM_OUT_BUILDINGS` | Out buildings scattered over the map | integer `>= 0` | `0` |
@@ -1006,8 +1057,10 @@ None of the following is a defect in the extension; they are what it exists to p
 To try it from the command line, without editing `config.py`:
 
 ```bash
-python3 headless.py --policy firefighter --set ACTIVATE_POSITION_ERROR=True --set UAV_POSITION_NOISE_MAX=2
+python3 headless.py --policy firefighter --set ACTIVATE_POSITION_ERROR=True --set UAV_POSITION_NOISE_MAX=1
 ```
+
+A cell of noise is the strongest setting a run can be expected to survive, and is the default for that reason: at the calibrated defaults it is worth about half of the whole difficulty of the scenario, taking a `firefighter` team from 21% of runs won down to 10.9%. At `UAV_POSITION_NOISE_MAX = 2` every policy loses every run, and a fixed `UAV_POSITION_BIAS_MAX` of 2 is nearly as absolute. Raise either of them to study how a fleet fails, not to make a scenario harder.
 
 ### Managing system
 

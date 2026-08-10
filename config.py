@@ -17,6 +17,20 @@
 #
 # The bounds are stated but hardly ever enforced: a value outside them usually still runs, and quietly
 # gives nonsense. The few that raise are called out individually.
+#
+# ## The defaults are calibrated, and six of them together
+#
+# `WIDTH`, `HEIGHT`, `BATCH_SIZE`, `FIRE_SPREAD_SPEED`, `BHP` and the two `WATER_EXTINGUISH_PROB_*` are
+# not independent preferences. They were chosen together so that an unmanaged `firefighter` team saves the
+# home base in about a tenth of its runs -- hard, but a scenario a policy can still win, which is what
+# leaves a self-adaptive managing system something to demonstrate. Measured over 1000 seeds the team was
+# never asked to fly: firefighter 10.9%, defend-base 19.6%, follow-fire and random 0%, and firefighter
+# under the heuristic managing system 17.5%.
+#
+# Changing one of the six moves the win rate, sometimes a long way and not always in the direction it
+# looks like it should -- a *larger* grid and a *stronger* wind both make the scenario easier. Move them
+# with `tools/sweep.py`, which measures a configuration rather than guessing at it, and see the tuning
+# section of README.md for the whole surface.
 # =====================================================================================================
 
 import random
@@ -47,7 +61,10 @@ ACTIVATE_WIND = True
 # **Bounds:** `True` / `False`.
 FIXED_WIND = False
 
-# ### `ACTIVATE_SMOKE` -- whether burning cells raise smoke, hiding what is underneath.
+# ### `ACTIVATE_SMOKE` -- whether burning cells raise smoke, drawn over what is underneath.
+# Presentation only, and worth knowing before reaching for it as a difficulty setting: `Smoke` is read
+# by sim/gui/portrayal.py and by nothing else. It does not obscure a UAV's observation, does not reach
+# the managing system, and has no part in how the fire spreads.
 # **Bounds:** `True` / `False`.
 ACTIVATE_SMOKE = True
 
@@ -64,15 +81,29 @@ PROBABILITY_MAP = False
 # =====================================================================================================
 
 # ### `BATCH_SIZE` -- how long a run lasts, in simulation steps.
-# The web interface shows `Done` once it is reached; `headless.py --steps` overrides it.
+# The web interface shows `Done` once it is reached.
+# This is the single strongest difficulty setting there is, which is easy to miss because it does not
+# sound like one. A run is won by surviving to the end of it with the base still standing, and a wildfire
+# on a 100x100 map is never actually put out -- so given long enough, every run is lost. Holding the rest
+# of the defaults still: 10% of runs won at 100 steps, 4.2% at 125, 2.5% at 150, 0.5% at 200 and none at
+# all by 300. `100` is a calibrated value, not a free one.
+# This is the only run length there is: the model stops itself when its own `BATCH_SIZE` is reached, so
+# `headless.py --steps N` is an alias for `--set BATCH_SIZE=N` and passing both a different value is an
+# error. It was once a separate count of runner iterations, which quietly did nothing above `BATCH_SIZE`
+# and scored a run truncated below it as won -- see the note in `sim/cli/main.py`.
 # **Bounds:** integer `>= 1`.
 BATCH_SIZE = 100
 
 # ### `WIDTH`, `HEIGHT` -- grid size (forest area size), in cells.
 # The web canvas is drawn at 10 pixels per cell, so a grid much past ~100 stops fitting on screen.
+# Beware that grid size is not the difficulty dial it looks like. `FIRE_START_POSITION` draws uniformly
+# over the map, so on a larger grid the fire usually ignites further from the base: at the shipped
+# `FIRE_SPREAD_SPEED = 2` a firefighter team won 37% of runs at 50x50 and 80% at 150x150. The default
+# spread speed below is fast enough that the fire crosses the map either way, which is what makes the
+# size roughly independent of the difficulty now (5% at 50x50, 10% at 100x100, 12.5% at 150x150).
 # **Bounds:** integers `>= 1`. Run time grows with `WIDTH * HEIGHT`.
-WIDTH = 50  # in python [height, width] for grid, in js [width, heigh]
-HEIGHT = 50
+WIDTH = 100  # in python [height, width] for grid, in js [width, heigh]
+HEIGHT = 100
 
 # ### `FUEL_UPPER_LIMIT`, `FUEL_BOTTOM_LIMIT` -- burnable fuel each cell starts with.
 # Every cell draws uniformly from the inclusive range, and burns for that many fire updates.
@@ -88,9 +119,13 @@ BURNING_RATE = 1
 
 # ### `FIRE_SPREAD_SPEED` -- simulation steps between fire updates, so larger means slower spread.
 # Everything else (UAVs, water drops, the immunity countdown) still runs every step.
+# `1` rather than `2` because the default grid is 100x100: at `2` the fire is frozen every other step and
+# frequently never reaches the base at all, which decides the run by where the ignition landed rather than
+# by how the team flew. It is the strongest single dial on difficulty -- on its own it takes a firefighter
+# team from 65% of runs won to 32%.
 # **Bounds:** integer `>= 1`, where `1` is the fastest spread available. `0` raises `ZeroDivisionError`,
 # and a fraction never satisfies the integer modulo in `Fire.step()`, which freezes the fire entirely.
-FIRE_SPREAD_SPEED = 2
+FIRE_SPREAD_SPEED = 1
 
 # ### `DENSITY_PROB` -- share of the grid covered by vegetation (tree density).
 # Each cell independently gets a Fire agent with this probability; a cell without one never burns.
@@ -365,8 +400,11 @@ BASE_SIZE = (2, 2)
 # ### `BHP` -- base health points: the run is lost once the base has burned for this many steps.
 # The damage is cumulative rather than consecutive, because a burning cell goes out for a step when none
 # of its neighbours are alight yet, so the base collects its damage over several visits from the fire.
+# `4` is part of the difficulty calibration below, and is the value at which the win rate responds most
+# gently to the strength of a water drop -- at `2` or `3` the scenario is close to unwinnable whatever the
+# water does, and at `5` a small change in the water swings the win rate twice as far.
 # **Bounds:** integer `>= 1`.
-BHP = 5
+BHP = 4
 
 # ### `BASE_REFILL_STEPS` -- steps a UAV must spend at the base to take on a load of water.
 # Refilling is not an action: a UAV with an empty tank standing on the base starts refilling by itself.
@@ -389,10 +427,15 @@ WATER_DROP_RADIUS = 2
 # ### `WATER_EXTINGUISH_PROB_CENTRE`, `WATER_EXTINGUISH_PROB_EDGE` -- how well a drop puts a fire out.
 # The chance of extinguishing the cell the water is dumped on, and one at `WATER_DROP_RADIUS`. In between
 # the probability falls off linearly with the distance; beyond the radius it is zero.
+# These two are the fine dial the difficulty is calibrated on: with the grid, spread speed and `BHP`
+# fixed, they are the only setting left that moves the win rate smoothly rather than in a cliff. They were
+# scaled together from the original `0.95` / `0.60` -- keeping the shape of the falloff -- until an
+# unmanaged firefighter team won about a tenth of its runs. `tools/sweep.py` sweeps the pair as one number
+# under the name `EXTINGUISH_SCALE`; these values are that scale at `0.80`.
 # **Bounds:** floats in `[0, 1]`, normally with centre `>=` edge. The reverse is allowed, and simply
 # makes the drop stronger at its rim than under itself.
-WATER_EXTINGUISH_PROB_CENTRE = 0.95
-WATER_EXTINGUISH_PROB_EDGE = 0.60
+WATER_EXTINGUISH_PROB_CENTRE = 0.76
+WATER_EXTINGUISH_PROB_EDGE = 0.48
 
 # ### `REIGNITION_DELAY` -- steps an extinguished cell is immune to catching fire again.
 # Once the delay has passed, nearby fire can light the cell as usual.
