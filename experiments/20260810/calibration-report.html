@@ -1,0 +1,1235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Difficulty calibration of Wildfire-UAVSim</title>
+<style>
+  /* A print document. Single palette, no theme switching: it is rendered to PDF and read on paper. */
+  :root {
+    --ground:      #ffffff;
+    --surface:     #f5f7f6;
+    --surface-alt: #e7ebea;
+    --ink:         #14201e;
+    --ink-soft:    #4d5957;
+    --ink-faint:   #7d8987;
+    --rule:        #c6cecc;
+    --rule-soft:   #dde3e1;
+    --accent:      #0f6f73;
+    --accent-ink:  #0a5053;
+    --accent-wash: #e2eeee;
+    --ember:       #9d3d0d;
+    --ember-wash:  #f6e6dc;
+
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+    --serif: Charter, "Bitstream Charter", "Iowan Old Style", "Source Serif 4", Georgia, serif;
+  }
+
+  @page { size: A4; margin: 18mm 16mm 20mm; }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  body {
+    margin: 0 auto;
+    max-width: 46rem;
+    padding: 0 1.5rem 3rem;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 10.5pt;
+    line-height: 1.5;
+  }
+
+  /* ---- title page ---- */
+
+  .titlepage { break-after: page; padding-top: 0.75rem; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 7.5pt;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0 0 1.5rem;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 20pt;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin: 0 0 1rem;
+    text-wrap: balance;
+  }
+
+  .subtitle {
+    font-size: 12pt;
+    color: var(--ink-soft);
+    margin: 0 0 1.5rem;
+    max-width: 34rem;
+  }
+
+  .meta {
+    font-family: var(--mono);
+    font-size: 8pt;
+    line-height: 1.7;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding: 0.75rem 0;
+    margin-bottom: 1.5rem;
+    display: grid;
+    grid-template-columns: 8.5rem 1fr;
+  }
+  .meta dt { color: var(--ink-faint); }
+  .meta dd { margin: 0; }
+
+  .abstract {
+    background: var(--surface);
+    border-left: 2px solid var(--accent);
+    padding: 1.125rem 1.375rem;
+  }
+  .abstract h2 { margin-top: 0; }
+  .abstract p:last-child { margin-bottom: 0; }
+
+  .toc {
+    margin-top: 1.5rem;
+    font-family: var(--mono);
+    font-size: 8.5pt;
+    line-height: 1.75;
+    color: var(--ink-soft);
+  }
+  .toc ol { margin: 0.5rem 0 0; padding-left: 1.6rem; }
+  .toc li::marker { color: var(--ink-faint); }
+
+  /* ---- headings ---- */
+
+  h2 {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 12.5pt;
+    letter-spacing: -0.005em;
+    margin: 2rem 0 0.5rem;
+    padding-bottom: 0.375rem;
+    border-bottom: 1px solid var(--rule);
+    break-after: avoid;
+  }
+  h3 {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 9pt;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 1.5rem 0 0.5rem;
+    break-after: avoid;
+  }
+  h4 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 10.5pt;
+    margin: 1.125rem 0 0.3rem;
+    break-after: avoid;
+  }
+  section { break-before: page; }
+  section.run-on { break-before: auto; }
+
+  p { margin: 0 0 0.7rem; text-wrap: pretty; }
+  .lede { color: var(--ink-soft); }
+  ul, ol { margin: 0 0 0.8rem; padding-left: 1.25rem; }
+  li { margin-bottom: 0.3rem; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--surface-alt);
+    padding: 0.08em 0.3em;
+    border-radius: 2px;
+  }
+
+  .formula {
+    font-family: var(--mono);
+    font-size: 9pt;
+    white-space: pre-wrap;
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    padding: 0.875rem 1rem;
+    margin: 0.75rem 0 1rem;
+    line-height: 1.7;
+    overflow-x: auto;
+    break-inside: avoid;
+  }
+  .formula .c { color: var(--ink-faint); }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 8pt;
+    line-height: 1.6;
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    padding: 0.875rem 1rem;
+    overflow-x: auto;
+    margin: 0.75rem 0 1rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    break-inside: avoid;
+  }
+  pre .c { color: var(--ink-faint); }
+  pre .n { color: var(--accent-ink); }
+
+  /* ---- tables ---- */
+
+  figure { margin: 1rem 0 1.25rem; break-inside: avoid; }
+  figcaption {
+    font-family: var(--mono);
+    font-size: 7.5pt;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 0.5rem;
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: 9pt; }
+  th, td {
+    text-align: left;
+    padding: 0.3rem 0.75rem 0.3rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: baseline;
+  }
+  thead th {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 7.5pt;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--rule);
+  }
+  tbody th { font-family: var(--mono); font-weight: 400; font-size: 8.5pt; white-space: nowrap; }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  td.ci { font-family: var(--mono); font-size: 8pt; color: var(--ink-faint); white-space: nowrap; }
+  tr.mark th, tr.mark td { background: var(--accent-wash); }
+  tr.mark td.num { color: var(--accent-ink); font-weight: 700; }
+  table.tight td, table.tight th { padding-top: 0.22rem; padding-bottom: 0.22rem; }
+
+  /* ---- surface bars ---- */
+
+  .surface { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; break-inside: avoid; }
+  .panel-head {
+    font-family: var(--mono);
+    font-size: 8pt;
+    padding-bottom: 0.4rem;
+    margin-bottom: 0.6rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .panel-head span { color: var(--ink-faint); }
+  .grp { min-height: 6.45rem; }
+  .bhp-label {
+    font-family: var(--mono);
+    font-size: 7pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0.6rem 0 0.2rem;
+  }
+  .bar-row {
+    display: grid;
+    grid-template-columns: 2.2rem 1fr 2rem;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--mono);
+    font-size: 7.5pt;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 0.18rem;
+  }
+  .bar-row .k { color: var(--ink-soft); }
+  .bar-row .v { text-align: right; }
+  .track { position: relative; height: 0.5rem; background: var(--surface-alt); }
+  .fill {
+    position: absolute; inset: 0 auto 0 0; width: var(--w);
+    background: var(--accent);
+    background: color-mix(in oklab, var(--ember) var(--t), var(--accent));
+  }
+  .track::after {
+    content: ""; position: absolute; left: 15.4%; top: -1px; bottom: -1px;
+    width: 1px; background: var(--ink); opacity: 0.45;
+  }
+  .on-target .k, .on-target .v { color: var(--accent-ink); font-weight: 700; }
+  .on-target .track { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+  /* ---- callouts ---- */
+
+  .note {
+    border-left: 2px solid var(--ember);
+    background: var(--ember-wash);
+    padding: 0.875rem 1.125rem;
+    margin: 1rem 0;
+    break-inside: avoid;
+  }
+  .note h3 { margin-top: 0; color: var(--ember); }
+  .note p:last-child { margin-bottom: 0; }
+
+  .keyfact {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 0.875rem 1.125rem;
+    margin: 1rem 0;
+    break-inside: avoid;
+  }
+  .keyfact p:last-child { margin-bottom: 0; }
+
+  .footnote { font-size: 8.5pt; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+
+<div class="titlepage">
+  <p class="eyebrow">Wildfire-UAVSim &middot; experiment record</p>
+  <h1>Difficulty calibration of the wildfire simulator</h1>
+  <p class="subtitle">
+    Re-choosing six configuration defaults so that an unmanaged <code>firefighter</code> team saves the
+    home base in roughly one run in ten &mdash; with the simulation model and sweep methodology it was
+    measured under.
+  </p>
+
+  <dl class="meta">
+    <dt>Date</dt><dd>10 August 2026</dd>
+    <dt>Batch</dt><dd>experiments/20260810</dd>
+    <dt>Simulator</dt><dd>Wildfire-UAVSim, Mesa 1.2.1</dd>
+    <dt>Instrument</dt><dd>tools/sweep.py, headless.py</dd>
+    <dt>Runs</dt><dd>~20 400 simulated runs, ~30 min wall clock at 8 workers</dd>
+    <dt>Target</dt><dd>10% of runs won, unmanaged firefighter</dd>
+    <dt>Result</dt><dd>10.9% (95% Wilson 9.1 &ndash; 13.0), n = 1000 held-out seeds</dd>
+  </dl>
+
+  <div class="abstract">
+    <h2 style="border:0;padding:0;margin-bottom:0.5rem">Summary</h2>
+    <p>
+      The simulator's shipped configuration had never been calibrated against any notion of how hard a run
+      is. An unmanaged <code>firefighter</code> team saved the base 37% of the time and
+      <code>defend-base</code> 78% &mdash; too easy to leave a self-adaptive managing system measurable
+      headroom, and too easy for the adaptation experiments the simulator exists to support.
+    </p>
+    <p>
+      Six defaults were re-chosen <em>together</em> &mdash; grid size, run length, fire spread speed, base
+      health, and the two water-extinguish probabilities &mdash; from a 32-arm scan followed by a
+      bisection on the one dial that responds smoothly rather than in a cliff. The result was confirmed on
+      1000 seeds that took no part in the fitting.
+    </p>
+    <p>
+      Several findings run against the obvious assumption and are recorded in full: a larger grid makes
+      the scenario <em>easier</em>, stronger wind makes it easier, the fuel extension has no effect on
+      outcomes at all, and smoke is not a simulation feature. One methodological defect was found and
+      corrected mid-experiment; it is documented in &sect;3.7 rather than quietly fixed.
+    </p>
+  </div>
+
+  <div class="toc">
+    <strong>Contents</strong>
+    <ol>
+      <li>Objective and outcome</li>
+      <li>The simulation model</li>
+      <li>Parameter sweep methodology</li>
+      <li>Results</li>
+      <li>The calibrated configuration</li>
+      <li>Appendix &mdash; full configuration and data index</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<section class="run-on">
+<h2>1 &nbsp; Objective and outcome</h2>
+
+<p class="lede">
+  Produce a configuration in which a basic, non-adaptive UAV policy wins about one run in ten: difficult,
+  but not impossible. That band matters because the simulator's purpose is comparing adaptation
+  strategies. Too easy and every strategy scores the same near the ceiling; too hard and every strategy
+  scores zero. Around 10% there is room to distinguish them in both directions.
+</p>
+
+<h3>1.1 &nbsp; What a run is won by</h3>
+
+<p>
+  There is exactly one outcome in this simulator, and it concerns the home base. A run is <strong>won</strong>
+  by reaching the end of the step budget with the base still standing, and <strong>lost</strong> the moment
+  the base has burned for <code>BHP</code> cumulative steps. Nothing else ends a run: not the fire going
+  out, not the entire fleet being destroyed, not the map being consumed.
+</p>
+
+<div class="keyfact">
+  <p>
+    This has a consequence that shapes the whole experiment. A wildfire on a 100&times;100 map is never
+    actually extinguished, so <strong>given long enough, every run is lost</strong>. Winning means
+    outlasting the clock. The step budget is therefore part of the scenario definition rather than a free
+    parameter, and it turns out to be the single strongest difficulty dial in the configuration
+    (&sect;4.2).
+  </p>
+</div>
+
+<h3>1.2 &nbsp; Decisions taken before measuring</h3>
+
+<ul>
+  <li><strong>Calibrate against <code>firefighter</code>.</strong> Of the two competent baseline policies
+    it is the weaker; <code>defend-base</code> is reported alongside but not targeted.</li>
+  <li><strong>With the managing system off</strong> (<code>--managing none</code>). Calibrating the bare
+    policy leaves the managing system measurable headroom, which is the point of the exercise. The managed
+    arms are then a result rather than a target.</li>
+  <li><strong>Keep uniform random ignition on a large grid</strong> and recover the difficulty through the
+    other dials, rather than coupling ignition placement to the base. This preserves the existing
+    <code>FIRE_START_POSITION</code> semantics at the cost of some variance (&sect;4.6).</li>
+</ul>
+
+<h3>1.3 &nbsp; Outcome</h3>
+
+<figure>
+  <figcaption>Headline result &middot; seed block 500000, used for nothing else &middot; shipped configuration, no overrides</figcaption>
+  <table>
+    <thead>
+      <tr><th>Policy</th><th class="num">unmanaged</th><th>95% Wilson</th><th class="num">heuristic</th><th>95% Wilson</th><th class="num">n</th></tr>
+    </thead>
+    <tbody>
+      <tr class="mark"><th>firefighter</th><td class="num">10.9%</td><td class="ci">9.1 &ndash; 13.0</td><td class="num">17.5%</td><td class="ci">15.3 &ndash; 20.0</td><td class="num">1000</td></tr>
+      <tr><th>defend-base</th><td class="num">19.6%</td><td class="ci">17.3 &ndash; 22.2</td><td class="num">18.4%</td><td class="ci">16.1 &ndash; 20.9</td><td class="num">1000</td></tr>
+      <tr><th>follow-fire</th><td class="num">0.0%</td><td class="ci">0.0 &ndash; 0.8</td><td class="num">&mdash;</td><td class="ci"></td><td class="num">500</td></tr>
+      <tr><th>random</th><td class="num">0.0%</td><td class="ci">0.0 &ndash; 0.8</td><td class="num">&mdash;</td><td class="ci"></td><td class="num">500</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p>
+  The scenario discriminates rather than merely being hard: two of the four policies never win, one wins
+  about a tenth of the time, and the strongest wins about a fifth. The wins are also earned rather than
+  inherited &mdash; 100 of the 109 winning <code>firefighter</code> runs took base damage on the way,
+  averaging 2.06 of the 4 points available, and losses are spread across steps 15 to 99 with a median of
+  50. A scenario in which winners never came under threat would indicate the fire simply never arrived.
+</p>
+</section>
+
+<!-- ============================================================ -->
+<section>
+<h2>2 &nbsp; The simulation model</h2>
+
+<p class="lede">
+  What follows describes the model as configured for this experiment, in enough detail to interpret the
+  results and to reproduce them. Every quantity named in capitals is a setting in <code>config.py</code>;
+  the calibrated values are listed in &sect;5 and the complete state in Appendix A.
+</p>
+
+<h3>2.1 &nbsp; Grid and agents</h3>
+
+<p>
+  The world is a <code>WIDTH</code> &times; <code>HEIGHT</code> grid of cells stepped by Mesa's
+  <code>SimultaneousActivation</code> scheduler: every agent computes its next state from a shared
+  snapshot in <code>step()</code>, and all states are committed together in <code>advance()</code>. There
+  is no activation ordering to randomise, which is one of the things that makes a run reproducible from a
+  single seed.
+</p>
+
+<p>
+  Each cell independently holds a vegetation agent (<code>Fire</code>) with probability
+  <code>DENSITY_PROB</code>. A cell without one can never burn, which is what makes density non-linear in
+  its effect: below the percolation threshold the fire stalls, near 1.0 it sweeps the map. The ignition
+  cell always receives an agent regardless of the draw.
+</p>
+
+<p>
+  Every vegetation cell starts with an integer fuel load drawn uniformly from
+  [<code>FUEL_BOTTOM_LIMIT</code>, <code>FUEL_UPPER_LIMIT</code>] and loses <code>BURNING_RATE</code> per
+  fire update while alight, so a cell burns for <code>fuel / BURNING_RATE</code> updates before burning
+  out. This sets the <em>thickness</em> of the fire front, and hence how many burning neighbours a typical
+  cell sees, without changing the per-step ignition probability directly.
+</p>
+
+<h3>2.2 &nbsp; Fire spread</h3>
+
+<p>
+  A cell's probability of catching fire is one minus the probability that every burning neighbour fails to
+  light it. The influence of a burning neighbour falls off with the inverse square of Euclidean distance
+  and is cut off at a fixed radius:
+</p>
+
+<div class="formula">P(s) = 1 &minus; &prod;<sub>s&prime; burning</sub> (1 &minus; w(s, s&prime;))
+
+w(s, s&prime;) = d(s, s&prime;)<sup>&minus;2</sup>  for d &le; 3, else 0    <span class="c">// Moore, radius 3</span></div>
+
+<p>
+  The radius of 3 and the inverse-square law are <strong>hard-coded</strong>
+  (<code>sim/agents/fire.py</code> and <code>sim/fire_spread.py</code>), not configurable, and they are
+  the strongest untunable influence on spread rate. Note that an orthogonally adjacent burning cell has
+  d&nbsp;=&nbsp;1 and therefore w&nbsp;=&nbsp;1: it ignites its neighbour with certainty, which is why the
+  vectorised implementation carries a negative-infinity sentinel in its log-space kernel.
+</p>
+
+<p>
+  The live implementation evaluates this as a single convolution over the whole grid per step
+  (<code>sim/fire_spread.py</code>), working in log space so the product becomes a sum. A readable
+  per-cell version survives in <code>Fire.probability_of_fire()</code> and the two are pinned against each
+  other by <code>tests/test_fire_spread.py</code>. The vectorisation is what makes a sweep of this size
+  affordable at all &mdash; it took a full run from about 16 seconds to under one.
+</p>
+
+<p>
+  Each cell then draws once per fire update and ignites if the draw falls below its probability. Updates
+  happen every <code>FIRE_SPREAD_SPEED</code> steps, so that setting is a pure time divider on the whole
+  rule while UAVs, water drops and immunity countdowns continue to run every step. It is the cleanest
+  available &ldquo;give the team more or less time&rdquo; dial, and at the calibrated value of 1 the fire
+  updates every step.
+</p>
+
+<h3>2.3 &nbsp; Wind</h3>
+
+<p>
+  Wind reshapes each pairwise influence before the product is taken, adding a share <code>MU</code> of the
+  remaining probability downwind and removing the same share elsewhere:
+</p>
+
+<div class="formula">downwind:      w &larr; w + MU &middot; (1 &minus; w)
+otherwise:     w &larr; w &minus; MU &middot; w</div>
+
+<p>
+  This is not a conservative reshaping: for small w it raises the downwind term by more than it lowers the
+  others, so strong wind does not merely redirect the fire, it concentrates it into a narrower and faster
+  front. With <code>FIXED_WIND = False</code> the model composes two directions,
+  <code>FIRST_DIR</code> with probability <code>FIRST_DIR_PROB</code> and <code>SECOND_DIR</code>
+  otherwise, redrawn per cell per update at the offsets where the two directional kernels disagree. A
+  perpendicular pair produces a diagonal front; the calibrated default is south/east at 0.8.
+</p>
+
+<h3>2.4 &nbsp; UAVs</h3>
+
+<p>
+  <code>NUM_AGENTS</code> UAVs launch from the home base footprint. Each step a UAV receives an
+  <code>Observation</code>, returns an <code>Action</code>, and the model applies it:
+</p>
+
+<ul>
+  <li><strong>Observation</strong> is a square of side 2&middot;<code>UAV_OBSERVATION_RADIUS</code>+1
+    centred on the UAV &mdash; 81 cells at the default radius of 4 &mdash; reporting which cells are
+    burning, where other UAVs are, and the UAV's own fuel and water. Cells outside the grid are simply
+    absent, which is how the edges are represented.</li>
+  <li><strong>Movement</strong> is a direction plus a distance capped at <code>UAV_SPEED</code>. Note that
+    speed (5) exceeds observation radius (4), so a UAV can fly past what it can see; the competent
+    policies cap themselves at the observation radius to avoid this.</li>
+  <li><strong>Collisions</strong> occur when two or more UAVs end a step on the same cell, excluding the
+    base footprint, which is shared airspace. Each UAV involved rolls for one whole health point with
+    probability <code>UAV_COLLISION_DAMAGE_MEAN</code>; a UAV whose <code>UAV_HP</code> reaches zero is
+    destroyed and takes no further part.</li>
+</ul>
+
+<p>
+  <code>SECURITY_DISTANCE</code> takes no part in any of this. It is the threshold used by the MR2
+  scoring heuristic and by the managing system's crowding test, not a physical separation.
+</p>
+
+<h3>2.5 &nbsp; Firefighting: the base, water and reignition</h3>
+
+<p>
+  The home base occupies a <code>BASE_SIZE</code> footprint anchored at <code>BASE_POSITION</code>, or at
+  one quarter of the way into the grid when that is <code>None</code> &mdash; deliberately off-centre, and
+  the ignition draw explicitly avoids it. The base accumulates one damage point per step in which
+  <em>any</em> of its cells is alight, so a four-cell base burning entirely still accrues only one point
+  per step. Damage is cumulative rather than consecutive, because a burning cell goes out for a step when
+  none of its neighbours are yet alight. At <code>BHP</code>&nbsp;=&nbsp;4 the base survives four such
+  steps.
+</p>
+
+<p>
+  A UAV carries <code>UAV_WATER_CAPACITY</code> loads. Refilling is passive &mdash; a UAV standing on the
+  base begins refilling by itself over <code>BASE_REFILL_STEPS</code> &mdash; but only
+  <code>BASE_CAPACITY</code> UAVs can refill at once, so arrivals queue. At the shipped values (capacity
+  1, one load) this queue is a genuine bottleneck and one of the clearer constraints on a team's
+  throughput.
+</p>
+
+<p>
+  A drop covers a disc of radius <code>WATER_DROP_RADIUS</code> and consumes the whole step, no movement.
+  Each burning cell in the disc is extinguished with a probability falling linearly from the centre to the
+  rim:
+</p>
+
+<div class="formula">P<sub>ext</sub>(cell) = CENTRE + (d / RADIUS) &middot; (EDGE &minus; CENTRE),   d &le; RADIUS,  else 0
+
+<span class="c">calibrated: CENTRE = 0.76, EDGE = 0.48, RADIUS = 2</span></div>
+
+<p>
+  An extinguished cell is immune for <code>REIGNITION_DELAY</code> steps, after which it burns normally
+  again; it may also relight unaided each step with probability
+  <code>SPONTANEOUS_REIGNITION_PROB</code>. Water therefore buys time rather than territory, which is why
+  a run is eventually always lost.
+</p>
+
+<h3>2.6 &nbsp; Fuel</h3>
+
+<p>
+  Each UAV carries <code>UAV_FUEL</code> units and is charged per step for the ground it covered, the
+  water it was carrying while covering it, and simply for being airborne:
+</p>
+
+<div class="formula">cost = (idle + BURN_PER_CELL &middot; cells<sup>SPEED_EXPONENT</sup>) &middot; (1 + WATER_PENALTY &middot; load)
+
+<span class="c">idle = 0 when parked on the base, so flying home to refuel is worth the trip</span>
+<span class="c">exponent 1.5: covering ground in one dash costs more than covering it slowly</span></div>
+
+<p>
+  A UAV that empties its tank loses all remaining health and is destroyed. Refuelling at the base takes
+  <code>BASE_REFUEL_STEPS</code> and shares the slot with water. The same function is read by the policies
+  when they estimate range, so the estimate and the charge cannot drift apart.
+</p>
+
+<p>
+  As &sect;4.5 shows, none of this binds at the calibrated settings: a firefighter returns to base for
+  water often enough that it refuels for free on the way.
+</p>
+
+<h3>2.7 &nbsp; Positioning error</h3>
+
+<p>
+  The extension corrupts each UAV's <em>measured</em> position while leaving ground truth &mdash; used for
+  movement, collisions, fuel and scoring &mdash; untouched. What a policy sees, what teammates see, and
+  what the managing system plans from are all affected. The offset is a fixed per-UAV bias drawn once at
+  creation, plus per-step jitter, each a uniform integer per axis:
+</p>
+
+<div class="formula">measured = clamp(true + bias + noise)     bias &sim; U[&minus;BIAS_MAX, BIAS_MAX] per axis, drawn once
+                                          noise &sim; U[&minus;NOISE_MAX, NOISE_MAX] per axis, per step</div>
+
+<p>
+  The jitter is deliberately <em>not</em> drawn from the shared generator. It is a pure function of the UAV
+  and the step number, so that asking a UAV where it thinks it is has no effect on the run &mdash; the web
+  interface, a test, and the managing system can all read a fix at different points in the step without
+  perturbing anything.
+</p>
+
+<h3>2.8 &nbsp; Metrics recorded</h3>
+
+<figure>
+  <figcaption>Per-run outputs, all recorded in the JSON of every run in this batch</figcaption>
+  <table class="tight">
+    <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><th>lost / outcome</th><td>whether the base was destroyed; the only win condition</td></tr>
+      <tr><th>base_burning_steps</th><td>damage accrued, out of <code>BHP</code></td></tr>
+      <tr><th>steps_completed</th><td>where the run ended &mdash; the loss step, or the budget</td></tr>
+      <tr><th>mr1_total</th><td>cumulative fraction of each UAV's 81-cell window that was burning, summed over steps. Rewards fire being <em>watched</em>, not extinguished</td></tr>
+      <tr><th>mr2</th><td>count of UAV pairs closer than <code>SECURITY_DISTANCE</code> at the end of a step: accepted collision <em>risk</em>, not collisions</td></tr>
+      <tr><th>collisions / uavs_lost</th><td>cells found holding more than one UAV; UAVs destroyed</td></tr>
+      <tr><th>uavs_out_of_fuel / fuel_remaining</th><td>dry tanks, and what was left in each</td></tr>
+      <tr><th>water_drops / cells_extinguished / refills</th><td>drops made, cells actually put out, base services completed</td></tr>
+      <tr><th>burning_cells_final</th><td>grid state at the end of the run</td></tr>
+      <tr><th>fire_start_pos / fire_start_step</th><td>the resolved ignition, for post-hoc stratification</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<h3>2.9 &nbsp; The policies measured</h3>
+
+<ul>
+  <li><strong>firefighter</strong> &mdash; greedy nearest-fire attack with a priority ladder: return to
+    base on low fuel, return to base with no water, drop if fire is within the drop radius, otherwise fly
+    towards the nearest unclaimed fire. Includes team-level target claiming and cell deconfliction, and
+    caps its own speed at the observation radius. Its weakness is that it chases whatever is nearest
+    <em>to itself</em>, so a team can disperse to the fire front and be nowhere near the base when the
+    fire reaches it.</li>
+  <li><strong>defend-base</strong> &mdash; the same loop with a different target filter: only fire within
+    <code>BASE_THREAT_RADIUS</code> of the base footprint, sorted by distance <em>to the base</em>, so the
+    whole team converges on one front; otherwise it parks on the base, where the airspace is free and it
+    refills and refuels passively.</li>
+  <li><strong>follow-fire</strong> &mdash; flies at fire with no team-level deconfliction at all.</li>
+  <li><strong>random</strong> &mdash; a floor.</li>
+</ul>
+</section>
+
+<!-- ============================================================ -->
+<section>
+<h2>3 &nbsp; Parameter sweep methodology</h2>
+
+<h3>3.1 &nbsp; Instrument</h3>
+
+<p class="lede">
+  <code>tools/sweep.py</code> was written for this experiment. It sits on top of the existing
+  <code>headless.py</code> runner, which already provides parallel workers, per-run seed derivation,
+  configuration validation, failure isolation and a JSON record of every run. What it adds is arm
+  enumeration, the join that records <em>which</em> configuration produced each run, and the statistics.
+  It uses the standard library only; the project ships three runtime dependencies and adding a fourth for
+  a development tool was not warranted.
+</p>
+
+<p>Two subcommands:</p>
+<ul>
+  <li><code>scan</code> &mdash; the cartesian product of repeated <code>--axis NAME=v1,v2,...</code>, over
+    fixed <code>--base NAME=VALUE</code> settings, at <code>--runs</code> per arm. Writes one CSV row per
+    run and prints a win-rate table.</li>
+  <li><code>calibrate</code> &mdash; bisection on one continuous knob towards a target win rate.</li>
+</ul>
+
+<h3>3.2 &nbsp; Process isolation</h3>
+
+<p>
+  Each arm runs in its own <code>headless.py</code> subprocess rather than by calling the runner in-process.
+  <code>apply_overrides()</code> and <code>seed_simulation()</code> mutate the global <code>config</code>
+  module, so arms sharing a process leak settings into one another unless every arm happens to set every
+  key any other arm sets &mdash; a failure that produces plausible numbers and no error. A subprocess costs
+  about 0.2&nbsp;s of interpreter startup, amortised across <code>--runs</code>, and removes the whole
+  class of mistake.
+</p>
+
+<h3>3.3 &nbsp; Seeding and pairing</h3>
+
+<p>
+  A run is fully determined by its seed: <code>--seed</code> sets both the module-level generator and
+  <code>config.SYSTEM_RANDOM</code>, run <em>i</em> of a batch receives <code>seed + i</code>, and the
+  numpy generator used by the vectorised spread is itself seeded from <code>SYSTEM_RANDOM</code>. This was
+  verified empirically: identical invocations produce byte-identical metrics, sequentially and in
+  parallel.
+</p>
+
+<p>
+  All arms of a scan share one seed block, so arm <em>k</em>'s run <em>i</em> sees the same fire in every
+  arm and comparisons between arms are <strong>paired</strong>, which removes the ignition lottery from the
+  contrast. The corresponding risk is over-fitting to one set of fires, addressed in &sect;3.6.
+</p>
+
+<div class="note">
+  <h3>A caveat on the parallel executor</h3>
+  <p>
+    Seeding is process-global, so <code>--executor thread</code> with more than one worker destroys
+    reproducibility. Every measurement in this batch used the default process executor.
+  </p>
+</div>
+
+<h3>3.4 &nbsp; Derived axes</h3>
+
+<p>
+  Some quantities worth sweeping are not a single constant. Water strength is the important one: a drop's
+  effect falls linearly from <code>WATER_EXTINGUISH_PROB_CENTRE</code> to <code>_EDGE</code>, and sweeping
+  the two independently would spend most of the arms on combinations nobody wants, including those where
+  the rim is stronger than the centre. <code>EXTINGUISH_SCALE</code> scales both from the original
+  0.95&nbsp;/&nbsp;0.60, preserving the shape of the falloff, so one number moves the whole water model and
+  can be bisected on. <code>GRID</code> does the same for <code>WIDTH</code> and <code>HEIGHT</code>. Both
+  are declared in a <code>DERIVED</code> table at the top of the tool.
+</p>
+
+<h3>3.5 &nbsp; Sample sizes and intervals</h3>
+
+<p>
+  Every proportion is reported with a <strong>Wilson score interval</strong> rather than the normal
+  approximation. Near a 10% rate the normal interval is badly calibrated and its lower bound can fall
+  below zero; Wilson stays within [0,&nbsp;1] and behaves sensibly at zero successes, which matters here
+  because several arms won nothing at all and &ldquo;0/400&rdquo; must be distinguishable from
+  &ldquo;unwinnable&rdquo;.
+</p>
+
+<figure>
+  <figcaption>Sample sizes used, and what each resolves at a 10% rate</figcaption>
+  <table>
+    <thead><tr><th>Stage</th><th class="num">n per arm</th><th>95% interval half-width</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><th>coarse scan</th><td class="num">100</td><td class="ci">&plusmn; ~6 pp</td><td>locate the crossing, rank arms</td></tr>
+      <tr><th>calibration</th><td class="num">400</td><td class="ci">&plusmn; ~3 pp</td><td>choose the value</td></tr>
+      <tr><th>characterisation</th><td class="num">200</td><td class="ci">&plusmn; ~4 pp</td><td>direction and rough size of each dial</td></tr>
+      <tr class="mark"><th>validation</th><td class="num">1000</td><td class="ci">&plusmn; ~1.9 pp</td><td>the number that gets reported</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p class="footnote">
+  Cost was not a constraint: at roughly 0.35&nbsp;s per run, the entire design is about one core-hour.
+  Sample sizes were chosen for interval width, not budget.
+</p>
+
+<h3>3.6 &nbsp; Search strategy</h3>
+
+<ol>
+  <li><strong>Fix the structural settings.</strong> Several knobs are cliffs rather than slopes &mdash; one
+    integer step of <code>UAV_POSITION_NOISE_MAX</code>, <code>WATER_DROP_RADIUS</code>,
+    <code>REIGNITION_DELAY</code> or <code>BASE_REFILL_STEPS</code> takes the scenario from difficult to
+    unwinnable. None can be used for fine adjustment, so each was settled as a structural choice and held
+    fixed.</li>
+  <li><strong>Coarse scan</strong> over <code>FIRE_SPREAD_SPEED</code> &times; <code>BHP</code> &times;
+    <code>EXTINGUISH_SCALE</code>, 32 arms at n&nbsp;=&nbsp;100.</li>
+  <li><strong>Select by gradient, not by proximity.</strong> The chosen arm is not the one nearest 10% but
+    the one whose win rate responds <em>least sharply</em> to the fine dial, so the configuration is
+    robust to a small mis-set. This was <code>FIRE_SPREAD_SPEED = 1, BHP = 4</code>, at roughly half the
+    local slope of <code>BHP = 5</code>, and crossing the target in the interior of the range rather than
+    at an end.</li>
+  <li><strong>Bisect</strong> the fine dial at n&nbsp;=&nbsp;400, stopping when the target lies inside a
+    probe's interval &mdash; past that point halving again only reads noise. The direction is measured from
+    the two endpoints rather than assumed, because the knobs in this configuration do not agree on one
+    (a larger grid and a larger <code>BHP</code> both make the scenario <em>easier</em>).</li>
+  <li><strong>Refine</strong> with a small scan either side of the crossing, and choose a value that also
+    yields round two-decimal constants.</li>
+  <li><strong>Validate on a disjoint seed block</strong> at n&nbsp;=&nbsp;1000. Everything above shares
+    seed block 1000, so the tuned value is fitted to one set of fires; the reported figure comes from
+    block 500000, used for nothing else. This is the main way an experiment of this shape fails quietly,
+    so it is not optional.</li>
+  <li><strong>Characterise</strong> the remaining dials one factor at a time from the tuned point, so the
+    record documents the surface rather than only the chosen spot.</li>
+</ol>
+
+<h3>3.7 &nbsp; A methodological defect found mid-experiment</h3>
+
+<div class="note">
+  <h3>&ldquo;--steps&rdquo; did not set the run length</h3>
+  <p>
+    The first pass used <code>headless.py --steps</code> to control how long a run lasted. At the time it
+    did not do that. It was a separate count of how many times the runner called <code>step()</code>,
+    while the model stops itself once its own <code>config.BATCH_SIZE</code> is reached &mdash; two
+    numbers for one quantity, wrong in both directions:
+  </p>
+  <ul>
+    <li><strong>Above <code>BATCH_SIZE</code> the flag did nothing.</strong> The model had already
+      stopped. A sweep over 120, 150 and 200 steps returned three <em>identical</em> win rates, which read
+      convincingly as evidence that <strong>run length does not matter</strong>. The opposite is true
+      &mdash; it is the strongest dial in the configuration (&sect;4.2), and every measurement had in fact
+      been taken at an effective budget of 100 steps.</li>
+    <li><strong>Below <code>BATCH_SIZE</code> the loop stopped early</strong> &mdash; and a run cut short
+      has not lost its base yet, so it was scored <strong>WON</strong>. This half would have inflated any
+      arm that shortened a run, silently and in the flattering direction.</li>
+  </ul>
+  <p>
+    The defect surfaced only at final verification, when the tuned <code>config.py</code> produced 3.5%
+    where the sweeps had predicted 10.9%. No figure in this report was affected by the second half &mdash;
+    every arm used a <code>--steps</code> at or above <code>BATCH_SIZE</code>, so no run was truncated
+    &mdash; and because all the sweeps shared the same erroneous budget, they remained internally
+    consistent and were re-usable once <code>BATCH_SIZE</code> was set to 100 to match them. Only the
+    run-length conclusion had to be discarded and re-measured (&sect;4.2); that sweep was then re-run
+    through <code>--set BATCH_SIZE</code> and is the data in <code>batch-size/</code>.
+  </p>
+  <p>
+    <strong>Corrective action:</strong> <code>headless.py --steps N</code> is now an alias for
+    <code>--set BATCH_SIZE=N</code>, folded into the overrides so there is genuinely one number; passing
+    both with different values is an error rather than a silent winner. <code>tests/cli/test_run_length.py</code>
+    covers both directions end to end. <code>tools/sweep.py</code> declines <code>--steps</code>
+    regardless, since one axis should have one name, and <code>config.py</code> and the README now
+    document the constant as the only run length there is.
+  </p>
+</div>
+
+<h3>3.8 &nbsp; Other threats to validity</h3>
+
+<ul>
+  <li><strong>Ignition variance dominates within an arm.</strong> Under uniform random ignition, whether
+    the fire starts near the base explains much of the run-to-run variation. Paired seeds remove this from
+    <em>between-arm</em> comparisons but not from the absolute rate, which is why n&nbsp;=&nbsp;1000 was
+    used for the reported figure.</li>
+  <li><strong>Single-policy calibration.</strong> The target was set on <code>firefighter</code> alone.
+    <code>defend-base</code> lands at 19.6% and was not tuned towards; a configuration making both
+    simultaneously 10% may not exist without a dial that penalises them differently.</li>
+  <li><strong>One-factor-at-a-time characterisation.</strong> &sect;4.5 varies dials individually from the
+    tuned point and therefore cannot detect interactions away from it. At least one interaction is known
+    to exist and to be non-monotone (observation radius, &sect;4.6).</li>
+  <li><strong>Vectorised-spread seeds are not comparable to archived pre-vectorisation results.</strong>
+    Self-consistent within this batch.</li>
+</ul>
+</section>
+
+<!-- ============================================================ -->
+<section>
+<h2>4 &nbsp; Results</h2>
+
+<h3>4.1 &nbsp; Baseline, before any change</h3>
+
+<figure>
+  <figcaption>Original shipped defaults &middot; 50&times;50 &middot; n = 60 per cell &middot; unmanaged</figcaption>
+  <table class="tight">
+    <thead><tr><th>Change from defaults</th><th class="num">firefighter</th><th class="num">defend-base</th></tr></thead>
+    <tbody>
+      <tr class="mark"><th>none (baseline)</th><td class="num">37%</td><td class="num">78%</td></tr>
+      <tr><th>grid 100&times;100</th><td class="num">65%</td><td class="num">87%</td></tr>
+      <tr><th>grid 150&times;150</th><td class="num">80%</td><td class="num">88%</td></tr>
+      <tr><th>FIRE_SPREAD_SPEED = 1</th><td class="num">20%</td><td class="num">40%</td></tr>
+      <tr><th>BHP = 3</th><td class="num">23%</td><td class="num">52%</td></tr>
+      <tr><th>NUM_AGENTS = 2</th><td class="num">30%</td><td class="num">62%</td></tr>
+      <tr><th>UAV_FUEL = 50</th><td class="num">32%</td><td class="num">73%</td></tr>
+      <tr><th>MU = 0.8</th><td class="num">50%</td><td class="num">87%</td></tr>
+      <tr><th>UAV_OBSERVATION_RADIUS = 2</th><td class="num">57%</td><td class="num">90%</td></tr>
+      <tr><th>extinguish 0.70 / 0.30</th><td class="num">8%</td><td class="num">33%</td></tr>
+      <tr><th>extinguish 0.50 / 0.20</th><td class="num">2%</td><td class="num">3%</td></tr>
+      <tr><th>WATER_DROP_RADIUS = 1</th><td class="num">2%</td><td class="num">7%</td></tr>
+      <tr><th>REIGNITION_DELAY = 2</th><td class="num">2%</td><td class="num">7%</td></tr>
+      <tr><th>UAV_POSITION_NOISE_MAX = 2</th><td class="num">0%</td><td class="num">0%</td></tr>
+      <tr><th>UAV_POSITION_BIAS_MAX = 2</th><td class="num">7%</td><td class="num">5%</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p>
+  Two things are visible immediately. The two baseline policies are 41 points apart, so a single
+  configuration cannot put both at 10%. And most single knobs are cliffs: between the two extinguish rows
+  the scenario passes the target and lands at 2%, and one step of positioning noise takes it to zero.
+</p>
+
+<h3>4.2 &nbsp; Run length</h3>
+
+<figure>
+  <figcaption>Win rate against the step budget &middot; tuned settings otherwise &middot; n = 400 &middot; firefighter, unmanaged</figcaption>
+  <table>
+    <thead><tr><th>BATCH_SIZE</th><th class="num">won</th><th class="num">rate</th><th>95% Wilson</th><th class="num">latest loss</th><th class="num">p90 loss</th></tr></thead>
+    <tbody>
+      <tr class="mark"><th>100</th><td class="num">40/400</td><td class="num">10.0%</td><td class="ci">7.4 &ndash; 13.3</td><td class="num">99</td><td class="num">79</td></tr>
+      <tr><th>125</th><td class="num">17/400</td><td class="num">4.2%</td><td class="ci">2.7 &ndash; 6.7</td><td class="num">125</td><td class="num">89</td></tr>
+      <tr><th>150</th><td class="num">10/400</td><td class="num">2.5%</td><td class="ci">1.4 &ndash; 4.5</td><td class="num">150</td><td class="num">92</td></tr>
+      <tr><th>200</th><td class="num">2/400</td><td class="num">0.5%</td><td class="ci">0.1 &ndash; 1.8</td><td class="num">194</td><td class="num">99</td></tr>
+      <tr><th>300</th><td class="num">0/400</td><td class="num">0.0%</td><td class="ci">0.0 &ndash; 1.0</td><td class="num">214</td><td class="num">101</td></tr>
+      <tr><th>400</th><td class="num">0/400</td><td class="num">0.0%</td><td class="ci">0.0 &ndash; 1.0</td><td class="num">214</td><td class="num">101</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p>
+  The p90 loss step saturates around 101 and the latest observed loss at 214, confirming &sect;1.1: given
+  enough time the fire always reaches and destroys the base. <code>BATCH_SIZE</code> = 100 is therefore a
+  calibrated value, not an inherited one.
+</p>
+
+<h3>4.3 &nbsp; The coarse surface</h3>
+
+<figure>
+  <figcaption>32 arms &middot; 100&times;100, 100 steps &middot; n = 100 per arm &middot; seed block 1000 &middot; firefighter, unmanaged</figcaption>
+  <div class="surface">
+    <div>
+      <div class="panel-head"><strong>FIRE_SPREAD_SPEED = 1</strong> <span>&mdash; every step</span></div>
+      <div class="grp"><div class="bhp-label">BHP 2</div>
+      <div class="bar-row"><span class="k">1.00</span><span class="track"><span class="fill" style="--w:9.2%;--t:9%"></span></span><span class="v">6%</span></div>
+      <div class="bar-row"><span class="k">0.85</span><span class="track"><span class="fill" style="--w:9.2%;--t:9%"></span></span><span class="v">6%</span></div>
+      <div class="bar-row"><span class="k">0.75</span><span class="track"><span class="fill" style="--w:7.7%;--t:8%"></span></span><span class="v">5%</span></div>
+      <div class="bar-row"><span class="k">0.65</span><span class="track"><span class="fill" style="--w:1%;--t:0%"></span></span><span class="v">0%</span></div>
+      </div>
+      <div class="grp"><div class="bhp-label">BHP 3</div>
+      <div class="bar-row"><span class="k">1.00</span><span class="track"><span class="fill" style="--w:15.4%;--t:15%"></span></span><span class="v">10%</span></div>
+      <div class="bar-row"><span class="k">0.85</span><span class="track"><span class="fill" style="--w:15.4%;--t:15%"></span></span><span class="v">10%</span></div>
+      <div class="bar-row"><span class="k">0.75</span><span class="track"><span class="fill" style="--w:10.8%;--t:11%"></span></span><span class="v">7%</span></div>
+      <div class="bar-row"><span class="k">0.65</span><span class="track"><span class="fill" style="--w:3.1%;--t:3%"></span></span><span class="v">2%</span></div>
+      </div>
+      <div class="grp"><div class="bhp-label">BHP 4 &mdash; chosen</div>
+      <div class="bar-row"><span class="k">1.00</span><span class="track"><span class="fill" style="--w:27.7%;--t:28%"></span></span><span class="v">18%</span></div>
+      <div class="bar-row"><span class="k">0.85</span><span class="track"><span class="fill" style="--w:18.5%;--t:18%"></span></span><span class="v">12%</span></div>
+      <div class="bar-row on-target"><span class="k">0.80</span><span class="track"><span class="fill" style="--w:15.4%;--t:15%"></span></span><span class="v">10%</span></div>
+      <div class="bar-row"><span class="k">0.75</span><span class="track"><span class="fill" style="--w:13.8%;--t:14%"></span></span><span class="v">9%</span></div>
+      <div class="bar-row"><span class="k">0.65</span><span class="track"><span class="fill" style="--w:9.2%;--t:9%"></span></span><span class="v">6%</span></div>
+      </div>
+      <div class="grp"><div class="bhp-label">BHP 5</div>
+      <div class="bar-row"><span class="k">1.00</span><span class="track"><span class="fill" style="--w:47.7%;--t:48%"></span></span><span class="v">31%</span></div>
+      <div class="bar-row"><span class="k">0.85</span><span class="track"><span class="fill" style="--w:26.2%;--t:26%"></span></span><span class="v">17%</span></div>
+      <div class="bar-row"><span class="k">0.75</span><span class="track"><span class="fill" style="--w:18.5%;--t:18%"></span></span><span class="v">12%</span></div>
+      <div class="bar-row"><span class="k">0.65</span><span class="track"><span class="fill" style="--w:9.2%;--t:9%"></span></span><span class="v">6%</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="panel-head"><strong>FIRE_SPREAD_SPEED = 2</strong> <span>&mdash; the original</span></div>
+      <div class="grp"><div class="bhp-label">BHP 2</div>
+      <div class="bar-row"><span class="k">1.00</span><span class="track"><span class="fill" style="--w:55.4%;--t:55%"></span></span><span class="v">36%</span></div>
+      <div class="bar-row"><span class="k">0.85</span><span class="track"><span class="fill" style="--w:41.5%;--t:42%"></span></span><span class="v">27%</span></div>
+      <div class="bar-row"><span class="k">0.75</span><span class="track"><span class="fill" style="--w:29.2%;--t:29%"></span></span><span class="v">19%</span></div>
+      <div class="bar-row"><span class="k">0.65</span><span class="track"><span class="fill" style="--w:24.6%;--t:25%"></span></span><span class="v">16%</span></div>
+      </div>
+      <div class="grp"><div class="bhp-label">BHP 3</div>
+      <div class="bar-row"><span class="k">1.00</span><span class="track"><span class="fill" style="--w:75.4%;--t:75%"></span></span><span class="v">49%</span></div>
+      <div class="bar-row"><span class="k">0.85</span><span class="track"><span class="fill" style="--w:50.8%;--t:51%"></span></span><span class="v">33%</span></div>
+      <div class="bar-row"><span class="k">0.75</span><span class="track"><span class="fill" style="--w:41.5%;--t:42%"></span></span><span class="v">27%</span></div>
+      <div class="bar-row"><span class="k">0.65</span><span class="track"><span class="fill" style="--w:29.2%;--t:29%"></span></span><span class="v">19%</span></div>
+      </div>
+      <div class="grp"><div class="bhp-label">BHP 4</div>
+      <div class="bar-row"><span class="k">1.00</span><span class="track"><span class="fill" style="--w:86.2%;--t:86%"></span></span><span class="v">56%</span></div>
+      <div class="bar-row"><span class="k">0.85</span><span class="track"><span class="fill" style="--w:61.5%;--t:62%"></span></span><span class="v">40%</span></div>
+      <div class="bar-row"><span class="k">0.75</span><span class="track"><span class="fill" style="--w:50.8%;--t:51%"></span></span><span class="v">33%</span></div>
+      <div class="bar-row"><span class="k">0.65</span><span class="track"><span class="fill" style="--w:32.3%;--t:32%"></span></span><span class="v">21%</span></div>
+      </div>
+      <div class="grp"><div class="bhp-label">BHP 5 &mdash; original defaults</div>
+      <div class="bar-row"><span class="k">1.00</span><span class="track"><span class="fill" style="--w:100%;--t:100%"></span></span><span class="v">65%</span></div>
+      <div class="bar-row"><span class="k">0.85</span><span class="track"><span class="fill" style="--w:69.2%;--t:69%"></span></span><span class="v">45%</span></div>
+      <div class="bar-row"><span class="k">0.75</span><span class="track"><span class="fill" style="--w:56.9%;--t:57%"></span></span><span class="v">37%</span></div>
+      <div class="bar-row"><span class="k">0.65</span><span class="track"><span class="fill" style="--w:36.9%;--t:37%"></span></span><span class="v">24%</span></div>
+      </div>
+    </div>
+  </div>
+</figure>
+
+<p class="footnote">
+  Left column is <code>EXTINGUISH_SCALE</code>; bars run 0&ndash;65% of runs won; the hairline marks the
+  10% target. The outlined 0.80 row is the n&nbsp;=&nbsp;400 refinement, not part of the 32-arm scan.
+</p>
+
+<p>
+  At <code>FIRE_SPREAD_SPEED = 2</code> no arm reaches the target &mdash; the lowest is 16% &mdash; so the
+  original spread speed cannot produce this scenario on a 100&times;100 grid at all. Within spread speed 1,
+  <code>BHP = 2</code> is already below target at full water strength, <code>BHP = 3</code> crosses at the
+  very edge of the range, and <code>BHP = 5</code> crosses steeply. <code>BHP = 4</code> is the only arm
+  that crosses gently in the interior.
+</p>
+
+<h3>4.4 &nbsp; Calibration</h3>
+
+<figure>
+  <figcaption>Bisection and refinement on the water scale &middot; FIRE_SPREAD_SPEED = 1, BHP = 4 &middot; n = 400 &middot; seed block 1000</figcaption>
+  <table>
+    <thead><tr><th>EXTINGUISH_SCALE</th><th>centre / edge</th><th class="num">won</th><th class="num">rate</th><th>95% Wilson</th></tr></thead>
+    <tbody>
+      <tr><th>0.65</th><td>0.62 / 0.39</td><td class="num">17/400</td><td class="num">4.2%</td><td class="ci">2.7 &ndash; 6.7</td></tr>
+      <tr><th>0.74</th><td>0.70 / 0.44</td><td class="num">21/400</td><td class="num">5.2%</td><td class="ci">3.5 &ndash; 7.9</td></tr>
+      <tr><th>0.78</th><td>0.74 / 0.47</td><td class="num">35/400</td><td class="num">8.8%</td><td class="ci">6.4 &ndash; 11.9</td></tr>
+      <tr class="mark"><th>0.80</th><td>0.76 / 0.48</td><td class="num">40/400</td><td class="num">10.0%</td><td class="ci">7.4 &ndash; 13.3</td></tr>
+      <tr><th>0.82</th><td>0.78 / 0.49</td><td class="num">39/400</td><td class="num">9.8%</td><td class="ci">7.2 &ndash; 13.1</td></tr>
+      <tr><th>0.825</th><td>0.78 / 0.50</td><td class="num">47/400</td><td class="num">11.8%</td><td class="ci">9.0 &ndash; 15.3</td></tr>
+      <tr><th>1.00</th><td>0.95 / 0.60</td><td class="num">84/400</td><td class="num">21.0%</td><td class="ci">17.3 &ndash; 25.3</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p>
+  The curve is flat between 0.78 and 0.82, which is the property worth having: the scenario does not hinge
+  on the third decimal place of a probability. The 0.82 and 0.825 rows differ by 2 points with heavily
+  overlapping intervals, which is a fair picture of the noise floor at this sample size.
+</p>
+
+<h3>4.5 &nbsp; Characterisation of the remaining dials</h3>
+
+<p class="lede">
+  One factor at a time from the tuned configuration, n&nbsp;=&nbsp;200 per arm, firefighter unmanaged,
+  seed block 1000. The tuned point itself reads 10.0% in this series.
+</p>
+
+<figure>
+  <figcaption>Fuel &mdash; and whether it binds at all</figcaption>
+  <table class="tight">
+    <thead><tr><th>UAV_FUEL</th><th class="num">rate</th><th class="num">ran dry / run</th><th class="num">refills / run</th><th class="num">driest tank left</th></tr></thead>
+    <tbody>
+      <tr><th>40</th><td class="num">9.5%</td><td class="num">0.29</td><td class="num">4.0</td><td class="num">9.8</td></tr>
+      <tr><th>60</th><td class="num">9.5%</td><td class="num">0.04</td><td class="num">4.2</td><td class="num">29.7</td></tr>
+      <tr><th>100</th><td class="num">10.0%</td><td class="num">0.01</td><td class="num">4.2</td><td class="num">69.6</td></tr>
+      <tr class="mark"><th>150</th><td class="num">10.0%</td><td class="num">0.00</td><td class="num">4.2</td><td class="num">119.9</td></tr>
+      <tr><th>250</th><td class="num">10.0%</td><td class="num">0.00</td><td class="num">4.2</td><td class="num">219.9</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p>
+  At the shipped tank a UAV uses about 30 of its 150 units across four refills, and no UAV ever runs dry.
+  The fuel model is entirely masked by the water logistics: a firefighter returns to base for water often
+  enough that it refuels for free on the way. <code>UAV_FUEL_WATER_PENALTY</code> over
+  {0.0,&nbsp;0.3,&nbsp;0.6,&nbsp;1.0} produced <strong>20/200 in every case</strong> &mdash; literally no
+  effect. Making fuel a live constraint would require decoupling refuelling from refilling, not a
+  different value.
+</p>
+
+<figure>
+  <figcaption>Wind, grid size, water logistics and positioning error</figcaption>
+  <table class="tight">
+    <thead><tr><th>Setting</th><th class="num">rate</th><th>95% Wilson</th><th>Setting</th><th class="num">rate</th><th>95% Wilson</th></tr></thead>
+    <tbody>
+      <tr><th>MU = 0.0</th><td class="num">9.0%</td><td class="ci">5.8 &ndash; 13.8</td><th>GRID 50</th><td class="num">5.0%</td><td class="ci">2.7 &ndash; 9.0</td></tr>
+      <tr><th>MU = 0.25</th><td class="num">6.0%</td><td class="ci">3.5 &ndash; 10.2</td><th>GRID 75</th><td class="num">11.0%</td><td class="ci">7.4 &ndash; 16.1</td></tr>
+      <tr class="mark"><th>MU = 0.5</th><td class="num">10.0%</td><td class="ci">6.6 &ndash; 14.9</td><th>GRID 100</th><td class="num">10.0%</td><td class="ci">6.6 &ndash; 14.9</td></tr>
+      <tr><th>MU = 0.8</th><td class="num">21.0%</td><td class="ci">15.9 &ndash; 27.2</td><th>GRID 150</th><td class="num">12.5%</td><td class="ci">8.6 &ndash; 17.8</td></tr>
+      <tr><th>WATER_CAP 3, BASE_CAP 1</th><td class="num">7.0%</td><td class="ci">4.2 &ndash; 11.4</td><th>noise 0, bias 0</th><td class="num">21.0%</td><td class="ci">15.9 &ndash; 27.2</td></tr>
+      <tr><th>WATER_CAP 3, BASE_CAP 2</th><td class="num">8.0%</td><td class="ci">5.0 &ndash; 12.6</td><th>noise 0, bias 1</th><td class="num">13.0%</td><td class="ci">9.0 &ndash; 18.4</td></tr>
+      <tr class="mark"><th>WATER_CAP 1, BASE_CAP 1</th><td class="num">10.0%</td><td class="ci">6.6 &ndash; 14.9</td><th>noise 1, bias 0</th><td class="num">10.0%</td><td class="ci">6.6 &ndash; 14.9</td></tr>
+      <tr><th>WATER_CAP 1, BASE_CAP 2</th><td class="num">12.5%</td><td class="ci">8.6 &ndash; 17.8</td><th>noise 1, bias 1</th><td class="num">7.0%</td><td class="ci">4.2 &ndash; 11.4</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<h3>4.6 &nbsp; Findings that run against the assumption</h3>
+
+<h4>A bigger grid makes the scenario easier</h4>
+<p>
+  <code>FIRE_START_POSITION</code> draws uniformly over the map, so a larger grid usually ignites further
+  from the base and the fire often never arrives. At the original spread speed a firefighter team won 37%
+  at 50&times;50 and 80% at 150&times;150 &mdash; and 83% at 150&times;150 even when given four times the
+  budget. Raising the spread speed is what decoupled the two: the tuned configuration reads 5% / 10% /
+  12.5% at 50 / 100 / 150, i.e. grid size is now close to a free choice. This was the tension behind the
+  decision recorded in &sect;1.2, and it resolved favourably.
+</p>
+
+<h4>Stronger wind makes the scenario easier, non-monotonically</h4>
+<p>
+  <code>MU = 0.8</code> doubles the win rate. A strong wind concentrates the fire into a directed ray that
+  usually misses a small base, so it is a <em>shape</em> parameter rather than an intensity one. The
+  response is not even monotone &mdash; 9.0% at 0, 6.0% at 0.25, 10.0% at 0.5, 21.0% at 0.8 &mdash; so it
+  is unsuitable as a difficulty dial in either direction.
+</p>
+
+<h4>Smoke is not a simulation feature</h4>
+<p>
+  <code>Smoke</code> is read by <code>sim/gui/portrayal.py</code> and by nothing else. It does not obscure
+  a UAV's observation, does not reach the managing system, and takes no part in how the fire spreads.
+  <code>ACTIVATE_SMOKE</code> changes what the canvas looks like and nothing about a run, so
+  &ldquo;smoke / no smoke&rdquo; could not be an experimental axis. Making smoke occlude observation would
+  be a change to <code>UAV.observe()</code> and <code>Observation</code> &mdash; a feature to build, not a
+  setting to vary.
+</p>
+
+<h4>Reducing what a UAV can see can improve its team</h4>
+<p>
+  Cutting <code>UAV_OBSERVATION_RADIUS</code> from 4 to 2 raised <code>defend-base</code> from 78% to 90%.
+  A UAV that sees no fire parks on the base &mdash; which is where it needed to be. Vision interacts with
+  policy structure rather than acting as a straightforward difficulty dial, and this is the known
+  interaction that limits the one-factor-at-a-time reading of &sect;4.5.
+</p>
+
+<h4>Positioning error accounts for about half the difficulty</h4>
+<p>
+  With the error off entirely the same team wins 21% instead of 10.9%. Roughly half the difficulty of the
+  calibrated scenario is therefore sensor error rather than fire, which is worth stating whenever a result
+  is attributed to the fire model. It is also effectively a binary dial: <code>NOISE_MAX = 2</code> lost
+  all 60 runs for both competent policies, and a fixed bias of 2 was nearly as absolute.
+</p>
+
+<h3>4.7 &nbsp; A result about the managing system, not the configuration</h3>
+
+<p>
+  The heuristic managing system is worth <strong>+6.6 points to a firefighter team</strong> (10.9% &rarr;
+  17.5%, non-overlapping intervals) and <strong>nothing at all to a defend-base team</strong> (19.6%
+  &rarr; 18.4%, intervals overlapping). Taken with an earlier finding that it <em>increases</em> collisions
+  under the shipped positioning error &mdash; 47 against an unmanaged baseline's 18, where with perfect
+  information it scores 0 against 40 &mdash; that is three independent measurements in which it helps one
+  policy, does nothing for another, and harms a third. This is recorded here as an observation arising
+  from the calibration; investigating it is separate work.
+</p>
+</section>
+
+<!-- ============================================================ -->
+<section>
+<h2>5 &nbsp; The calibrated configuration</h2>
+
+<figure>
+  <figcaption>The six settings chosen together</figcaption>
+  <table>
+    <thead><tr><th>Setting</th><th class="num">was</th><th class="num">now</th><th>Why this value</th></tr></thead>
+    <tbody>
+      <tr><th>WIDTH, HEIGHT</th><td class="num">50, 50</td><td class="num">100, 100</td><td>largest grid the 10&nbsp;px/cell canvas accommodates; difficulty is now roughly independent of size</td></tr>
+      <tr><th>BATCH_SIZE</th><td class="num">100</td><td class="num">100</td><td>unchanged, but now a calibrated value: 125 gives 4.2%, 150 gives 2.5%</td></tr>
+      <tr><th>FIRE_SPREAD_SPEED</th><td class="num">2</td><td class="num">1</td><td>at 2 the fire frequently never reaches the base on a 100&times;100 map; no arm reached the target</td></tr>
+      <tr><th>BHP</th><td class="num">5</td><td class="num">4</td><td>the value at which the win rate responds most gently to the water strength</td></tr>
+      <tr><th>WATER_EXTINGUISH_PROB_CENTRE</th><td class="num">0.95</td><td class="num">0.76</td><td rowspan="2">the fine dial; <code>EXTINGUISH_SCALE</code> = 0.80, chosen by bisection then refinement</td></tr>
+      <tr><th>WATER_EXTINGUISH_PROB_EDGE</th><td class="num">0.60</td><td class="num">0.48</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<h3>5.1 &nbsp; Settings deliberately left alone</h3>
+
+<ul>
+  <li><strong>Positioning error</strong> stays at <code>NOISE_MAX = 1</code>, <code>BIAS_MAX = 0</code>.
+    One step further is unwinnable for every policy, so 1 is the only playable non-zero value.</li>
+  <li><strong>Water drop radius, reignition delay, refill steps, base capacity</strong> &mdash; each a
+    cliff; one step of any of them overshoots the target entirely.</li>
+  <li><strong>Wind</strong> &mdash; weak, shape-changing and non-monotone (&sect;4.6).</li>
+  <li><strong>Fuel</strong> &mdash; has no effect on outcomes at any value tested (&sect;4.5).</li>
+  <li><strong>Smoke</strong> &mdash; left on because it costs nothing and looks right; it is not a
+    simulation feature.</li>
+</ul>
+
+<h3>5.2 &nbsp; Reproducing this batch</h3>
+
+<pre><span class="c"># the 32-arm coarse surface (§4.3)</span>
+python3 tools/sweep.py scan --policy firefighter --managing none --runs 100 --seed 1000 \
+    --base WIDTH=100 --base HEIGHT=100 --base BATCH_SIZE=100 \
+    --axis FIRE_SPREAD_SPEED=1,2 --axis BHP=2,3,4,5 \
+    --axis EXTINGUISH_SCALE=1.0,0.85,0.75,0.65 --out experiments/20260810/coarse
+
+<span class="c"># the fine dial, bisected to a target (§4.4)</span>
+python3 tools/sweep.py calibrate --policy firefighter --managing none --knob EXTINGUISH_SCALE \
+    --low 0.65 --high 1.0 --target 0.10 --runs 400 --seed 1000 \
+    --base WIDTH=100 --base HEIGHT=100 --base FIRE_SPREAD_SPEED=1 --base BHP=4 \
+    --out experiments/20260810/calibrate
+
+<span class="c"># run length (§4.2); --steps N is now an alias for --set BATCH_SIZE=N (§3.7)</span>
+python3 tools/sweep.py scan --policy firefighter --managing none --runs 400 --seed 1000 \
+    --axis BATCH_SIZE=100,125,150,200,300,400 --out experiments/20260810/batch-size
+
+<span class="c"># the reported figure: held-out seeds, shipped config, no overrides (§1.3)</span>
+python3 headless.py --runs 1000 --workers 8 --seed 500000 \
+    --policy firefighter --managing none --log-every 0 \
+    --output experiments/20260810/validate/firefighter__none.json</pre>
+</section>
+
+<!-- ============================================================ -->
+<section>
+<h2>Appendix A &nbsp; Full configuration</h2>
+
+<p class="lede">
+  The complete simulation state under which every figure in &sect;4.3 onwards was produced, except where a
+  table names an override. Calibrated values are marked.
+</p>
+
+<figure>
+  <table class="tight">
+    <thead><tr><th>Setting</th><th class="num">Value</th><th>Setting</th><th class="num">Value</th></tr></thead>
+    <tbody>
+      <tr><th>WIDTH, HEIGHT</th><td class="num">100, 100 &starf;</td><th>ACTIVATE_FIREFIGHTING</th><td class="num">True</td></tr>
+      <tr><th>BATCH_SIZE</th><td class="num">100 &starf;</td><th>BASE_POSITION</th><td class="num">None</td></tr>
+      <tr><th>DENSITY_PROB</th><td class="num">0.9</td><th>BASE_SIZE</th><td class="num">(2, 2)</td></tr>
+      <tr><th>FUEL_BOTTOM_LIMIT</th><td class="num">5</td><th>BHP</th><td class="num">4 &starf;</td></tr>
+      <tr><th>FUEL_UPPER_LIMIT</th><td class="num">10</td><th>BASE_CAPACITY</th><td class="num">1</td></tr>
+      <tr><th>BURNING_RATE</th><td class="num">1</td><th>BASE_REFILL_STEPS</th><td class="num">1</td></tr>
+      <tr><th>FIRE_SPREAD_SPEED</th><td class="num">1 &starf;</td><th>UAV_WATER_CAPACITY</th><td class="num">1</td></tr>
+      <tr><th>FIRE_START_POSITION</th><td class="num">'random'</td><th>WATER_DROP_RADIUS</th><td class="num">2</td></tr>
+      <tr><th>FIRE_START_STEP</th><td class="num">(10, 20)</td><th>WATER_EXT_PROB_CENTRE</th><td class="num">0.76 &starf;</td></tr>
+      <tr><th>ACTIVATE_WIND</th><td class="num">True</td><th>WATER_EXT_PROB_EDGE</th><td class="num">0.48 &starf;</td></tr>
+      <tr><th>FIXED_WIND</th><td class="num">False</td><th>REIGNITION_DELAY</th><td class="num">8</td></tr>
+      <tr><th>FIRST_DIR / SECOND_DIR</th><td class="num">south / east</td><th>SPONTANEOUS_REIGNITION_PROB</th><td class="num">0.005</td></tr>
+      <tr><th>FIRST_DIR_PROB</th><td class="num">0.8</td><th>NUM_OUT_BUILDINGS</th><td class="num">0</td></tr>
+      <tr><th>MU</th><td class="num">0.5</td><th>ACTIVATE_FUEL</th><td class="num">True</td></tr>
+      <tr><th>NUM_AGENTS</th><td class="num">4</td><th>UAV_FUEL</th><td class="num">150</td></tr>
+      <tr><th>UAV_SPEED</th><td class="num">5</td><th>UAV_FUEL_IDLE_BURN</th><td class="num">1.0</td></tr>
+      <tr><th>UAV_OBSERVATION_RADIUS</th><td class="num">4</td><th>UAV_FUEL_BURN_PER_CELL</th><td class="num">1.0</td></tr>
+      <tr><th>N_OBSERVATIONS</th><td class="num">81</td><th>UAV_FUEL_SPEED_EXPONENT</th><td class="num">1.5</td></tr>
+      <tr><th>UAV_HP</th><td class="num">3</td><th>UAV_FUEL_WATER_PENALTY</th><td class="num">0.3</td></tr>
+      <tr><th>UAV_COLLISION_DAMAGE_MEAN</th><td class="num">1.0</td><th>UAV_FUEL_RESERVE</th><td class="num">0.25</td></tr>
+      <tr><th>SECURITY_DISTANCE</th><td class="num">2</td><th>BASE_REFUEL_STEPS</th><td class="num">2</td></tr>
+      <tr><th>ACTIVATE_SMOKE</th><td class="num">True <span class="footnote">(cosmetic)</span></td><th>ACTIVATE_POSITION_ERROR</th><td class="num">True</td></tr>
+      <tr><th>MANAGING_SYSTEM</th><td class="num">'heuristic'</td><th>UAV_POSITION_BIAS_MAX</th><td class="num">0</td></tr>
+      <tr><th>DEFAULT_UAV_POLICY</th><td class="num">'firefighter'</td><th>UAV_POSITION_NOISE_MAX</th><td class="num">1</td></tr>
+      <tr><th>ADAPTATION_PERIOD</th><td class="num">1</td><th>BASE_SENSOR_RADIUS</th><td class="num">6</td></tr>
+      <tr><th>ADAPTATION_HYSTERESIS</th><td class="num">2</td><th>BASE_THREAT_RADIUS</th><td class="num">10</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p class="footnote">
+  &starf; calibrated in this batch. Fire neighbourhood radius (3) and the inverse-square falloff are
+  hard-coded in <code>sim/agents/fire.py</code> and <code>sim/fire_spread.py</code> and cannot be set from
+  <code>config.py</code>. Every sweep arm ran with <code>MANAGING_SYSTEM</code> overridden by
+  <code>--managing none</code> except where a table says otherwise.
+</p>
+
+<h2>Appendix B &nbsp; Data index</h2>
+
+<p class="lede">
+  Everything below is under <code>experiments/20260810/</code>. Each directory holds one JSON file per arm
+  (the raw <code>headless.py</code> output for every run) and, for sweeps, a <code>runs.csv</code> in long
+  format with the swept parameters joined onto each run.
+</p>
+
+<figure>
+  <table class="tight">
+    <thead><tr><th>Directory</th><th>Contents</th><th class="num">Runs</th><th>Section</th></tr></thead>
+    <tbody>
+      <tr><th>coarse/</th><td>32-arm surface, spread &times; BHP &times; water</td><td class="num">3 200</td><td>&sect;4.3</td></tr>
+      <tr><th>calibrate/</th><td>bisection probes on the water scale</td><td class="num">1 200</td><td>&sect;4.4</td></tr>
+      <tr><th>fine/</th><td>refinement either side of the crossing</td><td class="num">1 600</td><td>&sect;4.4</td></tr>
+      <tr><th>batch-size/</th><td>win rate against the step budget</td><td class="num">2 400</td><td>&sect;4.2</td></tr>
+      <tr><th>validate/</th><td>held-out seeds, four policies, managed and not</td><td class="num">7 000</td><td>&sect;1.3</td></tr>
+      <tr><th>char-fuel/</th><td>UAV_FUEL</td><td class="num">1 000</td><td>&sect;4.5</td></tr>
+      <tr><th>char-penalty/</th><td>UAV_FUEL_WATER_PENALTY</td><td class="num">800</td><td>&sect;4.5</td></tr>
+      <tr><th>char-wind/</th><td>MU</td><td class="num">800</td><td>&sect;4.5</td></tr>
+      <tr><th>char-grid/</th><td>GRID</td><td class="num">800</td><td>&sect;4.5</td></tr>
+      <tr><th>char-water/</th><td>UAV_WATER_CAPACITY &times; BASE_CAPACITY</td><td class="num">1 200</td><td>&sect;4.5</td></tr>
+      <tr><th>char-position/</th><td>NOISE_MAX &times; BIAS_MAX</td><td class="num">800</td><td>&sect;4.5</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p class="footnote">
+  The §4.1 baseline scan was run interactively and its raw output was not retained; the table reproduces
+  the logged win rates. Every other figure in this report is recoverable from the files above.
+</p>
+
+</section>
+
+</body>
+</html>

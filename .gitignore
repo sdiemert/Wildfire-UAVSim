@@ -13,3 +13,9 @@ dist/
 /.idea/modules.xml
 /.idea/inspectionProfiles/profiles_settings.xml
 /.idea/vcs.xml
+
+# sweep results from tools/sweep.py: the raw per-run JSON and the merged CSV are regenerable from the
+# commands in each batch's README, and run to tens of megabytes. The write-ups are neither -- they are the
+# record of what was decided and why -- so they stay in the repository.
+experiments/**/*.json
+experiments/**/*.csv
