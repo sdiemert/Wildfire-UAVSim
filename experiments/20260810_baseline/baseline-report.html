@@ -1,0 +1,969 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>No-UAV loss rate baseline for Wildfire-UAVSim</title>
+<style>
+  /* A print document. Single palette, no theme switching: it is rendered to PDF and read on paper. */
+  :root {
+    --ground:      #ffffff;
+    --surface:     #f5f7f6;
+    --surface-alt: #e7ebea;
+    --ink:         #14201e;
+    --ink-soft:    #4d5957;
+    --ink-faint:   #7d8987;
+    --rule:        #c6cecc;
+    --rule-soft:   #dde3e1;
+    --accent:      #0f6f73;
+    --accent-ink:  #0a5053;
+    --accent-wash: #e2eeee;
+    --ember:       #9d3d0d;
+    --ember-wash:  #f6e6dc;
+
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+    --serif: Charter, "Bitstream Charter", "Iowan Old Style", "Source Serif 4", Georgia, serif;
+  }
+
+  @page { size: A4; margin: 18mm 16mm 20mm; }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  body {
+    margin: 0 auto;
+    max-width: 46rem;
+    padding: 0 1.5rem 3rem;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 10.5pt;
+    line-height: 1.5;
+  }
+
+  /* ---- title page ---- */
+
+  .titlepage { break-after: page; padding-top: 0.75rem; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 7.5pt;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0 0 1.5rem;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 20pt;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin: 0 0 1rem;
+    text-wrap: balance;
+  }
+
+  .subtitle {
+    font-size: 12pt;
+    color: var(--ink-soft);
+    margin: 0 0 1.5rem;
+    max-width: 34rem;
+  }
+
+  .meta {
+    font-family: var(--mono);
+    font-size: 8pt;
+    line-height: 1.7;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding: 0.75rem 0;
+    margin-bottom: 1.5rem;
+    display: grid;
+    grid-template-columns: 8.5rem 1fr;
+  }
+  .meta dt { color: var(--ink-faint); }
+  .meta dd { margin: 0; }
+
+  .abstract {
+    background: var(--surface);
+    border-left: 2px solid var(--accent);
+    padding: 1.125rem 1.375rem;
+  }
+  .abstract h2 { margin-top: 0; }
+  .abstract p:last-child { margin-bottom: 0; }
+
+  .toc {
+    margin-top: 1.5rem;
+    font-family: var(--mono);
+    font-size: 8.5pt;
+    line-height: 1.75;
+    color: var(--ink-soft);
+  }
+  .toc ol { margin: 0.5rem 0 0; padding-left: 1.6rem; }
+  .toc li::marker { color: var(--ink-faint); }
+
+  /* ---- headings ---- */
+
+  h2 {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 12.5pt;
+    letter-spacing: -0.005em;
+    margin: 2rem 0 0.5rem;
+    padding-bottom: 0.375rem;
+    border-bottom: 1px solid var(--rule);
+    break-after: avoid;
+  }
+  h3 {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 9pt;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 1.5rem 0 0.5rem;
+    break-after: avoid;
+  }
+  h4 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 10.5pt;
+    margin: 1.125rem 0 0.3rem;
+    break-after: avoid;
+  }
+  section { break-before: page; }
+  section.run-on { break-before: auto; }
+
+  p { margin: 0 0 0.7rem; text-wrap: pretty; }
+  .lede { color: var(--ink-soft); }
+  ul, ol { margin: 0 0 0.8rem; padding-left: 1.25rem; }
+  li { margin-bottom: 0.3rem; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--surface-alt);
+    padding: 0.08em 0.3em;
+    border-radius: 2px;
+  }
+
+  .formula {
+    font-family: var(--mono);
+    font-size: 9pt;
+    white-space: pre-wrap;
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    padding: 0.875rem 1rem;
+    margin: 0.75rem 0 1rem;
+    line-height: 1.7;
+    overflow-x: auto;
+    break-inside: avoid;
+  }
+  .formula .c { color: var(--ink-faint); }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 8pt;
+    line-height: 1.6;
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    padding: 0.875rem 1rem;
+    overflow-x: auto;
+    margin: 0.75rem 0 1rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    break-inside: avoid;
+  }
+  pre .c { color: var(--ink-faint); }
+  pre .n { color: var(--accent-ink); }
+
+  /* ---- tables ---- */
+
+  figure { margin: 1rem 0 1.25rem; break-inside: avoid; }
+  figcaption {
+    font-family: var(--mono);
+    font-size: 7.5pt;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 0.5rem;
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: 9pt; }
+  th, td {
+    text-align: left;
+    padding: 0.3rem 0.75rem 0.3rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: baseline;
+  }
+  thead th {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 7.5pt;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--rule);
+  }
+  tbody th { font-family: var(--mono); font-weight: 400; font-size: 8.5pt; white-space: nowrap; }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  td.ci { font-family: var(--mono); font-size: 8pt; color: var(--ink-faint); white-space: nowrap; }
+  tr.mark th, tr.mark td { background: var(--accent-wash); }
+  tr.mark td.num { color: var(--accent-ink); font-weight: 700; }
+  table.tight td, table.tight th { padding-top: 0.22rem; padding-bottom: 0.22rem; }
+
+  /* ---- surface bars ---- */
+
+  .surface { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; break-inside: avoid; }
+  .panel-head {
+    font-family: var(--mono);
+    font-size: 8pt;
+    padding-bottom: 0.4rem;
+    margin-bottom: 0.6rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .panel-head span { color: var(--ink-faint); }
+  .grp { min-height: 6.45rem; }
+  .bhp-label {
+    font-family: var(--mono);
+    font-size: 7pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0.6rem 0 0.2rem;
+  }
+  .bar-row {
+    display: grid;
+    grid-template-columns: 2.2rem 1fr 2rem;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--mono);
+    font-size: 7.5pt;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 0.18rem;
+  }
+  .bar-row .k { color: var(--ink-soft); }
+  .bar-row .v { text-align: right; }
+  .track { position: relative; height: 0.5rem; background: var(--surface-alt); }
+  .fill {
+    position: absolute; inset: 0 auto 0 0; width: var(--w);
+    background: var(--accent);
+    background: color-mix(in oklab, var(--ember) var(--t), var(--accent));
+  }
+  .track::after {
+    content: ""; position: absolute; left: 15.4%; top: -1px; bottom: -1px;
+    width: 1px; background: var(--ink); opacity: 0.45;
+  }
+  .on-target .k, .on-target .v { color: var(--accent-ink); font-weight: 700; }
+  .on-target .track { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+  /* ---- callouts ---- */
+
+  .note {
+    border-left: 2px solid var(--ember);
+    background: var(--ember-wash);
+    padding: 0.875rem 1.125rem;
+    margin: 1rem 0;
+    break-inside: avoid;
+  }
+  .note h3 { margin-top: 0; color: var(--ember); }
+  .note p:last-child { margin-bottom: 0; }
+
+  .keyfact {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 0.875rem 1.125rem;
+    margin: 1rem 0;
+    break-inside: avoid;
+  }
+  .keyfact p:last-child { margin-bottom: 0; }
+
+  .footnote { font-size: 8.5pt; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+
+
+<style>
+  /* the shared stylesheet draws a target marker at 15.4% of every bar track; this document has no
+     target, so it is removed rather than explained away in a caption */
+  .track::after { content: none; }
+</style>
+
+<div class="titlepage">
+  <p class="eyebrow">Wildfire-UAVSim &middot; experiment record</p>
+  <h1>Baseline loss rate with no UAVs</h1>
+  <p class="subtitle">
+    How often the home base is destroyed on a 100&times;100 map when nothing is flown against the fire.
+    The reference point every later comparison is measured against.
+  </p>
+
+  <dl class="meta">
+    <dt>Experiment</dt><dd>20260810_baseline</dd>
+    <dt>Date</dt><dd>10 August 2026</dd>
+    <dt>Commit</dt><dd>34276b2db4bf2eab0d506ba3830bd57af6cc67ca</dd>
+    <dt>Simulator</dt><dd>Wildfire-UAVSim, mesa 1.x</dd>
+    <dt>Main arm</dt><dd>5 000 runs, seeds 1 000 000 &ndash; 1 004 999</dd>
+    <dt>Control arm</dt><dd>1 000 runs, seeds 2 000 000 &ndash; 2 000 999</dd>
+    <dt>Interval</dt><dd>Wilson score, 95%</dd>
+  </dl>
+
+  <div class="abstract">
+    <h2 style="border:0;padding:0;margin-bottom:0.5rem">Summary</h2>
+    <p>
+      With the twelve parameters below fixed and <code>NUM_AGENTS = 0</code>, the wildfire destroys the
+      home base in <strong>every one of 5 000 independently seeded runs</strong>. The loss rate is
+      <strong>100.0%</strong>, 95% Wilson interval <strong>99.92 &ndash; 100.00</strong>.
+    </p>
+    <p>
+      The result is not marginal. The fire front advances at 1.94 cells per step, the base sits 73 cells
+      from the farthest corner of the grid, and the slowest run of the 5 000 was lost at step 54 &mdash;
+      46 steps inside the 100 step budget. Nothing about the outcome depends on where the fire started:
+      the loss rate is 100% in every band of ignition distance, including the outermost.
+    </p>
+    <p>
+      A saturated measurement cannot distinguish "always lost" from "the outcome field is stuck", so a
+      control arm re-ran the same configuration truncated to 20 steps, on seeds the main arm never
+      touched. It lost 33.1% of runs (95% Wilson 30.3 &ndash; 36.1) against 31.3% predicted from the main
+      arm's step-of-loss distribution. The measurement discriminates; the scenario is simply unwinnable
+      without UAVs.
+    </p>
+  </div>
+
+  <div class="toc">
+    <strong>Contents</strong>
+    <ol>
+      <li>Objective and result</li>
+      <li>The simulation model</li>
+      <li>Parameters</li>
+      <li>Method</li>
+      <li>Statistical treatment</li>
+      <li>Results</li>
+      <li>Validity</li>
+      <li>Reproducing</li>
+    </ol>
+  </div>
+</div>
+
+<section class="run-on">
+<h2>1 &nbsp; Objective and result</h2>
+
+<p class="lede">
+  Every claim made about a UAV policy in this project is a claim about a difference: the base survived
+  <em>more often than it otherwise would have</em>. That comparison needs a fixed, measured, no-treatment
+  arm, and this experiment is it. The question is narrow &mdash; on a 100&times;100 map, with the base
+  enabled and no UAVs in the air, how often is the run lost?
+</p>
+
+<div class="keyfact">
+  <p>
+    <strong>Loss rate = 100.00%</strong> &nbsp; (5 000 / 5 000 runs), 95% Wilson interval
+    <strong>99.92% &ndash; 100.00%</strong>.
+  </p>
+  <p class="footnote" style="margin-bottom:0">
+    A run is <em>lost</em> when the home base has burned for <code>BHP = 4</code> cumulative steps. A run is
+    <em>won</em> by reaching step <code>BATCH_SIZE = 100</code> with the base still standing. There is no
+    third outcome once the firefighting extension is on.
+  </p>
+</div>
+
+<p>
+  Read the interval as the one-sided statement it effectively is. The point estimate sits on the boundary
+  of the parameter space, so the interval has no room above it; the informative half is the lower bound.
+  With 5 000 runs and no survivors, the data are consistent with a true loss rate as low as 99.92% and no
+  lower. In practical terms: if this configuration can be survived at all, it is survived less than once
+  in 1 300 attempts.
+</p>
+
+<h3>What this buys the comparisons that follow</h3>
+
+<p>
+  A no-treatment arm at exactly 100% is the most useful shape this measurement could have taken. It means
+  every subsequent win under this configuration is attributable to the UAVs, with no baseline survival to
+  subtract and no confounding by lucky ignition positions &mdash; there are no lucky ignition positions.
+  A policy's win rate <em>is</em> its effect size.
+</p>
+
+<p>
+  It also means this configuration cannot rank policies at the bottom of the range: it has no headroom
+  below. That is a property of the baseline, not a defect in it, and §7 says what to do about it.
+</p>
+</section>
+
+<section>
+<h2>2 &nbsp; The simulation model</h2>
+
+<p class="lede">
+  Only the parts of the model that are live in this experiment are described here. The UAVs, their
+  policies, the fuel and positioning-error extensions and the managing system are all inert with
+  <code>NUM_AGENTS = 0</code>, and the wind and smoke were switched off. What is left is a fire, a forest
+  and a base.
+</p>
+
+<h3>2.1 &nbsp; The forest</h3>
+
+<p>
+  The grid is 100&times;100 cells. Each cell independently receives a <code>Fire</code> agent &mdash; a
+  tree &mdash; with probability <code>DENSITY_PROB</code>. At the value used here, <code>1.0</code>, every
+  cell holds one: the map is fully wooded and the fire never encounters a firebreak. Each tree carries
+  fuel drawn uniformly from <code>[FUEL_BOTTOM_LIMIT, FUEL_UPPER_LIMIT] = [5, 10]</code> and loses
+  <code>BURNING_RATE = 1</code> unit per fire update, so a burning cell stays alight for 5 to 10 updates
+  before burning out and becoming inert.
+</p>
+
+<h3>2.2 &nbsp; Spread</h3>
+
+<p>
+  The fire updates every <code>FIRE_SPREAD_SPEED = 1</code> steps, which is every step: the fastest spread
+  the model offers. An unburnt cell <em>s</em> catches fire with probability
+</p>
+
+<div class="formula">P(s) = 1 &minus; &prod;<sub>s&prime; burning</sub> (1 &minus; w(s, s&prime;))
+
+w(s, s&prime;) = d(s, s&prime;)<sup>&minus;2</sup>  for d &le; 3, else 0    <span class="c">// Moore neighbourhood, radius 3</span></div>
+
+<p>
+  The four orthogonal neighbours are at <em>d</em> = 1, giving <em>w</em> = 1: a cell with a burning
+  orthogonal neighbour ignites with certainty. Diagonals and the radius-2 and radius-3 ring contribute
+  fractionally. The whole grid is evaluated in one convolution rather than a per-cell loop
+  (<code>sim/fire_spread.py</code>), which is why 5 000 runs of a fully wooded 100&times;100 map cost 897
+  seconds of CPU rather than a day of it.
+</p>
+
+<p>
+  With <code>ACTIVATE_WIND = False</code> the kernel is isotropic and consumes no randomness at all, so
+  spread is symmetric in every direction. The measured consequence, from §6.3, is a front that advances at
+  <strong>1.94 cells per step</strong> &mdash; faster than the orthogonal guarantee of 1, because the
+  radius-3 tail ignites cells ahead of the front.
+</p>
+
+<h3>2.3 &nbsp; Ignition</h3>
+
+<p>
+  <code>FIRE_START_POSITION = "random"</code> draws the ignition cell uniformly over the grid, excluding
+  the base footprint, using the seeded generator. <code>FIRE_START_STEP = 0</code> lights it before the
+  first step is taken, so the fire is already burning in the state the model is built in. Fixing the start
+  step removes one source of variance that has nothing to do with the treatment under test; the ignition
+  <em>position</em> is deliberately left random, because that is the scenario variation the baseline is
+  supposed to average over.
+</p>
+
+<h3>2.4 &nbsp; The base and the loss condition</h3>
+
+<p>
+  <code>ACTIVATE_FIREFIGHTING = True</code> puts a home base on the map. With
+  <code>BASE_POSITION = None</code> it is anchored a quarter of the way into the grid, at cell
+  <code>(25, 25)</code>, and covers a <code>BASE_SIZE = (2, 2)</code> footprint: cells
+  <code>(25,25) (25,26) (26,25) (26,26)</code>. The footprint burns like any other part of the map.
+</p>
+
+<p>
+  The base accumulates one point of damage for every step on which it is burning, and the run is lost the
+  moment that total reaches <code>BHP = 4</code>. The damage is cumulative rather than consecutive, which
+  matters because a burning cell goes out for a step when none of its neighbours are alight yet. All 5 000
+  losses recorded exactly 4 burning steps, confirming the threshold rather than some other stopping
+  condition ended each run.
+</p>
+
+<p>
+  The rest of the firefighting extension &mdash; water, refills, extinguishing, re-ignition, out buildings
+  &mdash; requires a UAV to act. With none in the air, none of it fires. <code>buildings_total</code> is 0
+  in every run.
+</p>
+
+<h3>2.5 &nbsp; What was switched off, and why</h3>
+
+<figure>
+  <figcaption>Inert or disabled subsystems</figcaption>
+  <table class="tight">
+    <thead><tr><th>Subsystem</th><th>State</th><th>Reason</th></tr></thead>
+    <tbody>
+      <tr><th>UAVs</th><td>0 agents</td><td>the treatment being withheld</td></tr>
+      <tr><th>policy</th><td>inert</td><td>nothing to allocate a policy to</td></tr>
+      <tr><th>managing system</th><td><code>none</code></td><td>no team to adapt</td></tr>
+      <tr><th>wind</th><td>off</td><td>asked for; also makes spread isotropic and consumes no randomness</td></tr>
+      <tr><th>smoke</th><td>off</td><td>asked for; smoke only occludes observation, and nothing observes</td></tr>
+      <tr><th>fuel extension</th><td>inert</td><td>a UAV-side extension</td></tr>
+      <tr><th>positioning error</th><td>inert</td><td>a UAV-side extension</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p class="footnote">
+  The UAV-side extensions were left at their <code>config.py</code> defaults rather than explicitly
+  disabled, because with no UAVs their settings are never read. <code>config-used.json</code> records the
+  value of all 90 settings as they stood, so a later reader can check that assumption instead of taking
+  it on trust.
+</p>
+</section>
+
+<section>
+<h2>3 &nbsp; Parameters</h2>
+
+<p class="lede">
+  Twelve settings were fixed on the command line. Everything else took its <code>config.py</code> default
+  at the recorded commit, which is itself a calibrated set &mdash; see the 20260810 calibration report.
+</p>
+
+<figure>
+  <figcaption>Fixed parameters &mdash; the experimental specification</figcaption>
+  <table>
+    <thead><tr><th>Specified as</th><th>Setting</th><th class="num">Value</th><th class="num">Default was</th></tr></thead>
+    <tbody>
+      <tr><th>Grid size 100&times;100</th><td><code>WIDTH</code>, <code>HEIGHT</code></td><td class="num">100, 100</td><td class="num">100, 100</td></tr>
+      <tr><th>Base enabled</th><td><code>ACTIVATE_FIREFIGHTING</code></td><td class="num">True</td><td class="num">True</td></tr>
+      <tr><th>Base HP 4</th><td><code>BHP</code></td><td class="num">4</td><td class="num">4</td></tr>
+      <tr><th>Fire start position random</th><td><code>FIRE_START_POSITION</code></td><td class="num">"random"</td><td class="num">"random"</td></tr>
+      <tr class="mark"><th>Fire start step 0, fixed</th><td><code>FIRE_START_STEP</code></td><td class="num">0</td><td class="num">(10, 20)</td></tr>
+      <tr><th>Batch size 100</th><td><code>BATCH_SIZE</code></td><td class="num">100</td><td class="num">100</td></tr>
+      <tr><th>Burning rate 1</th><td><code>BURNING_RATE</code></td><td class="num">1</td><td class="num">1</td></tr>
+      <tr><th>Fire spread speed 1</th><td><code>FIRE_SPREAD_SPEED</code></td><td class="num">1</td><td class="num">1</td></tr>
+      <tr class="mark"><th>Vegetation density 1</th><td><code>DENSITY_PROB</code></td><td class="num">1.0</td><td class="num">0.9</td></tr>
+      <tr class="mark"><th>Wind none</th><td><code>ACTIVATE_WIND</code></td><td class="num">False</td><td class="num">True</td></tr>
+      <tr class="mark"><th>Smoke none</th><td><code>ACTIVATE_SMOKE</code></td><td class="num">False</td><td class="num">True</td></tr>
+      <tr class="mark"><th>No UAVs</th><td><code>NUM_AGENTS</code></td><td class="num">0</td><td class="num">4</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p>
+  Five of the twelve depart from the calibrated defaults, marked above. Three of them &mdash; density,
+  wind and ignition step &mdash; make the scenario <em>harder</em> than the calibrated default in ways
+  worth naming, because the calibration report's headline figures were measured under different values
+  and do not transfer:
+</p>
+
+<ul>
+  <li>
+    <code>DENSITY_PROB</code> 0.9 &rarr; 1.0 removes every gap in the vegetation. At 0.9 roughly a tenth
+    of cells cannot burn, which thins the front and occasionally stalls it; at 1.0 nothing stops it.
+  </li>
+  <li>
+    <code>FIRE_START_STEP</code> (10, 20) &rarr; 0 gives the fire 10 to 20 more steps of spreading inside
+    the same 100 step budget. Under the default it was also a source of run-to-run variance unrelated to
+    any treatment.
+  </li>
+  <li>
+    <code>ACTIVATE_WIND</code> True &rarr; False is not obviously a hardening, and in the calibration
+    experiment it was the reverse: wind concentrates the fire into a ray that frequently misses a 2&times;2
+    base, so <em>stronger wind made the scenario easier</em>. Isotropic spread reaches the base from any
+    ignition point.
+  </li>
+</ul>
+
+<p class="footnote">
+  <code>ACTIVATE_SMOKE</code> and <code>NUM_AGENTS</code> have no effect on the fire itself. Smoke in this
+  model occludes observation and nothing else; with no observers it is a no-op either way, and it was
+  switched off so that the specification and the run agree.
+</p>
+
+<h3>3.1 &nbsp; The settings that were not specified</h3>
+
+<p>
+  Of the parameters left at default, the ones the result is actually sensitive to are the fuel limits
+  (<code>FUEL_BOTTOM_LIMIT = 5</code>, <code>FUEL_UPPER_LIMIT = 10</code>), which set how long a cell
+  burns, the spread radius of 3 baked into <code>sim/fire_spread.py</code>, and
+  <code>BASE_POSITION = None</code>, which is what puts the base at (25, 25) rather than in the middle.
+  A base at the centre of the grid would be nearer the average ignition point, not further, so that choice
+  is conservative with respect to the headline.
+</p>
+</section>
+
+<section>
+<h2>4 &nbsp; Method</h2>
+
+<h3>4.1 &nbsp; Independence</h3>
+
+<p>
+  Runs are executed by <code>headless.py</code> across 8 worker processes. Run <em>i</em> of the batch is
+  seeded <code>base_seed + i</code>, and <code>seed_simulation()</code> replaces
+  <code>config.SYSTEM_RANDOM</code> &mdash; the single generator the whole simulation draws from &mdash;
+  with a fresh <code>random.Random(seed)</code> before the model is built. Nothing is carried from one run
+  into the next: no state, no generator, no worker-local caching of the grid. The runs are independent
+  draws from the same distribution, which is the condition the binomial model in §5 requires.
+</p>
+
+<p>
+  Two properties of the arrangement are worth stating explicitly, because both have been wrong in this
+  repository before. First, the seed each run used is recorded in its own result record, and the analysis
+  script refuses to summarise a batch whose seeds are not distinct &mdash; a parallel batch that silently
+  reused a seed would inflate <em>n</em> without adding information. Second, seeding is process-global, so
+  the process executor is the only one that can run workers concurrently; the thread executor is limited
+  to one worker for exactly this reason.
+</p>
+
+<p>
+  Consecutive integer seeds feed a Mersenne Twister through <code>random.Random(seed)</code>, whose
+  initialisation scrambles them; adjacent seeds do not produce correlated streams. The evidence in this
+  batch is direct: ignition positions are uniform over the grid, and the outcome is unanimous, so no
+  seed-block artefact could be hiding in it.
+</p>
+
+<h3>4.2 &nbsp; Seed blocks</h3>
+
+<figure>
+  <table class="tight">
+    <thead><tr><th>Arm</th><th class="num">n</th><th>Seeds</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr class="mark"><th>main</th><td class="num">5 000</td><td>1 000 000 &ndash; 1 004 999</td><td>the reported loss rate</td></tr>
+      <tr><th>control</th><td class="num">1 000</td><td>2 000 000 &ndash; 2 000 999</td><td>validity check, §6.4</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p>
+  Both blocks are disjoint from the blocks used by the 20260810 calibration experiment (1 000 for fitting,
+  500 000 for validation), so this baseline shares no run with the experiment that chose the defaults it
+  is built on.
+</p>
+
+<h3>4.3 &nbsp; Choice of <em>n</em></h3>
+
+<p>
+  5 000 was fixed before the batch was run, from a pilot of 8 runs which lost all 8 &mdash; enough to
+  suggest the rate was near the boundary, not enough to estimate anything. Near <em>p</em> = 1 the useful
+  quantity is the lower confidence bound, which for a unanimous sample is
+  <em>n</em> / (<em>n</em> + <em>z</em>&sup2;) and depends on nothing but <em>n</em>:
+</p>
+
+<figure>
+  <figcaption>Wilson lower bound for a unanimous sample</figcaption>
+  <table class="tight">
+    <thead><tr><th class="num">n</th><th class="num">lower bound</th><th>reads as</th></tr></thead>
+    <tbody>
+      <tr><td class="num">100</td><td class="num">96.3%</td><td>weak; a 4% survival rate would not be excluded</td></tr>
+      <tr><td class="num">1 000</td><td class="num">99.62%</td><td>adequate</td></tr>
+      <tr class="mark"><td class="num">5 000</td><td class="num">99.92%</td><td>survival excluded above 1 run in 1 300</td></tr>
+      <tr><td class="num">20 000</td><td class="num">99.98%</td><td>four times the compute for one decimal place</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p>
+  5 000 also keeps the interval useful in the case that did not happen. Had the true rate been, say, 97%,
+  5 000 runs would have given a half-width of about &plusmn;0.5 points &mdash; fine enough to compare
+  against any policy arm run at the usual <em>n</em> = 1 000. The batch cost 897 seconds of CPU across 8
+  workers, about two and a half minutes of wall time.
+</p>
+
+<h3>4.4 &nbsp; Analysis</h3>
+
+<p>
+  <code>analyse.py</code> reads the raw JSON, refuses the batch if any run errored, if any run reports an
+  outcome other than WON or LOST, or if two runs share a seed, and writes <code>results.csv</code> in long
+  format &mdash; one row per run, with the ignition cell and its distance to the base joined on. The
+  Wilson function is imported from <code>tools/sweep.py</code> rather than reimplemented, so this
+  experiment and the repository's sweep tool cannot disagree about what a 95% interval is.
+</p>
+</section>
+
+<section>
+<h2>5 &nbsp; Statistical treatment</h2>
+
+<h3>5.1 &nbsp; The model</h3>
+
+<p>
+  Each run is a Bernoulli trial with unknown loss probability <em>p</em>, and the runs are independent by
+  construction (§4.1), so the number of losses <em>X</em> in <em>n</em> runs is Binomial(<em>n</em>,
+  <em>p</em>). The estimator is the sample proportion <em>p&#770;</em> = <em>X</em> / <em>n</em>.
+</p>
+
+<h3>5.2 &nbsp; Why Wilson</h3>
+
+<p>
+  The Wald interval, <em>p&#770;</em> &plusmn; <em>z</em>&radic;(<em>p&#770;</em>(1&minus;<em>p&#770;</em>)/<em>n</em>),
+  collapses to a point at <em>p&#770;</em> = 1: the standard error is exactly zero, and the interval it
+  reports is [100%, 100%]. That is not a confidence statement, it is a division by the very thing being
+  estimated. The Wilson score interval inverts the score test instead of assuming normality at the
+  estimate, keeps its bounds inside [0, 1], and returns a finite, correctly-shaped interval for a
+  unanimous sample. It is the interval the repository already uses for its win rates, for the mirror-image
+  reason: win rates near 0.1 with a few hundred trials are where Wald misbehaves in the other direction.
+</p>
+
+<h3>5.3 &nbsp; The interval</h3>
+
+<div class="formula">                  p&#770; + z&sup2;/2n            z        p&#770;(1 &minus; p&#770;)     z&sup2;
+    centre =  ---------------  ,   half =  ---------  &radic;  -----------  +  ------
+                 1 + z&sup2;/n                 1 + z&sup2;/n        n         4n&sup2;
+
+    CI = centre &plusmn; half,  clamped to [0, 1]        <span class="c">z = 1.96 for 95%</span></div>
+
+<p>Worked through for the main arm, with <em>X</em> = <em>n</em> = 5000 and <em>z</em> = 1.96:</p>
+
+<div class="formula">p&#770;      = 5000 / 5000                     = 1.0
+z&sup2;/n    = 3.8416 / 5000                   = 0.00076832
+centre  = (1 + 0.00038416) / 1.00076832   = 0.99961614
+half    = (1.96 / 1.00076832) &middot; &radic;(0 + 3.8416/10&#8312;)   = 1.95849 &middot; 0.00019600  = 0.00038384
+
+CI      = [0.99923, 0.99999998]  &rarr;  clamped  <span class="n">[99.92%, 100.00%]</span></div>
+
+<p>
+  Both terms under the root are worth noticing. The first, <em>p&#770;</em>(1&minus;<em>p&#770;</em>)/<em>n</em>, is
+  zero &mdash; it is the term Wald has and nothing else. The whole width of this interval comes from the
+  second, <em>z</em>&sup2;/4<em>n</em>&sup2;, the continuity-like term Wilson carries and Wald does not.
+  That is precisely why the interval is reportable at all.
+</p>
+
+<h3>5.4 &nbsp; What is <em>not</em> claimed</h3>
+
+<ul>
+  <li>
+    The interval covers sampling error in <em>p</em> under this configuration. It says nothing about
+    whether the configuration is the right one, which is a modelling question, not a statistical one.
+  </li>
+  <li>
+    The per-band intervals in §6.2 are four intervals on the same data; no multiplicity correction is
+    applied, and none is needed, because they are descriptive rather than a family of tests.
+  </li>
+  <li>
+    The control arm in §6.4 is a validity check, not a hypothesis test. Its interval is reported so the
+    agreement with the prediction can be judged, not so a <em>p</em>-value can be computed from it.
+  </li>
+</ul>
+</section>
+
+<section class="run-on">
+<h2>6 &nbsp; Results</h2>
+
+<h3>6.1 &nbsp; Headline</h3>
+
+<figure>
+  <figcaption>Main arm &mdash; 5 000 runs, no UAVs</figcaption>
+  <table>
+    <thead><tr><th>Arm</th><th class="num">n</th><th class="num">lost</th><th class="num">won</th><th class="num">loss rate</th><th>95% Wilson</th></tr></thead>
+    <tbody>
+      <tr class="mark"><th>no UAVs</th><td class="num">5 000</td><td class="num">5 000</td><td class="num">0</td><td class="num">100.00%</td><td class="ci">99.92 &ndash; 100.00</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<h3>6.2 &nbsp; Loss rate against ignition distance</h3>
+
+<p>
+  Distance is Chebyshev &mdash; the number of spread events separating the ignition cell from the nearest
+  base cell &mdash; because the fire spreads through a Moore neighbourhood. The largest distance available
+  on this grid, from the far corner, is 73.
+</p>
+
+<figure>
+  <figcaption>By distance from ignition to the base footprint</figcaption>
+  <table>
+    <thead><tr><th>Distance</th><th class="num">n</th><th class="num">lost</th><th class="num">loss rate</th><th>95% Wilson</th><th class="num">mean step of loss</th></tr></thead>
+    <tbody>
+      <tr><th>[0, 20)</th><td class="num">811</td><td class="num">811</td><td class="num">100.00%</td><td class="ci">99.53 &ndash; 100.00</td><td class="num">12.0</td></tr>
+      <tr><th>[20, 40)</th><td class="num">1 442</td><td class="num">1 442</td><td class="num">100.00%</td><td class="ci">99.73 &ndash; 100.00</td><td class="num">20.4</td></tr>
+      <tr><th>[40, 60)</th><td class="num">1 439</td><td class="num">1 439</td><td class="num">100.00%</td><td class="ci">99.73 &ndash; 100.00</td><td class="num">31.1</td></tr>
+      <tr class="mark"><th>[60, 73]</th><td class="num">1 308</td><td class="num">1 308</td><td class="num">100.00%</td><td class="ci">99.71 &ndash; 100.00</td><td class="num">39.7</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p>
+  The outermost band is the one that could have failed and did not. Ignitions 60 or more cells from the
+  base &mdash; a quarter of the grid away, in the far corners &mdash; still destroy it in every one of
+  1 308 runs, and still with 46 steps to spare. Distance changes <em>when</em> the base falls, not
+  <em>whether</em> it does.
+</p>
+
+<h3>6.3 &nbsp; Step of loss, and the speed of the front</h3>
+
+<figure>
+  <figcaption>Distribution of the step the run was lost on (n = 5 000)</figcaption>
+  <div class="grp">
+    <div class="bar-row"><span class="k">5&ndash;9</span><span class="track"><span class="fill" style="--w:19.5%;--t:20%"></span></span><span class="v">167</span></div>
+    <div class="bar-row"><span class="k">10&ndash;14</span><span class="track"><span class="fill" style="--w:61.8%;--t:30%"></span></span><span class="v">529</span></div>
+    <div class="bar-row"><span class="k">15&ndash;19</span><span class="track"><span class="fill" style="--w:87.7%;--t:40%"></span></span><span class="v">751</span></div>
+    <div class="bar-row"><span class="k">20&ndash;24</span><span class="track"><span class="fill" style="--w:75.5%;--t:50%"></span></span><span class="v">646</span></div>
+    <div class="bar-row"><span class="k">25&ndash;29</span><span class="track"><span class="fill" style="--w:80.7%;--t:60%"></span></span><span class="v">691</span></div>
+    <div class="bar-row"><span class="k">30&ndash;34</span><span class="track"><span class="fill" style="--w:86.7%;--t:70%"></span></span><span class="v">742</span></div>
+    <div class="bar-row"><span class="k">35&ndash;39</span><span class="track"><span class="fill" style="--w:100%;--t:80%"></span></span><span class="v">856</span></div>
+    <div class="bar-row"><span class="k">40&ndash;44</span><span class="track"><span class="fill" style="--w:47.0%;--t:90%"></span></span><span class="v">402</span></div>
+    <div class="bar-row"><span class="k">45&ndash;49</span><span class="track"><span class="fill" style="--w:20.4%;--t:95%"></span></span><span class="v">175</span></div>
+    <div class="bar-row"><span class="k">50&ndash;54</span><span class="track"><span class="fill" style="--w:4.8%;--t:100%"></span></span><span class="v">41</span></div>
+    <div class="bar-row"><span class="k">55+</span><span class="track"></span><span class="v">0</span></div>
+  </div>
+</figure>
+
+<p class="footnote">
+  Bar length is relative to the largest bin, 856 runs in the 35&ndash;39 band. No run survived past step 54.
+</p>
+
+<figure>
+  <table class="tight">
+    <thead><tr><th>Step of loss</th><th class="num">min</th><th class="num">median</th><th class="num">mean</th><th class="num">95th pct</th><th class="num">max</th><th class="num">budget</th></tr></thead>
+    <tbody>
+      <tr class="mark"><th>steps</th><td class="num">5</td><td class="num">27</td><td class="num">27.2</td><td class="num">44</td><td class="num">54</td><td class="num">100</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p>
+  Regressing the step of loss on the ignition distance over all 5 000 runs gives
+</p>
+
+<div class="formula">step_of_loss  =  5.34  +  0.5161 &middot; distance        <span class="c">Pearson r = 0.964</span>
+
+1 / 0.5161  =  <span class="n">1.94 cells per step</span>                  <span class="c">the speed of the fire front</span></div>
+
+<p>
+  The two coefficients are both interpretable, which is the reason to report them. The slope inverts to a
+  front speed of 1.94 cells per step &mdash; faster than the orthogonal certainty of one cell per step,
+  because the radius-3 tail of the kernel lights cells ahead of the front. The intercept of 5.34 steps is
+  the fixed cost at the base once the fire arrives: <code>BHP = 4</code> burning steps plus roughly one
+  step of arrival and re-ignition. An <em>r</em> of 0.964 says the ignition position determines almost the
+  whole outcome trajectory, with the stochastic part of the spread contributing only the remainder.
+</p>
+
+<div class="keyfact">
+  <p>
+    <strong>The 100 step budget is not what decides this arm.</strong> The slowest of 5 000 runs was lost
+    at step 54, against a budget of 100, and the ignition distances sampled reach the maximum the grid
+    allows. The loss rate would still be 100% on these seeds at any <code>BATCH_SIZE</code> from 54
+    upwards, and the margin is wide enough that a modest extra allowance for stochastic variation changes
+    nothing. The result therefore does not turn on the run-length calibration, which is the one parameter
+    the calibration report calls the strongest difficulty setting there is.
+  </p>
+</div>
+
+<h3>6.4 &nbsp; Control arm: does the measurement discriminate?</h3>
+
+<p>
+  A rate of exactly 100% with zero variance is the same reading a broken outcome field would give. The
+  control arm distinguishes them. It repeats the configuration unchanged except for
+  <code>BATCH_SIZE = 20</code>, on 1 000 seeds from a block the main arm never touched. Twenty steps is
+  inside the body of the step-of-loss distribution, so a substantial share of runs should end with the
+  base still standing &mdash; and the share that should not is predictable from the main arm without
+  running anything: it is the fraction of main-arm runs lost at or before step 20.
+</p>
+
+<figure>
+  <figcaption>Control arm &mdash; same configuration truncated to 20 steps</figcaption>
+  <table>
+    <thead><tr><th>Source</th><th class="num">n</th><th class="num">lost</th><th class="num">loss rate</th><th>95% Wilson</th></tr></thead>
+    <tbody>
+      <tr><th>predicted from main arm</th><td class="num">5 000</td><td class="num">1 567</td><td class="num">31.34%</td><td class="ci">&mdash;</td></tr>
+      <tr class="mark"><th>observed, seeds 2 000 000+</th><td class="num">1 000</td><td class="num">331</td><td class="num">33.10%</td><td class="ci">30.25 &ndash; 36.08</td></tr>
+    </tbody>
+  </table>
+</figure>
+
+<p>
+  The prediction falls inside the observed interval. Three things follow. The outcome field records WON
+  when a run is won, so the unanimity in §6.1 is a property of the scenario and not of the instrument. The
+  two seed blocks agree, so neither carries a block-specific artefact. And the step-of-loss distribution
+  in §6.3 is calibrated well enough to predict an independent experiment, which is what licenses the
+  run-length claim in the box above.
+</p>
+</section>
+
+<section>
+<h2>7 &nbsp; Validity</h2>
+
+<h3>7.1 &nbsp; The baseline has no headroom below</h3>
+
+<p>
+  This is the one limitation that will bite. A no-treatment arm at 100% cannot rank interventions that all
+  fail: a policy that saves 0 runs in 1 000 and a policy that saves 1 are separated by this baseline
+  hardly at all. It is an excellent reference for <em>attribution</em> &mdash; every win is the UAVs'
+  &mdash; and a poor one for <em>discrimination</em> at the weak end of the range.
+</p>
+
+<p>
+  If a later experiment needs discrimination there, the lever is not the baseline but the difficulty. The
+  calibration report ranks the dials; the three fixed here that differ from the calibrated defaults
+  &mdash; density 1.0, ignition at step 0, wind off &mdash; are each worth several points of win rate and
+  are the first places to look. Re-measuring this baseline is a prerequisite for any such change, since
+  none of the numbers on this page transfer.
+</p>
+
+<h3>7.2 &nbsp; Scope</h3>
+
+<ul>
+  <li>
+    <strong>One configuration.</strong> Every figure is conditional on the parameter set in §3 at commit
+    <code>34276b2</code>. The calibration report's finding that a <em>larger</em> grid and a
+    <em>stronger</em> wind both make the scenario easier is the standing warning against extrapolating any
+    of these dials by intuition.
+  </li>
+  <li>
+    <strong>Ignition position is the only randomised scenario factor.</strong> Fixing the start step at 0
+    was requested and reduces variance, but it also means this baseline says nothing about a fire that
+    starts mid-run, which is the default configuration's behaviour.
+  </li>
+  <li>
+    <strong>The lower bound is a sampling bound.</strong> 99.92% bounds sampling error at <em>n</em> =
+    5 000. It does not bound the probability that the simulator itself has a defect that makes the base
+    unsaveable, which no amount of sampling can address. §6.4 addresses the nearest version of that
+    concern that is testable from outside.
+  </li>
+</ul>
+
+<h3>7.3 &nbsp; Things that were checked</h3>
+
+<ul>
+  <li>All 5 000 runs completed without error; <code>analyse.py</code> refuses the batch otherwise.</li>
+  <li>All 5 000 seeds are distinct, so <em>n</em> = 5 000 independent draws is the true sample size.</li>
+  <li>All 5 000 losses recorded exactly <code>base_burning_steps = 4</code>, matching <code>BHP</code>: the
+      runs ended on the loss condition and not on some other stopping rule.</li>
+  <li>Ignition distances span 1 to 73, the full range the grid allows, with no gap in the distribution.</li>
+  <li>The control arm registers wins, on an independent seed block, at the predicted rate.</li>
+</ul>
+</section>
+
+<section>
+<h2>8 &nbsp; Reproducing</h2>
+
+<p>From the repository root, at commit <code>34276b2db4bf2eab0d506ba3830bd57af6cc67ca</code>:</p>
+
+<pre><span class="c"># main arm -- 5 000 runs, no UAVs, about 2.5 minutes of wall time on 8 workers</span>
+python3 headless.py \
+    --runs 5000 --workers 8 --seed 1000000 --policy random --managing none \
+    --log-every 0 --log-level ERROR \
+    --set WIDTH=100 --set HEIGHT=100 --set BATCH_SIZE=100 --set NUM_AGENTS=0 \
+    --set ACTIVATE_FIREFIGHTING=True --set BHP=4 \
+    --set 'FIRE_START_POSITION=random' --set FIRE_START_STEP=0 \
+    --set BURNING_RATE=1 --set FIRE_SPREAD_SPEED=1 --set DENSITY_PROB=1.0 \
+    --set ACTIVATE_WIND=False --set ACTIVATE_SMOKE=False \
+    --output experiments/20260810_baseline/runs/no-uav.json
+
+<span class="c"># control arm -- same, truncated to 20 steps, on a disjoint seed block</span>
+python3 headless.py \
+    --runs 1000 --workers 8 --seed 2000000 --policy random --managing none \
+    --log-every 0 --log-level ERROR \
+    --set WIDTH=100 --set HEIGHT=100 --set BATCH_SIZE=20 --set NUM_AGENTS=0 \
+    ... <span class="c">(the remaining --set flags unchanged)</span> \
+    --output experiments/20260810_baseline/runs/control-20-steps.json
+
+<span class="c"># analysis: results.csv and summary.json</span>
+python3 experiments/20260810_baseline/analyse.py
+
+<span class="c"># the full configuration as it was applied, for a later diff</span>
+python3 experiments/20260810_baseline/dump_config.py</pre>
+
+<p class="footnote">
+  <code>--policy random</code> is recorded for completeness only; with <code>NUM_AGENTS = 0</code> no
+  policy is ever consulted. Set the run length through <code>BATCH_SIZE</code>: the model stops itself at
+  its own <code>BATCH_SIZE</code>, and <code>--steps</code> is an alias for the same setting.
+</p>
+
+<figure>
+  <figcaption>Files</figcaption>
+  <table class="tight">
+    <thead><tr><th>Path</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><th>runs/no-uav.json</th><td>raw headless output, 5 000 records</td></tr>
+      <tr><th>runs/control-20-steps.json</th><td>raw headless output, 1 000 records</td></tr>
+      <tr><th>results.csv</th><td>long format, one row per main-arm run, distance joined on</td></tr>
+      <tr><th>summary.json</th><td>every number quoted in §6</td></tr>
+      <tr><th>config-used.json</th><td>all 90 settings as applied, plus the commit</td></tr>
+      <tr><th>analyse.py</th><td>produces results.csv and summary.json</td></tr>
+      <tr><th>dump_config.py</th><td>produces config-used.json</td></tr>
+      <tr><th>baseline-report.html / .pdf</th><td>this document, and its source</td></tr>
+    </tbody>
+  </table>
+</figure>
+</section>
+</body>
+</html>
