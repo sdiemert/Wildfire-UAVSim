@@ -88,6 +88,9 @@ before the fix does not, having run for `min(--steps, BATCH_SIZE)` and scored a 
   water; `UAV_FUEL` from 40 to 250 and `UAV_FUEL_WATER_PENALTY` from 0.0 to 1.0 move the win rate by
   nothing.
 - **Smoke is not a simulation feature** — `sim/gui/portrayal.py` reads it and nothing else does.
+  *Since fixed:* smoke now drifts downwind and occludes what the UAVs and the base sensor can observe
+  (`sim/smoke.py`, `SMOKE_OCCLUDES_OBSERVATION`, on by default). Every win rate on this page was measured
+  before that and holds only with `SMOKE_OCCLUDES_OBSERVATION=False`; the calibration has not been re-run.
 - **Positioning error is about half the difficulty**: 21% with it off against 10.9% with it on.
 - The heuristic managing system is worth **+6.6 points to firefighter and nothing to defend-base**. An
   observation about the managing system, not the configuration; investigating it is separate work.

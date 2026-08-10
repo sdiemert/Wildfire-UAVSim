@@ -45,13 +45,14 @@ def round_trip(message):
 def test_a_uav_report_survives_the_wire():
     report = UavReport(uav_id=3, pos=(4, 5), hp=2, water=1, policy="firefighter",
                        params={"speed_cap": 2}, fuel=12.5, fuel_capacity=150.0,
-                       sees_fire=[(6, 6), (7, 7)], sees_uavs=[(4, 6)], sees_buildings=[(1, 1)])
+                       sees_fire=[(6, 6), (7, 7)], sees_uavs=[(4, 6)], sees_buildings=[(1, 1)],
+                       sees_occluded=[(8, 8), (8, 9)])
     assert round_trip(report) == report
 
 
 def test_a_base_report_survives_the_wire():
     base = BaseReport(cells=[(2, 2), (2, 3)], burning_steps=2, bhp=5, destroyed=False,
-                      serving=1, fire_near_base=[(3, 3)])
+                      serving=1, fire_near_base=[(3, 3)], occluded_near_base=[(4, 4)])
     assert round_trip(base) == base
 
 
@@ -116,6 +117,27 @@ def test_known_fire_is_everything_anybody_can_see(snapshot):
                      fire_near_base=[(3, 3)])
     # the duplicate (6, 6) is counted once, and the base's own sensor contributes (3, 3)
     assert state.known_fire() == {(6, 6), (9, 9), (3, 3)}
+
+
+def test_known_blind_is_everywhere_somebody_looked_and_learned_nothing(snapshot):
+    state = snapshot(uavs=[{"pos": (5, 5), "sees_occluded": [(6, 6)]},
+                           {"pos": (8, 8), "sees_occluded": [(6, 6), (9, 9)]}],
+                     occluded_near_base=[(3, 3)])
+    assert state.known_blind() == {(6, 6), (9, 9), (3, 3)}
+
+
+def test_a_cell_nobody_could_see_through_is_not_a_cell_anybody_saw_burning(snapshot):
+    """The two sets are disjoint by construction, which is the whole point of carrying both.
+
+    A cell missing from known_fire() used to mean "not burning, or nobody looked". It can now also mean
+    "somebody looked straight at it and could not see", and known_blind() is the only thing that separates
+    the third case from the second.
+    """
+    state = snapshot(uavs=[{"pos": (5, 5), "sees_fire": [(6, 6)], "sees_occluded": [(7, 7)]}],
+                     fire_near_base=(), occluded_near_base=[(3, 3)])
+    assert state.known_fire() == {(6, 6)}
+    assert state.known_blind() == {(7, 7), (3, 3)}
+    assert not state.known_fire() & state.known_blind()
 
 
 def test_the_base_reports_how_far_the_nearest_fire_is():

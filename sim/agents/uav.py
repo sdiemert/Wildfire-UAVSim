@@ -218,6 +218,16 @@ class UAV(mesa.Agent):
     # corrupted is the receiver, not the camera. For the same reason the observed area below stays centred
     # on the true position: the camera really did see that ground, whatever the UAV believes about where it
     # was standing when it did.
+    #
+    # With the smoke occlusion extension on, a cell the plume covers is left out of every list this builds
+    # and named in 'occluded' instead. That is the opposite corruption to the positioning error: here it is
+    # the camera that fails and the receiver that is sound, so the UAV knows exactly which ground it could
+    # not read. Note what the omission costs. A policy reading 'cells' cannot tell an occluded cell from
+    # bare ground -- deliberately, since whether there is anything there to burn is part of what the smoke
+    # hid -- and, less obviously, 'uav_positions' is no longer a complete account of the team inside the
+    # window. A team mate in smoke is not reported, occupied() calls its cell clear, and the deconfliction
+    # in SuperPolicy can fly a UAV straight into it. Collisions through smoke are a consequence of the
+    # extension rather than a defect in it.
     def observe(self):
         cells = []
         # obtains adjacent cells s' from a concrete cell s (self.pos)
@@ -229,7 +239,20 @@ class UAV(mesa.Agent):
         # buildings in view, which a policy may want to defend
         buildings = []
         neighbours = []
+        # the cells the smoke hid, which is a different thing from the cells there was nothing on. Note it
+        # is built by walking the window rather than by walking the agents found on it: a cell under smoke
+        # is reported the same way whether it held burning vegetation, unburnt vegetation or nothing at all,
+        # so that 'occluded' cannot itself leak the fire state it exists to withhold. An optimisation that
+        # built it from the Fire agents instead would say "there is something here to burn" about every
+        # entry, which is exactly what a UAV in smoke does not know.
+        occluded = []
         for cell in adjacent_cells:
+            if self.model.occluded(cell):
+                # nothing in this cell is reported: the fire, the vegetation under it, the team mates
+                # standing on it and the out buildings on it alike. Smoke is not a filter over one layer of
+                # the map, it is a cell the camera cannot see into at all
+                occluded.append(cell)
+                continue
             for agent in self.model.grid.get_cell_list_contents([cell]):
                 if type(agent) is Fire:
                     cells.append((cell, int(agent.is_burning() is True)))
@@ -254,11 +277,11 @@ class UAV(mesa.Agent):
         # own and is burned with or without the firefighting extension.
         if not config.ACTIVATE_FIREFIGHTING:
             return Observation(uav_id=self.unique_id, pos=self.measured_pos(), cells=cells,
-                               uav_positions=neighbours,
+                               uav_positions=neighbours, occluded=occluded,
                                fuel=fuel, fuel_capacity=capacity)
 
         return Observation(uav_id=self.unique_id, pos=self.measured_pos(), cells=cells,
-                           uav_positions=neighbours,
+                           uav_positions=neighbours, occluded=occluded,
                            fuel=fuel, fuel_capacity=capacity,
                            has_water=self.has_water(),
                            water=self.water, water_capacity=config.UAV_WATER_CAPACITY,

@@ -15,6 +15,15 @@ import config
 from sim.adapters import AllocationEffector, ModelSensor
 from sim.managing.contract import Allocation, UavDirective
 from sim.policy import PolicyParams, SuperPolicy
+from sim.smoke import SmokeField
+
+
+# switches smoke occlusion on over a model that was built without it. The conftest make_model fixture pins
+# SMOKE_OCCLUDES_OBSERVATION off, and the plume field is built once in reset(), so overriding the setting
+# afterwards has to build the field as well.
+def start_occluding(model):
+    model.smoke_field = SmokeField(config.HEIGHT, config.WIDTH)
+    return model
 
 
 @pytest.fixture
@@ -87,6 +96,48 @@ def test_the_base_sensor_sees_fire_no_uav_is_near(managed, sim_config):
     # light a cell near the base; no UAV need be anywhere near it
     model.fire_agent_at((5, 3)).burning = True
     assert (5, 3) in sensor.read().base.fire_near_base
+
+
+def test_the_base_sensor_is_a_camera_and_smoke_blinds_it(managed, sim_config):
+    """The base's own sensor is the one channel not filtered through the team, and smoke closes it too.
+
+    The interesting failure the extension produces: a base that cannot see whether the fire has reached it,
+    at exactly the moment it has. nearest_fire_distance() answering infinity stops being proof that nothing
+    is coming, which is why the blinded cells are reported rather than merely omitted.
+    """
+    model, _, sensor, _ = managed
+    sim_config(BASE_SENSOR_RADIUS=4, ACTIVATE_SMOKE=True, SMOKE_OCCLUDES_OBSERVATION=True,
+               ACTIVATE_WIND=True, FIXED_WIND=True, WIND_DIRECTION="south",
+               SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6, SMOKE_OCCLUSION_THRESHOLD=0.5)
+    sensor._sensed_cells = (None, ())
+    start_occluding(model)
+
+    model.fire_agent_at((3, 5)).burning = True
+    assert (3, 5) in sensor.read().base.fire_near_base
+
+    # a plume raised two cells downwind of the base runs over the burning cell
+    model.fire_agent_at((3, 7)).smoke.smoke = True
+    model.update_smoke()
+
+    base = sensor.read().base
+    assert (3, 5) not in base.fire_near_base, "the base saw a fire through a plume"
+    assert (3, 5) in base.occluded_near_base
+
+
+def test_what_a_uav_could_not_see_reaches_the_managing_system(managed, sim_config):
+    model, _, sensor, _ = managed
+    sim_config(ACTIVATE_SMOKE=True, SMOKE_OCCLUDES_OBSERVATION=True, ACTIVATE_WIND=True,
+               FIXED_WIND=True, WIND_DIRECTION="south", SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6,
+               SMOKE_OCCLUSION_THRESHOLD=0.5)
+    start_occluding(model)
+
+    uav = model.uavs[0]
+    model.fire_agent_at(uav.pos).smoke.smoke = True
+    model.update_smoke()
+
+    report = sensor.read().by_id(uav.unique_id)
+    assert uav.pos in report.sees_occluded
+    assert set(report.sees_occluded) == set(uav.observe().occluded)
 
 
 def test_the_base_is_reported_with_its_damage(managed):

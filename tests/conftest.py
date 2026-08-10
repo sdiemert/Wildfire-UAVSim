@@ -41,11 +41,16 @@ def observation():
     only cares whether there is water at all can leave them alone and say has_water=True: 'water' then
     follows it, and water_fraction() answers 1.0 or 0.0 without a capacity. Pass them to say a UAV is
     carrying a part load.
+
+    'occluded' is the cells the smoke hid. A test that wants "a burning cell this UAV cannot see" passes the
+    cell in 'occluded' and leaves it out of 'burning', which is exactly what the real UAV.observe() does: an
+    occluded cell appears in no other list, so it is indistinguishable from bare ground everywhere except
+    here.
     """
 
     def _make(pos, burning=(), unburnt=(), uav_id=0, uavs=(), fuel=None, fuel_capacity=None,
               has_water=False, water=None, water_capacity=None, base_pos=None, base_cells=(),
-              building_positions=()):
+              building_positions=(), occluded=()):
         cells = [(tuple(cell), 1) for cell in burning]
         cells += [(tuple(cell), 0) for cell in unburnt]
         if fuel is not None and fuel_capacity is None:
@@ -54,6 +59,7 @@ def observation():
             water = 1 if has_water else 0
         return Observation(uav_id=uav_id, pos=tuple(pos), cells=cells,
                            uav_positions=[tuple(cell) for cell in uavs],
+                           occluded=[tuple(cell) for cell in occluded],
                            fuel=fuel, fuel_capacity=fuel_capacity,
                            has_water=has_water, water=water, water_capacity=water_capacity,
                            base_pos=None if base_pos is None else tuple(base_pos),
@@ -77,12 +83,16 @@ def snapshot():
     Each entry of 'uavs' is a dictionary of UavReport fields; anything left out keeps a sensible default,
     so a test names only what it is actually about. Passing base_cells=None leaves the snapshot without a
     base, which is what the firefighting extension being switched off looks like.
+
+    A UAV's occluded cells need no parameter here -- 'sees_occluded' is a UavReport field like any other and
+    goes in the dictionary. 'occluded_near_base' does need one, because the base's fields are spelled out
+    below; it is the cells the base's own sensor could not see through the smoke.
     """
 
     from sim.managing.contract import BaseReport, FleetSnapshot, UavReport
 
     def _make(uavs=(), step=0, grid_size=(50, 50), base_cells=((2, 2),), fire_near_base=(),
-              burning_steps=0, bhp=None, destroyed=False):
+              burning_steps=0, bhp=None, destroyed=False, occluded_near_base=()):
         reports = []
         for index, fields in enumerate(uavs):
             fields = dict(fields)
@@ -96,7 +106,8 @@ def snapshot():
         if base_cells is not None:
             base = BaseReport(cells=base_cells, burning_steps=burning_steps,
                               bhp=config.BHP if bhp is None else bhp,
-                              destroyed=destroyed, fire_near_base=fire_near_base)
+                              destroyed=destroyed, fire_near_base=fire_near_base,
+                              occluded_near_base=occluded_near_base)
 
         return FleetSnapshot(step=step, grid_size=grid_size, uavs=tuple(reports), base=base)
 
@@ -149,9 +160,16 @@ def make_model(sim_config):
         # random rather than failing honestly. Nothing here seeds SYSTEM_RANDOM, so the same test passed and
         # failed between runs. Tests about the error switch it back on and say what magnitudes they want,
         # the way tests/agents/test_uav_position_error.py does.
+        #
+        # Smoke occlusion is pinned off for the third time over the same argument. config.py ships it on,
+        # the fire here is lit at the centre on step 0, and a plume drifting over a 9x9 grid takes cells out
+        # of every observation it touches -- so a test asserting what a UAV sees, which team mate is in
+        # view, or what the base sensor reports would start depending on how far the fire had got. Tests
+        # about the occlusion switch it back on and place the smoke themselves, the way
+        # tests/agents/test_uav_smoke_occlusion.py does.
         settings = {"WIDTH": 9, "HEIGHT": 9, "NUM_AGENTS": 1, "BATCH_SIZE": 10_000,
                     "DENSITY_PROB": 1.0, "FIRE_START_POSITION": None, "FIRE_START_STEP": 0,
-                    "ACTIVATE_POSITION_ERROR": False}
+                    "ACTIVATE_POSITION_ERROR": False, "SMOKE_OCCLUDES_OBSERVATION": False}
         settings.update(overrides)
         sim_config(**settings)
 

@@ -8,8 +8,10 @@ One module per kind of agent, all of them mesa.Agent subclasses that the schedul
   BaseTile     one non-anchor cell of the base footprint, so that the whole of it is drawn
   OutBuilding  a building on the map that burns and is worth defending
 
-The wind and the smoke are not here: they hold no cell and are not stepped, so they live in
-sim/environment.py.
+The wind and the smoke are not here: they hold no cell and are not stepped. The wind, and the per cell
+timer that says whether a cell is *raising* smoke, live in sim/environment.py; where that smoke then drifts
+to, which is what decides whether a cell can be observed at all, is worked out over the whole grid at once
+in sim/smoke.py.
 
 Everything is re-exported, so `from sim import agents` then `agents.UAV` reaches any of them without
 having to know which module it is in. The identity of these classes matters, because the code tests agent

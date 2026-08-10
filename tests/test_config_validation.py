@@ -100,6 +100,55 @@ def test_the_composed_wind_settings_exist_under_fixed_wind():
         assert hasattr(config, name)
 
 
+# --- smoke ------------------------------------------------------------------
+
+
+def test_a_wind_strength_for_smoke_outside_zero_to_one_is_refused(sim_config):
+    sim_config(ACTIVATE_SMOKE=True, SMOKE_MU=1.5)
+    with pytest.raises(ValueError, match="SMOKE_MU"):
+        config.validate()
+
+
+def test_a_negative_drift_radius_is_refused(sim_config):
+    sim_config(ACTIVATE_SMOKE=True, SMOKE_DRIFT_RADIUS=-1)
+    with pytest.raises(ValueError, match="SMOKE_DRIFT_RADIUS"):
+        config.validate()
+
+
+@pytest.mark.parametrize("threshold", [0.0, 1.5])
+def test_an_occlusion_threshold_outside_its_range_is_refused(sim_config, threshold):
+    """Zero would bury the whole grid the moment one cell smoked, since every cell out of range is at 0."""
+    sim_config(ACTIVATE_SMOKE=True, SMOKE_OCCLUSION_THRESHOLD=threshold)
+    with pytest.raises(ValueError, match="SMOKE_OCCLUSION_THRESHOLD"):
+        config.validate()
+
+
+def test_the_plume_settings_are_ignored_when_smoke_is_off(sim_config):
+    """Nothing raises smoke, so nothing reads them and a stale value is not worth refusing a run over."""
+    sim_config(ACTIVATE_SMOKE=False, SMOKE_MU=99, SMOKE_DRIFT_RADIUS=-4, SMOKE_OCCLUSION_THRESHOLD=0)
+    config.validate()
+
+
+def test_occlusion_without_any_smoke_to_see_through_is_allowed(sim_config):
+    """The extension switched on with nothing to raise smoke: the control arm a sweep over it wants.
+
+    The same latitude ACTIVATE_FUEL gets without ACTIVATE_FIREFIGHTING, and the positioning error gets at
+    zero magnitude.
+    """
+    sim_config(ACTIVATE_SMOKE=False, SMOKE_OCCLUDES_OBSERVATION=True)
+    config.validate()
+
+
+def test_smoke_carried_less_far_than_the_fire_is_allowed(sim_config):
+    """SMOKE_MU is meant to sit above MU, and that is documented rather than enforced.
+
+    A sweep showing that smoke drifting harder than the fire is what costs the team its monitoring has to
+    be able to run the other side of the boundary to say so.
+    """
+    sim_config(ACTIVATE_SMOKE=True, ACTIVATE_WIND=True, MU=0.9, SMOKE_MU=0.1, SMOKE_DRIFT_RADIUS=1)
+    config.validate()
+
+
 # --- UAVs -------------------------------------------------------------------
 
 

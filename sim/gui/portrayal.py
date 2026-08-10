@@ -58,7 +58,16 @@ def agent_portrayal(agent):
             color = config.OUT_BUILDING_DESTROYED_COLOR if agent.destroyed else config.OUT_BUILDING_COLOR
             portrayal.update({"Color": color, "Layer": 1, "h": 0.7, "w": 0.7})
         elif type(agent) is agents.Fire:  # showing smoke
-            if agent.smoke.is_smoke_active():
+            # what is drawn is the drifted plume the team is actually blinded by, not the cell's own timer,
+            # so that the one view a run is read from agrees with what the UAVs could see. With occlusion
+            # off there is no plume to ask about and the timer is the picture it always was.
+            #
+            # Only a cell holding a Fire agent gets a portrayal at all, so smoke that has drifted over bare
+            # ground is not drawn even though it blinds. Immaterial at the shipped DENSITY_PROB of 0.9, and
+            # visible as gaps in the plume on a sparse map.
+            smoky = (agent.model.occluded(agent.pos) if config.SMOKE_OCCLUDES_OBSERVATION
+                     else agent.smoke.is_smoke_active())
+            if config.ACTIVATE_SMOKE and smoky:
                 # the two following lines of code could be used to set the normalized index for different smoke colors.
                 # only one color is used by default.
                 # idx = normalize_fuel_values(agent.smoke.get_dispelling_counter_value(),

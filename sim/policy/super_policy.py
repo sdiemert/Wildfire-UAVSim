@@ -165,6 +165,13 @@ class SuperPolicy(Policy):
     # the observation said nothing about, so the UAV can fly into a team mate it was never told was there.
     # The same reasoning as in FirefighterPolicy.within_sight(), applied here to the whole team, whatever
     # policy each of them is flying.
+    #
+    # Note what this stopped guaranteeing once smoke could occlude. The cap rests on the window being a
+    # region the observation described, and a cell inside it that the smoke hid is one the observation said
+    # nothing about either -- so deconflict() above can route a UAV into a team mate standing in a plume, at
+    # any speed. Staying inside the window is still necessary and is no longer sufficient. There is nothing
+    # to do about it here: a policy cannot see through smoke, and pretending the trim is safe would be worse
+    # than knowing it is not.
     def within_sight(self, action):
         if not action.is_movement():
             return action

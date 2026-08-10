@@ -253,6 +253,11 @@ up the last cell or two of speed is cheaper than the collision.
 
 - `config.UAV_SPEED` may exceed `config.UAV_OBSERVATION_RADIUS`. If it could not, this rule would never bite
   and could be dropped.
+- Every cell inside the window is reported. With `config.SMOKE_OCCLUDES_OBSERVATION` on this stops holding:
+  smoke takes cells out of the observation, and a teammate standing in one of them is absent from
+  `observation.uav_positions` however close it is. Staying inside the window is then necessary for this rule
+  to bite and no longer sufficient for the flight to be safe, so the rule is worth keeping and worth less.
+  Nothing here changes: seeing further is not something a policy can do about smoke.
 
 ```yaml
 id: POL-FF-13

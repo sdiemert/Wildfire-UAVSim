@@ -1,9 +1,15 @@
-"""The wind and the smoke.
+"""The wind, and the cells raising smoke.
 
 Neither is a mesa.Agent: they hold no cell on the grid and are not stepped by the scheduler. The wind is a
 single object the model owns and every burning cell consults, and a Smoke belongs to the Fire cell that
 made it, which steps it. They live together here because both are environmental conditions layered over the
 fire rather than things standing on the map.
+
+Smoke here is only the *emitter*: one timer per cell, which says whether that cell is raising smoke and for
+how much longer. Where the smoke goes is a separate question with a separate answer, because it does not
+stay over the cell that raised it -- it blows downwind, over ground that may hold nothing and may never
+burn, and the cells it covers cannot be observed at all. That field is worked out for the whole grid at
+once in sim/smoke.py, from the mask of the cells this class turns on.
 """
 
 # own python modules

@@ -170,3 +170,38 @@ def test_the_probability_map_is_unaffected(model, sim_config):
     sim_config(PROBABILITY_MAP=True)
     for agent in built.schedule.agents:
         agent_portrayal(agent)
+
+
+# --- smoke ------------------------------------------------------------------
+
+
+def test_the_map_draws_the_plume_the_team_is_actually_blinded_by(make_model, sim_config):
+    """A cell not raising smoke, but standing under one that is, has to be drawn smoky.
+
+    The map is the one view a run is read from, so drawing the per cell timer while the UAVs are blinded by
+    a drifted plume would have the picture disagree with the mechanic the run now turns on.
+    """
+    from sim.smoke import SmokeField
+
+    built = make_model(NUM_AGENTS=0, WIDTH=15, HEIGHT=15, ACTIVATE_SMOKE=True,
+                       SMOKE_OCCLUDES_OBSERVATION=True, ACTIVATE_WIND=True, FIXED_WIND=True,
+                       WIND_DIRECTION="south", SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6,
+                       SMOKE_OCCLUSION_THRESHOLD=0.5, FIRE_START_POSITION=(14, 14), FIRE_START_STEP=0)
+    built.smoke_field = SmokeField(config.HEIGHT, config.WIDTH)
+    built.fire_agent_at((7, 9)).smoke.smoke = True
+    built.update_smoke()
+
+    downwind = built.fire_agent_at((7, 6))
+    assert not downwind.smoke.is_smoke_active(), "the cell under test is raising smoke of its own"
+    assert agent_portrayal(downwind)["Color"] == config.SMOKE_COLORS[0]
+
+
+def test_the_map_draws_the_old_per_cell_smoke_when_it_does_not_occlude(make_model):
+    """With occlusion off the canvas is the picture it always was: the cell's own timer, and nothing else."""
+    built = make_model(NUM_AGENTS=0, WIDTH=15, HEIGHT=15, ACTIVATE_SMOKE=True,
+                       SMOKE_OCCLUDES_OBSERVATION=False, FIRE_START_POSITION=(14, 14),
+                       FIRE_START_STEP=0)
+    built.fire_agent_at((7, 9)).smoke.smoke = True
+
+    assert agent_portrayal(built.fire_agent_at((7, 9)))["Color"] == config.SMOKE_COLORS[0]
+    assert agent_portrayal(built.fire_agent_at((7, 6)))["Color"] != config.SMOKE_COLORS[0]

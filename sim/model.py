@@ -9,7 +9,7 @@ import numpy
 
 import config
 
-from sim import agents, environment, fire_spread, formulas
+from sim import agents, environment, fire_spread, formulas, smoke
 
 # imported by name because 'policy' is also the name of the constructor argument and attribute below,
 # which would shadow the module
@@ -99,8 +99,16 @@ class WildFireModel(mesa.Model):
         # Mesa grid positions, whose x runs over HEIGHT (see the MultiGrid call above)
         self.burning = numpy.zeros((config.HEIGHT, config.WIDTH), dtype=bool)
         self.fire_prob = numpy.zeros((config.HEIGHT, config.WIDTH))
+        # which cells are raising smoke, and which are covered by the plumes that smoke blows into. Same
+        # indexing as the two above. The plume field is only built when smoke actually blinds somebody:
+        # with the extension off nothing is ever opaque, occluded() answers False without a lookup, and the
+        # convolution below is never run at all
+        self.smoking = numpy.zeros((config.HEIGHT, config.WIDTH), dtype=bool)
+        self.smoke_opaque = numpy.zeros((config.HEIGHT, config.WIDTH), dtype=bool)
         # rebuilt per reset, so that a runner overriding the wind settings is picked up
         self.fire_spread = fire_spread.FireSpread(config.HEIGHT, config.WIDTH)
+        self.smoke_field = (smoke.SmokeField(config.HEIGHT, config.WIDTH)
+                            if config.ACTIVATE_SMOKE and config.SMOKE_OCCLUDES_OBSERVATION else None)
         # set Fire and wind agents (Smoke are created inside Fire agents as well)
         self.set_fire_agents()
         self.fire_xs = numpy.array(self.fire_xs, dtype=int)
@@ -367,6 +375,24 @@ class WildFireModel(mesa.Model):
         self.burning[self.fire_xs, self.fire_ys] = [fire.burning for fire in self.fire_list]
         self.fire_prob = self.fire_spread.probability_field(self.burning)
 
+    # refreshes the mask of cells raising smoke from the Smoke each Fire owns, and blows it downwind into
+    # the plume field that decides what can be observed (see sim/smoke.py). Built once per step and read
+    # many times: observe() runs at least twice per UAV per step -- once for the policy, once for the
+    # managing system's sensor -- and both have to be told the same thing about what the smoke hid.
+    def update_smoke(self):
+        if self.smoke_field is None or not self.fire_list:  # extension off, or a bare grid
+            return
+        self.smoking[self.fire_xs, self.fire_ys] = [fire.smoke.is_smoke_active() for fire in self.fire_list]
+        self.smoke_opaque = self.smoke_field.opaque(self.smoking)
+
+    # whether a cell is buried in smoke, and so cannot be observed at all. The single question every
+    # observer asks, so that no caller indexes the mask itself and the extension being off costs one
+    # attribute lookup rather than a rebuilt array of False.
+    def occluded(self, position):
+        if self.smoke_field is None:
+            return False
+        return bool(self.smoke_opaque[position[0], position[1]])
+
     # looks up the Fire agent covering a cell, or None when the density left that cell empty
     def fire_agent_at(self, position):
         for agent in self.grid.get_cell_list_contents([position]):
@@ -570,6 +596,19 @@ class WildFireModel(mesa.Model):
 
         # execute each agent step() method
         self.schedule.step()
+
+        # where the smoke is, worked out for the whole grid in one go. Unlike the ignition probabilities
+        # above this belongs *after* the schedule, and the difference is not a tidiness question:
+        #
+        #   * the Smoke counters tick inside Fire.step(), and Fire.extinguish() clears them from inside
+        #     UAV.dump_water(), so the source mask only settles once the schedule has run;
+        #   * every reader is upstream of the schedule. observe() is called at the top of this method for
+        #     the policy, and again before that by ModelSensor.read() for the managing system, which
+        #     AdaptiveWildFireModel.step() runs ahead of super().step(). Both therefore read the mask this
+        #     line left behind on the previous step -- one mask per step, so the two cannot be told
+        #     different things about what the smoke hid. That invariant is the whole reason occlusion is a
+        #     threshold rather than a draw.
+        self.update_smoke()
 
         # the UAVs have finished moving, so whoever ended up sharing a cell has collided. Settled here
         # rather than inside UAV.advance(), because sharing a cell is a property of the grid: it is only

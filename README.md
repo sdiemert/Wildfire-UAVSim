@@ -56,6 +56,13 @@ This python file holds the logic for managing the wildfire simulation, by utiliz
 This python file works out how likely every cell of the grid is to catch fire, for the whole grid at
 once, and is by far the largest influence on how fast a simulation runs.
 
+### `sim/smoke.py`
+
+This python file works out where the smoke is, for the whole grid at once, in the same shape as
+`sim/fire_spread.py` and reusing its wind model. The cells raising smoke are convolved with a kernel biased
+harder by the wind and reaching further, which gives a plume that drifts well past anything alight; the
+cells it covers cannot be observed at all.
+
 The rule itself is unchanged, and is still written out cell by cell in `Fire.probability_of_fire()`
 in `sim/agents/fire.py`. That version asks each cell to walk its neighbourhood, which repeats the same
 distance calculation millions of times per run and used to account for over 99% of the run time.
@@ -402,6 +409,13 @@ about where its UAVs are as they are themselves. That is deliberate: a managing 
 true grid positions would be observing something no telemetry could have told it. What it is shown about the
 fire and the out buildings is real, because that comes from the ground the UAVs really overflew.
 
+With the [smoke occlusion extension](#smoke-occlusion-extension) on, both sources go partly dark: a cell
+under a plume is dropped from everything a UAV reports and skipped by the base's sensor, and named instead
+in `UavReport.sees_occluded` and `BaseReport.occluded_near_base`. That is the one field here that reports an
+absence of knowledge rather than a piece of it, and it is what lets a snapshot distinguish "nobody looked
+there" from "somebody looked there and could not see" — including, for the base, "the base cannot tell
+whether the fire has reached it".
+
 ### What it is allowed to change
 
 One `UavDirective` per UAV: a policy name, plus `PolicyParams` — `speed_cap`, `separation`, `fuel_reserve`
@@ -543,9 +557,11 @@ The client POSTs `application/json` to `MANAGING_SYSTEM_URL`:
                 "uavs": [{"uav_id": 0, "pos": [7, 8], "alive": true, "hp": 3, "water": 1,
                           "policy": "firefighter", "params": {},
                           "fuel": 122.5, "fuel_capacity": 150.0,
-                          "sees_fire": [[9, 9]], "sees_uavs": [[7, 9]], "sees_buildings": []}],
+                          "sees_fire": [[9, 9]], "sees_uavs": [[7, 9]], "sees_buildings": [],
+                          "sees_occluded": [[8, 8], [8, 9]]}],
                 "base": {"cells": [[5, 5]], "burning_steps": 1, "bhp": 5, "destroyed": false,
-                         "serving": 0, "fire_near_base": [[6, 6]]} }
+                         "serving": 0, "fire_near_base": [[6, 6]],
+                         "occluded_near_base": []} }
 }
 ```
 
@@ -794,14 +810,91 @@ Wind raises the chance of the fire spreading downwind and lowers it upwind, by a
 
 ### Smoke
 
+Smoke is two things. A cell that has been burning for `SMOKE_PRE_DISPELLING_COUNTER` steps starts *raising* smoke, and goes on doing so for as many steps as it had fuel — that is the emitter, one timer per cell, in `Smoke` in `sim/environment.py`. Where that smoke then *is* is a separate question, because it does not stay over the cell that raised it: it blows downwind, over ground that may hold nothing and may never burn, and a cell the plume covers cannot be observed at all. That field is worked out for the whole grid at once in `sim/smoke.py`, and it is the subject of the [smoke occlusion extension](#smoke-occlusion-extension) below.
+
 | Variable | Meaning | Bounds | Default |
 |---|---|---|---|
-| `ACTIVATE_SMOKE` | Whether smoke is drawn over burning cells | `True` / `False` | `True` |
+| `ACTIVATE_SMOKE` | Master switch: whether burning cells raise smoke at all | `True` / `False` | `True` |
 | `SMOKE_PRE_DISPELLING_COUNTER` | Steps between a cell catching fire and its smoke appearing | integer `>= 0` | `2` |
+| `SMOKE_OCCLUDES_OBSERVATION` | Whether smoke blinds the observers, or is only drawn | `True` / `False` | `True` |
+| `SMOKE_MU` | Wind strength for the smoke, the analogue of `MU` | float in `[0, 1]` | `0.9` |
+| `SMOKE_DRIFT_RADIUS` | How far a plume reaches from its source, in cells | integer `>= 0` | `6` |
+| `SMOKE_OCCLUSION_THRESHOLD` | Density at or above which a cell cannot be seen through | float in `(0, 1]` | `0.5` |
 
-The smoke then lasts for the cell's initial fuel, set as `self.dispelling_counter_start_value` in `Smoke.__init__()` in `sim/environment.py`. Keep the sum of the two above `FUEL_UPPER_LIMIT`, or the smoke clears before the cell has finished burning.
+The smoke lasts for the cell's initial fuel, set as `self.dispelling_counter_start_value` in `Smoke.__init__()` in `sim/environment.py`. Keep the sum of that and `SMOKE_PRE_DISPELLING_COUNTER` above `FUEL_UPPER_LIMIT`, or the smoke clears before the cell has finished burning.
 
-**Smoke is presentation only.** `Smoke` is read by `sim/gui/portrayal.py` and by nothing else: it does not obscure a UAV's observation, does not reach the managing system, and takes no part in how the fire spreads. Switching it off changes what the canvas looks like and nothing about the run, so it is not a way to vary observability or difficulty. Making smoke occlude what a UAV can see would be a worthwhile extension, and would be a change to `UAV.observe()` and `Observation` rather than a setting.
+Smoke still takes no part in how the fire spreads. It is a condition on what can be *seen*, not on what burns.
+
+### Smoke occlusion extension
+
+An optional extension that takes away the team's certainty about what is on the ground. Setting `SMOKE_OCCLUDES_OBSERVATION = False` leaves the smoke on the canvas and takes it out of the observation pipeline entirely, and the simulator then behaves exactly as it did before the extension existed — including the sequence of draws it takes from `SYSTEM_RANDOM`, so no seeded result in the project moves because this section exists. It ships **on**, because a smoke setting that changes no outcome is what this extension was written to fix.
+
+Where the [positioning error extension](#positioning-error-extension) corrupts the receiver and leaves the camera sound, this one does the opposite. A UAV under smoke knows exactly which ground it could not read; it simply could not read it.
+
+#### What the plume is
+
+Every cell gets a smoke **density**: the sum, over the smoking cells within `SMOKE_DRIFT_RADIUS`, of an inverse square weight biased by the wind, clipped into `[0, 1]`. A cell raising smoke is at `1` outright.
+
+```
+density(s) = min(1, SUM over offsets (dx, dy) of  K[dx, dy] * smoking[s + (dx, dy)])
+
+    with K[dx, dy] = cell_weight(dx, dy, SMOKE_DRIFT_RADIUS, SMOKE_MU, direction)
+         K[0,  0]  = 1
+
+occluded(s) = density(s) >= SMOKE_OCCLUSION_THRESHOLD
+```
+
+`cell_weight()` and `on_wind()` are imported from `sim/fire_spread.py` rather than restated, so the fire and the smoke cannot come to disagree about which way is downwind. What differs is how hard the wind is felt and how far it carries: at the shipped `SMOKE_MU = 0.9` a cell directly downwind of a source weighs `1.0` at one cell, `0.925` at two and `0.903` at six, while one cell crosswind weighs `0.1` and one cell diagonally `0.05`. So a lone source obscures itself and the column downwind of it, out to `SMOKE_DRIFT_RADIUS`, and nothing else. **A plume is as wide as the front that raises it:** every smoking cell of a fire casts its own column, and off the axis the densities of several sources add, so a wider front also smears further sideways.
+
+Against that, the fire spreads at `MU = 0.5` over a radius of `3` — half the lean, a third of the reach. That difference is the extension: a UAV can be blinded by a fire it is nowhere near, and the ground the fire is about to reach is exactly the ground the team can no longer watch.
+
+Under composed wind (`FIXED_WIND = False`) the two direction kernels are **blended once** by `FIRST_DIR_PROB` rather than drawn per cell, as `sim/fire_spread.py` does. Smoke sits over a cell for many steps and so has already averaged the wind that blew over it, where an ignition is a single event that either happened downwind or did not. Nothing in `sim/smoke.py` touches `SYSTEM_RANDOM` in any wind mode, and occlusion is a threshold rather than a roll — which is what lets a UAV be asked any number of times in one step what it can see without moving the run along.
+
+#### What it hides
+
+**Everything in the cell.** The fire on it, the vegetation under it, the teammates standing on it and the out buildings on it alike. Smoke is not a filter over one layer of the map; it is a cell the camera cannot see into, and there is no camera that works the other way.
+
+An occluded cell is dropped from `Observation.cells`, from `uav_positions` and from `building_positions`, and named in the new `Observation.occluded`. In `cells` that makes it **indistinguishable from bare ground** — deliberately, because whether there is anything there to burn is part of what the smoke hid, so an observation that let the two be told apart would be leaking exactly what it is withholding. `occluded` is the only place the difference survives, and it says nothing about what is underneath.
+
+The home base's own fire sensor is a camera too, and smoke blinds it on the same terms.
+
+#### What the managing system is told
+
+`UavReport.sees_occluded` and `BaseReport.occluded_near_base` carry the blinded cells, and `FleetSnapshot.known_blind()` unions them. This is the first thing the contract has ever reported that is an *absence* of knowledge rather than a piece of it, and it changes what an old field means: a cell missing from `known_fire()` used to be one that was either not burning or that nobody was looking at, and can now also be one somebody looked straight at and could not see.
+
+**No planner reacts to it yet, on purpose.** The interesting responses — routing a UAV around a plume, calling the team home to a base whose sensor has gone dark, discounting a report that is mostly smoke — are a managing system design question that deserves its own change and its own arm in a sweep. Landing them together with the occlusion itself would make neither attributable.
+
+#### What a run with it on shows
+
+Measured over 200 paired runs — same seeds, same fires, `firefighter` unmanaged, a fixed southerly wind, everything else at the defaults:
+
+| | occlusion on | occlusion off |
+|---|---|---|
+| MR1 total, mean | 5.41 | 16.78 |
+| runs won | 1.0% | 11.5% |
+| burning cells at the end, mean | 1611 | 1304 |
+| collisions, mean | 2.10 | 2.51 |
+| UAVs lost, mean | 0.43 | 0.74 |
+
+```bash
+# reproduces the table above, one arm at a time
+python3 headless.py --policy firefighter --managing none --runs 200 --workers 8 --seed 1000 \
+        --log-every 0 --set FIXED_WIND=True --set "WIND_DIRECTION='south'" \
+        --set SMOKE_OCCLUDES_OBSERVATION=True
+```
+
+The first three rows are the extension doing its job. MR1 scores what the team actually saw, so a team staring at a plume monitors less; the fire is 24% larger by the end because a team that cannot see it fights it worse; and the win rate collapses. **Smoke is now the strongest single dial on observability in the project** — the whole point, given that the sweep of 10 August 2026 found `ACTIVATE_SMOKE` changed nothing measurable at all.
+
+The last two rows go the other way, and are worth understanding before reading them as good news. Occlusion genuinely does break deconfliction: `uav_positions` is no longer a complete account of the team inside the window, so `Observation.occupied()` can call a cell clear that has a UAV on it, and the speed cap at `UAV_OBSERVATION_RADIUS` in `SuperPolicy.within_sight()` no longer guarantees a flight ends on ground the observation described — staying inside the window is still necessary and no longer sufficient. That mechanism is real and is pinned by `tests/agents/test_uav_smoke_occlusion.py`. It is simply swamped by a larger effect in the other direction: a blinded `firefighter` has no target, holds position, and a team that is not flying does not run into itself. **Fewer collisions here is a symptom of a team doing nothing, not of a team flying well.**
+
+Two other things a run shows, which the aggregates do not:
+
+* **`follow-fire` holding position inside a plume**, because `burning_positions()` is empty and POL-FOL-1 fires. It cannot tell "nothing burning here" from "nothing visible here", and is not meant to.
+* **a base that cannot see the fire arriving.** `nearest_fire_distance()` answering infinity stops being proof that nothing is coming. This is the sharpest failure the extension produces and the one a managing system could most usefully learn to detect.
+
+Note also that `state()` pads a short observation with zeros, so an occluded cell scores as "not burning" rather than as "unknown" — the same conflation the padding has always made for cells clipped off the edge of the grid.
+
+The calibration figures elsewhere in this file — the `BATCH_SIZE`, grid size and `FIRE_SPREAD_SPEED` numbers in [How hard the defaults are](#how-hard-the-defaults-are-and-why), and everything in `experiments/20260810/` — were all measured before smoke occluded anything, and hold only with `SMOKE_OCCLUDES_OBSERVATION = False`. The 11.5% column above is consistent with the 10.9% recorded there, which is the check that nothing else moved. Re-running the calibration under the shipped default is separate work.
 
 ### UAV
 
@@ -1171,6 +1264,8 @@ A scenario with strong windy conditions, blowing east, and late short-lasting sm
 
 `self.dispelling_counter_start_value = 4`
 
+Note the heading has always overstated this one: with `NUM_AGENTS = 0` there is nobody to observe partially, and until the [smoke occlusion extension](#smoke-occlusion-extension) existed smoke obscured nothing in any case. Add UAVs and leave `SMOKE_OCCLUDES_OBSERVATION` at its default to get the scenario the title describes.
+
 ### 2 UAV with small partial areas (normal conditions)
 
 A scenario with 2 UAV having small partial areas in normal conditions should appear.
@@ -1202,6 +1297,8 @@ A scenario with 3 UAV having big partial areas, with fast long-lasting smoke, sh
 `self.dispelling_counter_start_value = 9`
 
 `UAV_OBSERVATION_RADIUS = 12`
+
+With the wind off the plume is a symmetric blur around whatever is smoking rather than a drifting column, so this is the scenario for watching occlusion on its own without the wind carrying it anywhere. At `UAV_OBSERVATION_RADIUS = 12` the windows are large enough that most of what the team is missing is visible on the map beside it.
 
 ### Probabaility map
 

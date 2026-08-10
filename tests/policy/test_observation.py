@@ -122,3 +122,31 @@ def test_the_payload_falls_back_to_the_boolean_without_a_capacity():
     # how an Observation built by hand, or by a caller that predates the payload, reports the water
     assert Observation(uav_id=0, pos=(5, 5), has_water=True).water_fraction() == 1.0
     assert Observation(uav_id=0, pos=(5, 5), has_water=False).water_fraction() == 0.0
+
+
+# --- what the smoke hid -----------------------------------------------------
+
+
+def test_an_observation_built_without_smoke_is_blind_to_nothing():
+    # which is what lets every policy test in this directory keep building observations the way it always
+    # did, and every policy keep reading them the way it always did
+    obs = Observation(uav_id=0, pos=(5, 5), cells=[((5, 6), 1)])
+    assert obs.occluded == []
+    assert obs.occluded_count() == 0
+    assert not obs.is_occluded((5, 6))
+
+
+def test_the_occluded_cells_are_the_ones_the_smoke_took_away():
+    obs = Observation(uav_id=0, pos=(5, 5), cells=[((5, 6), 1)], occluded=[(5, 7), (5, 8)])
+    assert obs.is_occluded((5, 7)) and obs.is_occluded([5, 8])
+    assert not obs.is_occluded((5, 6))
+    assert obs.occluded_count() == 2
+
+
+def test_what_the_smoke_hid_counts_for_nothing_anywhere_else():
+    # an occluded cell is absent from 'cells' by construction, so nothing that reads 'cells' should ever
+    # need to know the occluded list exists
+    obs = Observation(uav_id=0, pos=(5, 5), cells=[((5, 6), 1)], occluded=[(5, 7)])
+    assert obs.burning_positions() == [(5, 6)]
+    assert obs.burning_count() == 1
+    assert obs.flat_states() == [1]

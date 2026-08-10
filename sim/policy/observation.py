@@ -21,6 +21,16 @@ class Observation:
     same cell collide and lose health points, so this is what a policy needs to keep its team apart; it
     exists whether or not the firefighting extension is switched on.
 
+    'occluded' holds the cells inside the window that the smoke hid, and is the one place this object
+    records the difference between "there is nothing there" and "I looked and learned nothing". An occluded
+    cell appears in no other list: not in 'cells', not in 'uav_positions', not in 'building_positions'. In
+    'cells' that makes it indistinguishable from bare ground, which is deliberate -- whether there is
+    anything there to burn is part of what the smoke hid, so an observation that let the two be told apart
+    would be reporting the fire state it is supposed to be withholding. Two things a policy might otherwise
+    assume stop holding: 'uav_positions' is no longer a complete account of the team inside the window, so
+    occupied() can call a cell clear that has a UAV on it; and an empty burning_positions() means "nothing
+    visibly alight", which is weaker than "nothing alight".
+
     'fuel' is what is left in the tank, and 'fuel_capacity' what a full one holds. Both are None when the
     fuel extension is switched off, which is what tells a policy that fuel is not being tracked at all
     rather than that the tank is empty; fuel_fraction() and low_fuel() answer sensibly either way.
@@ -42,6 +52,9 @@ class Observation:
     pos: tuple
     cells: list = field(default_factory=list)
     uav_positions: list = field(default_factory=list)
+
+    # cells of the window the smoke hid, empty when nothing is occluding anything
+    occluded: list = field(default_factory=list)
 
     # the fields below belong to the fuel extension and are None when it is switched off
     fuel: float = None
@@ -98,6 +111,15 @@ class Observation:
         if not self.water_capacity:
             return 1.0 if self.has_water else 0.0
         return max(0.0, min(1.0, self.water / self.water_capacity))
+
+    # whether a given cell of the window was hidden by smoke. The counterpart of occupied(): that one
+    # answers "is there something there", this one answers "would I have been told".
+    def is_occluded(self, cell):
+        return tuple(cell) in {tuple(position) for position in self.occluded}
+
+    # how many cells of the window the smoke took away, which is a measure of how blind this UAV is
+    def occluded_count(self):
+        return len(self.occluded)
 
     # whether another UAV in view is standing on a given cell, which is where flying would be a collision
     def occupied(self, cell):

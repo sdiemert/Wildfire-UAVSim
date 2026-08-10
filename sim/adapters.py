@@ -45,6 +45,13 @@ class ModelSensor(Sensor):
         system whose job is to keep the base standing, which cannot see the base burning because the team
         it sent away is the only thing that could have told it.
 
+    Smoke cuts across both sources, because both of them are cameras. A cell under a plume is dropped from
+    everything a UAV reports and skipped by the base's sensor, and named instead in UavReport.sees_occluded
+    and BaseReport.occluded_near_base. That is the first thing this sensor has ever reported that is an
+    absence of knowledge rather than a piece of it, and it matters most for the base: a snapshot can now say
+    "the base cannot see whether the fire has reached it", which is strictly more than the silence it used
+    to answer with.
+
     With the positioning error extension on, the position each UAV reports is the position it measured, and
     so are the positions of the team mates it can see -- the same values its policy was given, drawn once
     for the step so that the two cannot disagree about where anybody was. The managing system is therefore
@@ -97,6 +104,7 @@ class ModelSensor(Sensor):
             sees_fire=observation.burning_positions(),
             sees_uavs=observation.uav_positions,
             sees_buildings=observation.building_positions,
+            sees_occluded=observation.occluded,
         )
 
     # the home base and the fire around it, or None when the firefighting extension is switched off and
@@ -106,23 +114,34 @@ class ModelSensor(Sensor):
         if base is None:
             return None
 
+        burning, blind = self.sensor_reading()
         return BaseReport(
             cells=base.cells,
             burning_steps=base.burning_steps,
             bhp=config.BHP,
             destroyed=base.is_destroyed(),
             serving=len(base.serving),
-            fire_near_base=self.fire_near_base(),
+            fire_near_base=burning,
+            occluded_near_base=blind,
         )
 
-    # the burning cells the base's own sensor can see
-    def fire_near_base(self):
-        burning = []
+    # what the base's own sensor makes of the cells it covers: the ones it can see burning, and the ones
+    # the smoke hid. Worked out in one pass, because a cell belongs to exactly one of the two and two
+    # passes could straddle a change to the occlusion mask and report it in both or in neither.
+    def sensor_reading(self):
+        burning, blind = [], []
         for cell in self.sensed_cells():
+            if self.model.occluded(cell):
+                blind.append(cell)
+                continue
             fire = self.model.fire_agent_at(cell)
             if fire is not None and fire.is_burning():
                 burning.append(cell)
-        return burning
+        return burning, blind
+
+    # the burning cells the base's own sensor can see
+    def fire_near_base(self):
+        return self.sensor_reading()[0]
 
     # every cell within BASE_SENSOR_RADIUS of the footprint, worked out once per base. The footprint itself
     # is included: fire on the base is the whole reason the sensor exists.

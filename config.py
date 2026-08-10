@@ -61,10 +61,10 @@ ACTIVATE_WIND = True
 # **Bounds:** `True` / `False`.
 FIXED_WIND = False
 
-# ### `ACTIVATE_SMOKE` -- whether burning cells raise smoke, drawn over what is underneath.
-# Presentation only, and worth knowing before reaching for it as a difficulty setting: `Smoke` is read
-# by sim/gui/portrayal.py and by nothing else. It does not obscure a UAV's observation, does not reach
-# the managing system, and has no part in how the fire spreads.
+# ### `ACTIVATE_SMOKE` -- whether burning cells raise smoke, which drifts downwind and blinds observers.
+# The master switch for the whole of the `## Smoke` section below. With it off no cell ever smokes, nothing
+# is drawn over the fire, and no observation is obscured. It still has no part in how the fire spreads:
+# smoke is a condition on what can be *seen*, not on what burns.
 # **Bounds:** `True` / `False`.
 ACTIVATE_SMOKE = True
 
@@ -197,7 +197,14 @@ MU = 0.5
 # ## Smoke
 #
 # Ignored unless `ACTIVATE_SMOKE` is True. A cell raises smoke a while after it catches fire, and that
-# smoke then hangs about for as many steps as the cell had fuel.
+# smoke then hangs about for as many steps as the cell had fuel. That cell is the *source*; the smoke
+# itself blows downwind from it, over ground that may never burn at all, and a cell the plume covers
+# cannot be observed -- not its fire, not its vegetation, not the UAVs or out buildings standing on it.
+#
+# Two knobs shape the plume, and they are deliberately independent of the wind the fire feels. Smoke is a
+# suspended thing with no fuel to hold it in place, so it goes where the air goes: `SMOKE_MU` is meant to
+# sit above `MU` and `SMOKE_DRIFT_RADIUS` above the fire's spread radius of 3, which together make the
+# plume both longer and far more one sided than anything the fire could reach. See sim/smoke.py.
 # =====================================================================================================
 
 # ### `SMOKE_PRE_DISPELLING_COUNTER` -- steps between a cell catching fire and its smoke appearing.
@@ -206,6 +213,46 @@ MU = 0.5
 # clears before the cell has finished burning.
 # **Bounds:** integer `>= 0`, where `0` raises smoke the moment the cell ignites.
 SMOKE_PRE_DISPELLING_COUNTER = 2
+
+# ### `SMOKE_OCCLUDES_OBSERVATION` -- whether smoke blinds the observers, or is only drawn.
+# Separate from `ACTIVATE_SMOKE` on purpose, and the switch to reach for rather than that one. Turning it
+# off leaves the smoke on the canvas and takes it out of the observation pipeline entirely, which is both
+# the control arm for a sweep over the settings below and the way to reproduce a result recorded before
+# smoke did anything. It is the single strongest dial on observability there is: measured over 200 paired
+# runs of an unmanaged firefighter team under a fixed southerly wind, it takes MR1 from 16.8 to 5.4 and
+# the win rate from 11.5% to 1.0%, and leaves 24% more of the map alight at the end.
+# It also breaks deconfliction, because a team mate under smoke is missing from `uav_positions` and
+# `Observation.occupied()` then calls its cell clear. Do not expect that to show up as more collisions:
+# a blinded firefighter has nothing to fly at and holds position, and the same runs above collide *less*
+# (2.10 against 2.51) for that reason. Fewer collisions here means a team doing nothing.
+# **Bounds:** `True` / `False`. Ignored when `ACTIVATE_SMOKE` is False, since there is then no smoke to see
+# through.
+SMOKE_OCCLUDES_OBSERVATION = True
+
+# ### `SMOKE_MU` -- wind strength for the smoke, the analogue of `MU` for the fire.
+# The fraction of the remaining density that blowing downwind adds, and blowing crosswind or upwind takes
+# away. Meant to sit above `MU`: the point of the extension is that smoke is carried further by the same
+# wind than the fire is. That ordering is documented rather than validated, because two independent knobs
+# that a sweep has to be able to take past each other should not be wired together.
+# **Bounds:** float in `[0, 1]`. `0` makes the plume a symmetric blob around the source, `1` collapses it
+# onto the downwind axis alone.
+SMOKE_MU = 0.9
+
+# ### `SMOKE_DRIFT_RADIUS` -- how far a plume reaches from its source, in cells.
+# Independent of the fire's spread radius of 3, and worth keeping above it, or a plume never covers ground
+# the fire could not have reached on its own and the extension has little to say. The cost is one shifted
+# add per offset per step, so it grows with the square of this: `6` is roughly three times the per step
+# cost of the fire's own convolution, which is not much next to the rest of a step.
+# **Bounds:** integer `>= 0`, where `0` leaves each source cell obscuring only itself.
+SMOKE_DRIFT_RADIUS = 6
+
+# ### `SMOKE_OCCLUSION_THRESHOLD` -- the density at or above which a cell cannot be seen through.
+# Smoke density is worked out for every cell as a weighted sum over the sources near it (see
+# `sim/smoke.py`) and clipped into `[0, 1]`; this is where the cut is made. Lower means a wider plume,
+# since thinner smoke at the edges starts to count.
+# **Bounds:** float in `(0, 1]`. `0` would make every cell of the grid opaque for as long as anything is
+# smoking anywhere, which is why it is excluded.
+SMOKE_OCCLUSION_THRESHOLD = 0.5
 
 # =====================================================================================================
 # ## UAVs
@@ -779,9 +826,21 @@ def validate(managing=None, remote=False):
             require(0.0 <= FIRST_DIR_PROB <= 1.0,
                     f"FIRST_DIR_PROB must be in [0, 1], got {FIRST_DIR_PROB!r}")
 
-    # smoke
+    # smoke. The pre-dispelling counter is checked whatever the switch says, as it always has been; the
+    # plume settings below it are only read when there is smoke to shape, so they follow the pattern of the
+    # other extensions and are checked only when their switch is on
     require(isinstance(SMOKE_PRE_DISPELLING_COUNTER, int) and SMOKE_PRE_DISPELLING_COUNTER >= 0,
             f"SMOKE_PRE_DISPELLING_COUNTER must be an integer >= 0, got {SMOKE_PRE_DISPELLING_COUNTER!r}")
+    if ACTIVATE_SMOKE:
+        require(0.0 <= SMOKE_MU <= 1.0, f"SMOKE_MU must be in [0, 1], got {SMOKE_MU!r}")
+        require(isinstance(SMOKE_DRIFT_RADIUS, int) and SMOKE_DRIFT_RADIUS >= 0,
+                f"SMOKE_DRIFT_RADIUS must be an integer >= 0, got {SMOKE_DRIFT_RADIUS!r}")
+        # zero would make every cell of the grid opaque while anything smoked anywhere, since a density of
+        # exactly 0 is what a cell nothing reaches has
+        require(0.0 < SMOKE_OCCLUSION_THRESHOLD <= 1.0,
+                f"SMOKE_OCCLUSION_THRESHOLD must be in (0, 1], got {SMOKE_OCCLUSION_THRESHOLD!r}")
+    # SMOKE_MU below MU is deliberately not an error: the whole point of the extension is that smoke is
+    # carried further than the fire, but a sweep has to be able to run the other side of that to show it.
 
     # UAVs
     require(isinstance(NUM_AGENTS, int) and NUM_AGENTS >= 0,

@@ -60,6 +60,13 @@ class UavReport:
     With the positioning error extension on, 'pos' and 'sees_uavs' are positions that were *measured* rather
     than true grid cells, so they can be several cells out and two UAVs can report the same one; 'sees_fire'
     and 'sees_buildings' are where the fire and the buildings really are.
+
+    With smoke occlusion on, 'sees_occluded' names the cells of the window the smoke took away, and the three
+    'sees_' lists above are silent about them: a burning cell under smoke is not in 'sees_fire', a team mate
+    under smoke is not in 'sees_uavs', a building under smoke is not in 'sees_buildings'. It is the first
+    field in this contract that reports an absence of knowledge rather than a piece of it, and the only way
+    a planner can tell "this UAV looked there and saw nothing" from "this UAV looked there and saw nothing
+    through the smoke".
     """
 
     uav_id: int
@@ -77,12 +84,15 @@ class UavReport:
     sees_fire: tuple = ()
     sees_uavs: tuple = ()
     sees_buildings: tuple = ()
+    # and what it could not: the cells of the window the smoke hid, empty when nothing is occluding
+    sees_occluded: tuple = ()
 
     def __post_init__(self):
         object.__setattr__(self, "pos", _cell(self.pos))
         object.__setattr__(self, "sees_fire", _cells(self.sees_fire))
         object.__setattr__(self, "sees_uavs", _cells(self.sees_uavs))
         object.__setattr__(self, "sees_buildings", _cells(self.sees_buildings))
+        object.__setattr__(self, "sees_occluded", _cells(self.sees_occluded))
         object.__setattr__(self, "params", dict(self.params or {}))
 
     # how much of a full tank is left, as a fraction. Reports a full tank when fuel is not being tracked,
@@ -96,6 +106,10 @@ class UavReport:
     def neighbours(self):
         return len(self.sees_uavs)
 
+    # how many cells of its window the smoke took away, which is how blind this UAV is right now
+    def blind_cells(self):
+        return len(self.sees_occluded)
+
     def to_json(self):
         return {
             "uav_id": self.uav_id, "pos": list(self.pos) if self.pos else None,
@@ -105,6 +119,7 @@ class UavReport:
             "sees_fire": [list(cell) for cell in self.sees_fire],
             "sees_uavs": [list(cell) for cell in self.sees_uavs],
             "sees_buildings": [list(cell) for cell in self.sees_buildings],
+            "sees_occluded": [list(cell) for cell in self.sees_occluded],
         }
 
     @classmethod
@@ -117,6 +132,7 @@ class UavReport:
             fuel=payload.get("fuel"), fuel_capacity=payload.get("fuel_capacity"),
             sees_fire=payload.get("sees_fire"), sees_uavs=payload.get("sees_uavs"),
             sees_buildings=payload.get("sees_buildings"),
+            sees_occluded=payload.get("sees_occluded"),
         )
 
 
@@ -128,6 +144,12 @@ class BaseReport:
     as having a fire sensor of its own, covering BASE_SENSOR_RADIUS cells beyond its footprint. Without it
     the managing system could be blind to the fire walking into the very asset it exists to protect, simply
     because the team had flown off somewhere else -- and it would then have no reason to call them back.
+
+    That sensor is a camera like any other, so smoke blinds it: 'occluded_near_base' names the cells within
+    its radius that it could not read, and those cells are absent from 'fire_near_base' whatever is burning
+    on them. A base whose own sensor has gone dark at the moment the fire arrives is the sharpest thing this
+    contract can now say, and nearest_fire_distance() answering infinity is no longer proof that nothing is
+    coming.
     """
 
     cells: tuple = ()
@@ -136,10 +158,13 @@ class BaseReport:
     destroyed: bool = False
     serving: int = 0
     fire_near_base: tuple = ()
+    # cells inside the sensor's radius that the smoke hid, empty when nothing is occluding
+    occluded_near_base: tuple = ()
 
     def __post_init__(self):
         object.__setattr__(self, "cells", _cells(self.cells))
         object.__setattr__(self, "fire_near_base", _cells(self.fire_near_base))
+        object.__setattr__(self, "occluded_near_base", _cells(self.occluded_near_base))
 
     # the anchor cell, which is the one the Base agent itself stands on
     def anchor(self):
@@ -169,6 +194,7 @@ class BaseReport:
             "burning_steps": self.burning_steps, "bhp": self.bhp,
             "destroyed": self.destroyed, "serving": self.serving,
             "fire_near_base": [list(cell) for cell in self.fire_near_base],
+            "occluded_near_base": [list(cell) for cell in self.occluded_near_base],
         }
 
     @classmethod
@@ -179,6 +205,7 @@ class BaseReport:
             cells=payload.get("cells"), burning_steps=int(payload.get("burning_steps", 0)),
             bhp=int(payload.get("bhp", 1)), destroyed=bool(payload.get("destroyed", False)),
             serving=int(payload.get("serving", 0)), fire_near_base=payload.get("fire_near_base"),
+            occluded_near_base=payload.get("occluded_near_base"),
         )
 
 
@@ -211,13 +238,30 @@ class FleetSnapshot:
                 return report
         return None
 
-    # every burning cell anybody can see, the base sensor included, without duplicates
+    # every burning cell anybody can see, the base sensor included, without duplicates.
+    #
+    # Note what its complement means once smoke can occlude. A cell outside this set used to be one that was
+    # either not burning or that nobody was looking at; it can now also be one that somebody looked straight
+    # at and could not see through. known_blind() below is what separates the third case from the second.
     def known_fire(self):
         cells = set()
         for report in self.uavs:
             cells.update(report.sees_fire)
         if self.base is not None:
             cells.update(self.base.fire_near_base)
+        return cells
+
+    # every cell somebody looked at and learned nothing about, without duplicates. Nothing in sim/managing/
+    # reads this yet, on purpose: what a managing system should do about being blind -- send a UAV round the
+    # plume, call the team home to a base whose sensor has gone dark, stop counting on a report that is
+    # mostly smoke -- is a design question that deserves its own change and its own evidence, and merging it
+    # with the occlusion itself would make neither attributable in a sweep.
+    def known_blind(self):
+        cells = set()
+        for report in self.uavs:
+            cells.update(report.sees_occluded)
+        if self.base is not None:
+            cells.update(self.base.occluded_near_base)
         return cells
 
     def to_json(self):

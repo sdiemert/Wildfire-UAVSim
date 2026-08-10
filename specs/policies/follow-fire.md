@@ -20,7 +20,10 @@ UAV where the fire is most likely to reach it next, and keeps the baseline compa
 exploration behaviour that was never specified.
 
 A UAV over bare ground sees no cells at all, and a UAV over unburnt vegetation sees cells but none of them
-burning. Both are this case.
+burning. Both are this case, and so is a third: a UAV inside a smoke plume, whose window has been emptied by
+the occlusion rather than by there being nothing in it. The policy cannot tell the three apart and is not
+meant to — `observation.burning_positions()` is what it decides from, and a fire it cannot see is a fire it
+cannot follow.
 
 ```yaml
 id: POL-FOL-1

@@ -96,6 +96,44 @@ def test_the_module_random_state_does_not_affect_a_seeded_run(make_model, sim_co
     assert first == second
 
 
+def test_a_run_with_smoke_occluding_is_still_reproducible(make_model, sim_config):
+    """Seeding SYSTEM_RANDOM has to pin a run the smoke is blinding, as well as a clear one.
+
+    The plume is a fixed function of which cells are smoking and the occlusion is a threshold on it, so
+    sim/smoke.py takes nothing from SYSTEM_RANDOM in any wind mode -- unlike sim/fire_spread.py, which
+    draws an array per mixed offset per step under composed wind. That is what lets observe() be called any
+    number of times in a step without moving the run along.
+    """
+    settings = dict(NUM_AGENTS=3, DENSITY_PROB=0.8, ACTIVATE_SMOKE=True,
+                    SMOKE_OCCLUDES_OBSERVATION=True, SMOKE_DRIFT_RADIUS=5)
+
+    sim_config(SYSTEM_RANDOM=random.Random(1234))
+    first = fingerprint(make_model(**settings), steps=15)
+
+    sim_config(SYSTEM_RANDOM=random.Random(1234))
+    second = fingerprint(make_model(**settings), steps=15)
+
+    assert first == second
+
+
+def test_occluding_the_team_costs_the_generator_nothing(make_model, sim_config):
+    """With nobody flying, switching occlusion on must not move a single draw.
+
+    Nothing reads the occlusion mask when there are no UAVs and no managing system, so the fire has to
+    burn identically either way. A field that drew even one number -- to pick a wind direction per cell, as
+    the fire spread does -- would shift every draw after it and the two fires would part company.
+    """
+    settings = dict(NUM_AGENTS=0, DENSITY_PROB=0.8, ACTIVATE_SMOKE=True, SMOKE_DRIFT_RADIUS=5)
+
+    sim_config(SYSTEM_RANDOM=random.Random(99))
+    clear = fingerprint(make_model(SMOKE_OCCLUDES_OBSERVATION=False, **settings), steps=15)
+
+    sim_config(SYSTEM_RANDOM=random.Random(99))
+    blind = fingerprint(make_model(SMOKE_OCCLUDES_OBSERVATION=True, **settings), steps=15)
+
+    assert clear == blind
+
+
 # --- the individual draws ---------------------------------------------------
 
 
