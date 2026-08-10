@@ -185,6 +185,29 @@ def test_fuel_without_a_base_to_refuel_at_is_allowed(sim_config):
     config.validate()
 
 
+@pytest.mark.parametrize("setting, value", [
+    ("UAV_POSITION_BIAS_MAX", -1),
+    ("UAV_POSITION_NOISE_MAX", -1),
+    ("UAV_POSITION_BIAS_MAX", 1.5),
+    ("UAV_POSITION_NOISE_MAX", 1.5),
+])
+def test_out_of_bounds_position_error_settings_are_refused(sim_config, setting, value):
+    sim_config(ACTIVATE_POSITION_ERROR=True, **{setting: value})
+    with pytest.raises(ValueError, match=setting):
+        config.validate()
+
+
+def test_position_error_settings_are_ignored_when_the_extension_is_off(sim_config):
+    sim_config(ACTIVATE_POSITION_ERROR=False, UAV_POSITION_BIAS_MAX=-5, UAV_POSITION_NOISE_MAX=-5)
+    config.validate()
+
+
+def test_a_positioning_error_of_no_magnitude_at_all_is_allowed(sim_config):
+    """The extension switched on with nothing to do, which is the control arm of a sweep over magnitudes."""
+    sim_config(ACTIVATE_POSITION_ERROR=True, UAV_POSITION_BIAS_MAX=0, UAV_POSITION_NOISE_MAX=0)
+    config.validate()
+
+
 # --- managing system --------------------------------------------------------
 
 

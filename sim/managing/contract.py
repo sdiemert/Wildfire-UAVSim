@@ -56,6 +56,10 @@ class UavReport:
     'policy' and 'params' are what this UAV is flying *right now*, which closes the MAPE-K loop: the
     managing system is told the effect of its own last decision, not just the state of the world, so it can
     tell an allocation that has taken hold from one it has just made.
+
+    With the positioning error extension on, 'pos' and 'sees_uavs' are positions that were *measured* rather
+    than true grid cells, so they can be several cells out and two UAVs can report the same one; 'sees_fire'
+    and 'sees_buildings' are where the fire and the buildings really are.
     """
 
     uav_id: int

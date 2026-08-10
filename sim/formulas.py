@@ -13,6 +13,7 @@ the other direction would be a cycle.
 # python libraries
 
 import math
+import random
 
 # own python modules
 
@@ -60,6 +61,46 @@ def extinguish_probability(drop_pos, cell_pos):
 def roll_collision_damage():
     chance = min(1.0, max(0.0, config.UAV_COLLISION_DAMAGE_MEAN))
     return 1 if config.SYSTEM_RANDOM.random() < chance else 0
+
+
+# function that draws one positioning error offset from SYSTEM_RANDOM: a uniform integer per axis in
+# [-magnitude, +magnitude], in cells. This is where a UAV's fixed bias comes from, drawn once when it is
+# created, and the magnitude is a parameter rather than read from config so that the per step jitter below
+# can share the arithmetic.
+#
+# Answers (0, 0) whenever the extension is switched off or the magnitude is zero, and -- the part that
+# matters -- takes no draw at all in that case. A run without positioning error has to consume exactly the
+# SYSTEM_RANDOM sequence it consumed before this existed, or every seeded result in the project moves the
+# day the extension is merged.
+def draw_position_offset(magnitude, source=None):
+    if not config.ACTIVATE_POSITION_ERROR or magnitude <= 0:
+        return 0, 0
+
+    generator = config.SYSTEM_RANDOM if source is None else source
+    limit = int(magnitude)
+    return (generator.randint(-limit, limit), generator.randint(-limit, limit))
+
+
+# function that gives the per step jitter in one UAV's fix: a uniform integer per axis in
+# [-magnitude, +magnitude], in cells, for the UAV identified by 'seed' on step 'step'.
+#
+# Deliberately *not* a draw from SYSTEM_RANDOM. It is a pure function of the UAV and the step number, worked
+# out from a generator seeded on the pair, so that asking a UAV where it thinks it is has no effect on the
+# rest of the simulation. That matters because the answer is wanted in places that must not disturb a run:
+# the web interface renders the panel between steps, a test may want the fix of one UAV on its own, and the
+# managing system reads the fleet at a different point in the step from the policies. Taking the jitter from
+# the shared generator would make all of those change the run they were only meant to be looking at -- the
+# same simulation watched in a browser would come out differently from one in headless.py.
+#
+# 'seed' is drawn from SYSTEM_RANDOM once per UAV when it is created, which is what keeps a whole run
+# reproducible from a single seed. It is combined with the step as text because seeding a generator with a
+# string goes through sha512, so nearby seeds give unrelated sequences and neighbouring steps of one UAV are
+# no more alike than any other pair.
+def position_noise(seed, step, magnitude):
+    if not config.ACTIVATE_POSITION_ERROR or magnitude <= 0:
+        return 0, 0
+
+    return draw_position_offset(magnitude, source=random.Random(f"{seed}:{step}"))
 
 
 # function that gives the fuel one step of flight costs a UAV, from the cells it actually covered and

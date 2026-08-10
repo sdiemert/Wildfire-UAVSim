@@ -24,6 +24,13 @@ class Observation:
     'fuel' is what is left in the tank, and 'fuel_capacity' what a full one holds. Both are None when the
     fuel extension is switched off, which is what tells a policy that fuel is not being tracked at all
     rather than that the tank is empty; fuel_fraction() and low_fuel() answer sensibly either way.
+
+    With the positioning error extension on, 'pos' is the position the UAV *measured* rather than where it
+    really is, and each entry of 'uav_positions' is what that team mate measured about itself; 'cells',
+    'base_pos', 'base_cells' and 'building_positions' stay in true grid coordinates, because the error
+    belongs to the receiver and not to the camera. A policy needs no special case for it -- it is written
+    against the belief either way -- but two things stop holding that a policy might otherwise assume: at_base()
+    can be wrong in both directions, and a cell occupied() calls clear can have a UAV on it after all.
     """
 
     uav_id: int

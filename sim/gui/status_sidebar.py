@@ -106,6 +106,10 @@ class StatusSidebar(VisualizationElement):
           /* the policy a UAV is flying, in the colour it is drawn on the map. flex:none keeps it whole:
              it shares its line with .who, which is the span that gives way when the column is narrow. */
           #status-sidebar .unit .tag { flex: none; font-weight: 600; }
+          /* where a UAV believes it is, shown only under the positioning error extension. flex:none for the
+             same reason as .tag, and greyed when the fix happens to be exact so that a line worth reading
+             is the one that stands out. */
+          #status-sidebar .unit .fix { flex: none; font-variant-numeric: tabular-nums; }
           /* one line per UAV: index and position, then health, water and score on the right */
           #status-sidebar .unit { display: flex; align-items: baseline; gap: 0.35rem; padding: 0.05rem 0;
                                   white-space: nowrap; }
@@ -331,10 +335,26 @@ class StatusSidebar(VisualizationElement):
     # the team, one line each: where the UAV is, what health and fuel it has left, whether it is carrying
     # water and what it has scored. The per UAV MR1 lives here rather than in the metrics, which keeps
     # every fact about a UAV on its own line.
+    #
+    # With the positioning error extension on, each line carries two positions: where the UAV really is,
+    # and after the "~" where it believes it is, which is the position its policy is planning from and the
+    # one it reports to the rest of the team. Seeing the pair side by side is the point -- the gap between
+    # them is the whole of what the extension does, and a run where a UAV sits on the base while insisting
+    # it is three cells away is otherwise very hard to account for.
+    #
+    # Asking a UAV where it thinks it is takes nothing from SYSTEM_RANDOM -- formulas.position_noise() works
+    # the fix out from the UAV and the step number instead -- so rendering the panel cannot change the run it
+    # is showing. That is a property worth not losing: a panel that had to draw would mean a simulation
+    # watched in the browser came out differently from the same one in headless.py, and it would be found by
+    # somebody comparing results rather than by a test. tests/gui/test_status_sidebar.py runs a watched
+    # simulation against an unwatched one to keep it honest.
     def uavs(self, model):
         crew = model.uavs
         flying = sum(1 for uav in crew if uav.is_alive())
-        html = [self.heading("UAVs", f"{flying}/{len(crew)} flying")]
+        counted = f"{flying}/{len(crew)} flying"
+        if config.ACTIVATE_POSITION_ERROR:
+            counted += " &middot; is ~ thinks"
+        html = [self.heading("UAVs", counted)]
         if not crew:
             return "".join(html + [self.note("none flying")])
 
@@ -361,6 +381,13 @@ class StatusSidebar(VisualizationElement):
                 # newest and most interesting field on the line.
                 allocated = allocation.get(uav.unique_id, "")
                 html.append(f'<span class="who">{index} {uav.pos}</span>')
+                # where it believes it is, next to where it is. Greyed when the two agree, so that scanning
+                # the column shows which UAVs are currently lost rather than which ones happen to be listed.
+                if config.ACTIVATE_POSITION_ERROR:
+                    fix = uav.measured_pos()
+                    exact = fix == uav.pos
+                    html.append(f'<span class="fix{" muted" if exact else " warn"}">'
+                                f'~{fix}</span>')
                 if allocated:
                     html.append(f'<span class="tag" style="color:{self.policy_color(allocated)}">'
                                 f'{allocated}</span>')

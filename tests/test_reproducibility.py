@@ -52,6 +52,30 @@ def test_two_runs_with_different_seeds_differ(make_model, sim_config):
     assert first != second
 
 
+def test_a_run_with_positioning_error_is_still_reproducible(make_model, sim_config):
+    """Seeding SYSTEM_RANDOM has to pin where each UAV believes it is, as well as where it really is.
+
+    Neither half of a UAV's positioning error is drawn while it flies: the fixed bias comes from
+    SYSTEM_RANDOM once when the UAV is created, and the per step jitter is worked out from the UAV and the
+    step number by formulas.position_noise(). So collecting the measurements as the run goes along cannot be
+    what makes the two runs agree -- asking is free of side effects, which is the point of doing it that way.
+    """
+    def trace(seed):
+        sim_config(SYSTEM_RANDOM=random.Random(seed))
+        model = make_model(NUM_AGENTS=3, DENSITY_PROB=0.8, ACTIVATE_POSITION_ERROR=True,
+                           UAV_POSITION_BIAS_MAX=2, UAV_POSITION_NOISE_MAX=1)
+        measured = []
+        for _ in range(15):
+            measured.append([uav.measured_pos() for uav in model.uavs])
+            model.step()
+        return fingerprint(model, steps=0), measured
+
+    first = trace(4321)
+    assert first == trace(4321)
+    # and the measurements really are moving about, so the equality above is not comparing two dull lists
+    assert len({tuple(step) for step in first[1]}) > 1
+
+
 def test_the_module_random_state_does_not_affect_a_seeded_run(make_model, sim_config):
     """The point of the change: disturbing `random` must not move a seeded simulation.
 

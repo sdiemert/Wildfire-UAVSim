@@ -37,7 +37,7 @@ UAVs while the run is going. `MANAGING_SYSTEM` in `config.py` is the switch. See
 
 ### `config.py`
 
-This python file holds the variables used to set the simulation execution configurations. It stays at the root of the project, rather than inside `sim`, because it is the one file most users need to open. It is organised into sections in the order a run is built up — the environment, the forest, the ignition, the wind, the smoke, the UAVs, the firefighting extension and the drawing colours — and each variable carries a one line description and its bounds next to its value. [Common variables configuration](#common-variables-configuration) below is the longer form of the same material.
+This python file holds the variables used to set the simulation execution configurations. It stays at the root of the project, rather than inside `sim`, because it is the one file most users need to open. It is organised into sections in the order a run is built up — the environment, the forest, the ignition, the wind, the smoke, the UAVs, the fuel, firefighting and positioning error extensions, the managing system and the drawing colours — and each variable carries a one line description and its bounds next to its value. [Common variables configuration](#common-variables-configuration) below is the longer form of the same material.
 
 Every module reads its settings as `config.NAME` at the point of use rather than copying the values in, which is what lets `headless.py --set` override any of them for a single run.
 
@@ -118,7 +118,7 @@ by_distance(pos, positions)       # positions ordered nearest first, for picking
 
 It also never asks a UAV to fly further than `UAV_OBSERVATION_RADIUS`. This matters whenever `UAV_SPEED` is the larger of the two, as it is by default (`5` against `4`): a flight that ends outside the observation window lands on a cell `uav_positions` said nothing about, so the UAV can fly into a teammate it was never told was there. Giving up the last cell of speed is cheaper than the collision.
 
-With the firefighting extension on, an `Observation` also carries `has_water`, `base_pos`, `base_cells` and `building_positions`; `at_base()` is true anywhere on the base footprint. With the fuel extension on it carries `fuel` and `fuel_capacity`, read through `fuel_fraction()` and `low_fuel()`; both are `None` when fuel is not being tracked, and `low_fuel()` is then always `False`, so a policy that ignores fuel flies exactly as it did before.
+With the firefighting extension on, an `Observation` also carries `has_water`, `base_pos`, `base_cells` and `building_positions`; `at_base()` is true anywhere on the base footprint. With the fuel extension on it carries `fuel` and `fuel_capacity`, read through `fuel_fraction()` and `low_fuel()`; both are `None` when fuel is not being tracked, and `low_fuel()` is then always `False`, so a policy that ignores fuel flies exactly as it did before. With the [positioning error extension](#positioning-error-extension) on, `pos` and `uav_positions` are positions that were *measured* and can be several cells out, while `cells`, `base_cells` and `building_positions` stay in true grid coordinates; a policy needs no special case for it, but `at_base()` can then be wrong in both directions and `occupied()` can call a cell clear that has a UAV on it.
 
 ### `sim/managing/`
 
@@ -270,6 +270,8 @@ Indicates the current time step of the simulation, beside the buttons that advan
 
 The panel down the left hand side reports the monitoring metrics, the state of the home base and the out buildings, and a line per UAV with its position, its health and the water it is carrying. Figures turn amber and then red as whatever they measure is used up.
 
+With `ACTIVATE_POSITION_ERROR` on, each UAV's line carries a second position after a `~`: where that UAV *believes* it is, which is what its policy is planning from and what it reports to the rest of the team. It is greyed when the fix happens to be exact and coloured when it is not, so the column shows at a glance which UAVs have lost track of themselves. See [Positioning error extension](#positioning-error-extension).
+
 With `MANAGING_SYSTEM` set to anything but `none` it also gains a **Managing system** section, kept to a few lines because vertical space beside the map is the scarce thing:
 
 * **which managing system is running**, and where it lives, on a line of its own — `defensive · local`.
@@ -393,6 +395,12 @@ of `--managing <name>` rather than of editing a file.
   cells beyond its footprint, reported whether or not any UAV is nearby. Without it the managing system
   could be blind to fire reaching the very asset it exists to protect, simply because it had sent the team
   elsewhere.
+
+With the [positioning error extension](#positioning-error-extension) on, the positions in the snapshot are
+the ones the team *measured* rather than where it really is, and so the managing system is exactly as wrong
+about where its UAVs are as they are themselves. That is deliberate: a managing system that could read the
+true grid positions would be observing something no telemetry could have told it. What it is shown about the
+fire and the out buildings is real, because that comes from the ground the UAVs really overflew.
 
 ### What it is allowed to change
 
@@ -930,6 +938,66 @@ To try it from the command line, without editing `config.py`:
 
 ```bash
 python3 headless.py --policy firefighter --set ACTIVATE_FIREFIGHTING=True
+```
+
+### Positioning error extension
+
+An optional extension that takes away a UAV's certainty about where it is. It is switched off by default; with `ACTIVATE_POSITION_ERROR = False` nothing here is drawn, applied or reported, and the simulator behaves exactly as it did before the extension existed — including the sequence of draws it takes from `SYSTEM_RANDOM`, so no seeded result in the project moves because this section exists.
+
+With it on, the grid still knows exactly where every UAV is. **Ground truth is never touched:** the mesa position is what a UAV flies from, what collisions are settled from, what fuel is charged against, what the home base serves, and what `MR1` and `MR2` are scored on. What the error corrupts is the *measurement* — the position the UAV believes it has, which is the position its policy plans from, the position the teammates that can see it are told, and the position the managing system is shown. Nothing about the world changes, only what is believed about it, which is what keeps a run with the extension on comparable with one without it.
+
+#### What the error is
+
+The error of one UAV on one step is a **fixed bias** plus **per step noise**, in cells, per axis:
+
+```
+offset = bias(uav) + noise(uav, step)
+```
+
+The bias is drawn once when the UAV is created and held for the whole run — a receiver that was never calibrated, so that airframe is consistently a couple of cells off in the same direction. The noise is redrawn every step, the jitter of a fix taken again from scratch each time. Setting either magnitude to `0` switches that component off and leaves the other working, so the two can be studied apart.
+
+One fix serves a whole step, however many times it is asked for: the policy, the managing system and the status panel are shown the same position, because the three of them disagreeing about where a UAV was at one instant would be an artefact of the implementation rather than an error the UAV could have made. The jitter is worked out from the UAV and the step number rather than drawn from `SYSTEM_RANDOM`, so asking a UAV where it thinks it is has no effect on the run at all — which is what makes it safe to watch a simulation in the browser and to peek at a single UAV from a test.
+
+#### Watching it happen
+
+With the extension on, the `UAVs` panel in the sidebar gives each UAV two positions per step: where it really is, and after the `~` where it believes it is. The second is greyed when the two agree and coloured when they do not, so the column can be scanned for whichever UAVs are currently lost:
+
+```
+UAVs                          3/4 flying · is ~ thinks
+0 (7, 7)  ~(7, 7)   firefighter   3/3  ⛽142  💧2   0.41
+1 (4, 9)  ~(2, 10)  firefighter   3/3  ⛽138  💧1   0.22
+2 (11, 3) ~(13, 1)  defend-base   2/3  ⛽121  💧–   0.08
+3         destroyed                                0.00
+```
+
+The map itself draws true positions only. It is drawn cell by cell rather than UAV by UAV, so it has the real positions to hand, and a second marker per UAV would clutter the one view where the fire is being read.
+
+| Variable | Meaning | Bounds |
+|---|---|---|
+| `ACTIVATE_POSITION_ERROR` | master switch for the extension | `True` / `False` |
+| `UAV_POSITION_BIAS_MAX` | largest fixed error a UAV can carry, in cells per axis, drawn once per UAV and held for the run | integer `>= 0` |
+| `UAV_POSITION_NOISE_MAX` | largest per step jitter, in cells per axis, redrawn every step | integer `>= 0` |
+
+Each UAV draws its own bias, so this is the spread of a fleet of receivers of varying quality rather than one error the whole team shares. The measured position is **clamped into the grid**, so it always names a cell that exists however large the error is set; a UAV near an edge therefore reports the edge more often than the arithmetic alone would.
+
+#### What is corrupted, and what is not
+
+Only the UAV's own position. What it *sees* — the burning cells in `cells`, the base footprint, the out buildings — stays in true grid coordinates, because a positioning error belongs to the receiver and not to the camera. It also **has** to be that way for the extension to do anything at all: every policy steers by the difference between where it thinks it is and where the target is, so displacing both by the same offset would cancel the error out exactly and no UAV would fly anywhere new.
+
+For the same reason the observation window stays centred on the true position. The camera really did see that ground, whatever the UAV believes about where it was standing at the time.
+
+#### What a run with it on shows
+
+None of the following is a defect in the extension; they are what it exists to produce:
+
+* **more collisions.** A policy trims its flight against positions that are wrong, and the deconfliction in `SuperPolicy` reserves cells in one UAV's frame of reference and subtracts them in another's, so the team no longer really keeps itself apart. `Observation.occupied()` can call a cell clear when there is a UAV on it, and the speed cap at `UAV_OBSERVATION_RADIUS` no longer guarantees a flight ends on ground the observation described.
+* **UAVs that circle a fire** without ever getting over it, because the offset never lets them close.
+* with the firefighting extension on, **UAVs that believe they are standing on the home base when they are not.** Such a UAV holds position off the pad waiting to be refilled by a base that cannot see it, and with the fuel extension on it eventually runs dry there and is destroyed. Losing a fleet that way is the extension working. It is also the most interesting thing a managing system could learn to detect, since the ground crew can see perfectly well that the pad is empty.
+
+To try it from the command line, without editing `config.py`:
+
+```bash
+python3 headless.py --policy firefighter --set ACTIVATE_POSITION_ERROR=True --set UAV_POSITION_NOISE_MAX=2
 ```
 
 ### Managing system

@@ -7,9 +7,9 @@
 #     **Bounds:** which values are legal
 #
 # and the sections follow the order a run is built up in: the environment first, then the forest, the
-# ignition, the wind and the smoke, the UAVs, the optional firefighting extension, and finally the
-# drawing colours. Nothing else belongs here: the shared maths that reads these settings lives in
-# sim/formulas.py, which leaves this file as the settings alone.
+# ignition, the wind and the smoke, the UAVs, the optional fuel, firefighting and positioning error
+# extensions, the managing system, and finally the drawing colours. Nothing else belongs here: the shared
+# maths that reads these settings lives in sim/formulas.py, which leaves this file as the settings alone.
 #
 # Any of these can also be overridden for a single run from the command line, without editing this file:
 #
@@ -400,6 +400,75 @@ NUM_OUT_BUILDINGS = 0
 OUT_BUILDING_HP = 5
 
 # =====================================================================================================
+# ## Positioning error extension
+#
+# Optional. When `ACTIVATE_POSITION_ERROR` is False nothing here is drawn, applied or reported, and the
+# simulation behaves exactly as it did before the extension existed -- including the sequence of draws it
+# takes from `SYSTEM_RANDOM`, so every seeded result in the project is unchanged by this section existing.
+#
+# When it is True a UAV no longer knows exactly where it is. The grid still does. Mesa's position is the
+# ground truth: it is what the UAV actually flies from, what collisions are settled from, what fuel is
+# charged against, what the home base serves, and what MR1 and MR2 are scored on. What the error corrupts
+# is the *measurement* -- the position the UAV believes it has, which is the position its policy plans
+# from, the position the team mates that can see it are told, and the position the managing system is
+# shown. Nothing about the world changes; only what is believed about it. That is what keeps a run with
+# the extension on comparable with one without it: both are scored on where the UAVs really were.
+#
+# The error of one UAV on one step is a fixed bias plus per step noise, in cells, per axis:
+#
+#     offset = bias(uav) + noise(uav, step)
+#
+# The bias is drawn once when the UAV is created and held for the whole run, which is a receiver that was
+# never calibrated: that airframe is consistently a couple of cells off, in the same direction, all run.
+# The noise is redrawn every step, which is the jitter of a fix taken again from scratch each time. Setting
+# either magnitude to 0 switches that component off and leaves the other one working.
+#
+# Only the UAV's own position is corrupted. What it *sees* -- the burning cells, the base footprint, the
+# out buildings -- stays in true grid coordinates, because a positioning error is a property of the
+# receiver and not of the camera. It also has to be that way for the extension to do anything at all:
+# every policy steers by the difference between where it thinks it is and where the target is, so
+# displacing both by the same offset would cancel the error out exactly and no UAV would fly anywhere new.
+#
+# The measured position is clamped into the grid, so it is always a legal cell however large the error is
+# set; a UAV near an edge therefore reports the edge more often than the arithmetic alone would.
+#
+# What a run with it on is expected to show, none of which is a defect in it:
+#   * more collisions. A policy trims its flight against positions that are wrong, and the deconfliction
+#     in `SuperPolicy` reserves cells in one UAV's frame and subtracts them in another's, so the team no
+#     longer really keeps itself apart
+#   * UAVs that circle a fire without ever being over it, because the offset never lets them close
+#   * with the firefighting extension on, UAVs that believe they are standing on the home base when they
+#     are not. Such a UAV holds position off the pad waiting to be refilled by a base that cannot see it,
+#     and with the fuel extension on it eventually runs dry there. Losing a fleet that way is the
+#     extension working, and it is the most interesting thing a managing system could learn to detect
+# =====================================================================================================
+
+# ### `ACTIVATE_POSITION_ERROR` -- master switch for the whole extension.
+# **Bounds:** `True` / `False`.
+ACTIVATE_POSITION_ERROR = True
+
+# ### `UAV_POSITION_BIAS_MAX` -- largest fixed positioning error a UAV can carry, in cells per axis.
+# Each UAV draws its own bias when it is created, uniformly from the integers in
+# `[-UAV_POSITION_BIAS_MAX, +UAV_POSITION_BIAS_MAX]` on each axis, and keeps it for the whole run. So this
+# is the spread of a fleet of receivers of varying quality rather than one error the whole team shares.
+# **Bounds:** integer `>= 0`. `0` gives every UAV a perfectly calibrated receiver, leaving the per step
+# noise below as the only error. Values approaching the grid size are legal, but spend most of their range
+# against the clamp.
+UAV_POSITION_BIAS_MAX = 2
+
+# ### `UAV_POSITION_NOISE_MAX` -- largest per step positioning jitter, in cells per axis.
+# Renewed for every UAV on every step, uniformly from the integers in
+# `[-UAV_POSITION_NOISE_MAX, +UAV_POSITION_NOISE_MAX]` on each axis, and added to that UAV's bias. One fix
+# serves the whole step: the policy, the managing system and the status panel are shown one and the same
+# position, because the three of them disagreeing about where a UAV was at one instant would be an artefact
+# of the implementation rather than an error the UAV could have made. The jitter is worked out from the UAV
+# and the step number rather than drawn from `SYSTEM_RANDOM`, so that asking a UAV where it thinks it is has
+# no effect on the run -- which is what lets the web interface show it while a simulation is being watched.
+# **Bounds:** integer `>= 0`. `0` leaves the bias as the only error, which is the case worth starting
+# from: the fleet is wrong, but each UAV is wrong in the same way on every step.
+UAV_POSITION_NOISE_MAX = 1
+
+# =====================================================================================================
 # ## Managing system (MAPE-K)
 #
 # Optional. The simulation on its own is a *managed system*: every UAV flies one policy, chosen before the
@@ -720,6 +789,15 @@ def validate(managing=None, remote=False):
     # ACTIVATE_FUEL without ACTIVATE_FIREFIGHTING is deliberately not an error: there is simply nowhere to
     # refuel, which turns UAV_FUEL into a hard endurance limit on the whole run. See the note against
     # ACTIVATE_FUEL above.
+
+    # positioning error extension
+    if ACTIVATE_POSITION_ERROR:
+        require(isinstance(UAV_POSITION_BIAS_MAX, int) and UAV_POSITION_BIAS_MAX >= 0,
+                f"UAV_POSITION_BIAS_MAX must be an integer >= 0, got {UAV_POSITION_BIAS_MAX!r}")
+        require(isinstance(UAV_POSITION_NOISE_MAX, int) and UAV_POSITION_NOISE_MAX >= 0,
+                f"UAV_POSITION_NOISE_MAX must be an integer >= 0, got {UAV_POSITION_NOISE_MAX!r}")
+    # both magnitudes at zero is deliberately not an error: it is the extension switched on with nothing to
+    # do, which is the control arm a sweep over error magnitudes needs.
 
     # managing system. MANAGING_SYSTEM and DEFAULT_UAV_POLICY are only checked for being names at all:
     # this module cannot import the packages they are registered in to look them up, because both of those

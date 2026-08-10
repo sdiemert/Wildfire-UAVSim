@@ -11,6 +11,8 @@ covered for all of them rather than for whichever one was in mind at the time.
 
 # python libraries
 
+import random
+
 import pytest
 
 # own python modules
@@ -258,3 +260,84 @@ def test_the_policy_a_uav_is_flying_is_not_the_first_thing_truncated(model):
     for name in set(built.allocation().values()):
         assert f'class="tag"' in panel
         assert f'>{name}</span>' in panel
+
+
+# --- the positioning error extension ----------------------------------------
+
+
+def test_a_uav_line_carries_both_where_it_is_and_where_it_thinks_it_is(model):
+    """The pair is the point: the gap between them is the whole of what the extension does."""
+    built = model("none", steps=3, ACTIVATE_POSITION_ERROR=True,
+                  UAV_POSITION_BIAS_MAX=3, UAV_POSITION_NOISE_MAX=0)
+    # a bias large enough that no UAV can be reporting its own cell by chance
+    for uav in built.uavs:
+        uav.position_bias = (3, 3)
+        uav._position_offset = (None, (0, 0))
+
+    panel = StatusSidebar().render(built)
+    for uav in built.uavs:
+        assert f"{uav.pos}</span>" in panel, "where the UAV really is"
+        assert f"~{uav.measured_pos()}</span>" in panel, "where it believes it is"
+
+
+def test_a_uav_that_knows_where_it_is_is_not_made_to_look_interesting(model):
+    """An exact fix is greyed and a wrong one is not, so the column can be scanned for the wrong ones."""
+    built = model("none", steps=3, ACTIVATE_POSITION_ERROR=True,
+                  UAV_POSITION_BIAS_MAX=0, UAV_POSITION_NOISE_MAX=0)
+    assert 'class="fix muted"' in StatusSidebar().render(built)
+
+    for uav in built.uavs:
+        uav.position_bias = (2, -2)
+        uav._position_offset = (None, (0, 0))
+    assert 'class="fix warn"' in StatusSidebar().render(built)
+
+
+def test_no_second_position_is_shown_when_the_extension_is_off(model):
+    built = model("none", steps=3, ACTIVATE_POSITION_ERROR=False)
+    panel = StatusSidebar().render(built)
+
+    assert 'class="fix' not in panel
+    assert "is ~ thinks" not in panel
+
+
+def test_watching_a_run_in_the_browser_does_not_change_it(model):
+    """The invariant the panel's UAV loop rests on, kept here rather than in a comment.
+
+    A UAV draws the jitter in its fix the first time it is asked for on a step, so the panel takes real
+    draws from SYSTEM_RANDOM while it renders. Asking every UAV still flying, in team order, takes exactly
+    the draws the next step was going to take anyway and in the same order, so a run watched in the browser
+    is the same run as one nobody is looking at. A partial pass, or a pass in some other order, would hand
+    one UAV the numbers another was about to get, and the two runs below would part company.
+    """
+    def outcome(watched):
+        built = model("none", SYSTEM_RANDOM=random.Random(9), ACTIVATE_POSITION_ERROR=True,
+                      UAV_POSITION_BIAS_MAX=2, UAV_POSITION_NOISE_MAX=1)
+        panel = StatusSidebar()
+        for _ in range(12):
+            built.step()
+            if watched:
+                panel.render(built)
+        return ([uav.pos for uav in built.uavs],
+                [round(uav.fuel, 6) for uav in built.uavs],
+                [fire.burning for fire in built.fire_list],
+                built.MR2_VALUE, built.collisions)
+
+    assert outcome(watched=True) == outcome(watched=False)
+
+
+def test_the_map_shows_true_positions_only(model):
+    """The canvas is drawn cell by cell rather than UAV by UAV, so it must not ask for a fix at all.
+
+    A pass in grid order would take the draws out of team order, which is exactly what the panel is careful
+    not to do; the map has the true positions to hand anyway, since it is walking the grid to find them.
+    """
+    built = model("none", steps=2, ACTIVATE_POSITION_ERROR=True, UAV_POSITION_BIAS_MAX=3,
+                  UAV_POSITION_NOISE_MAX=0)
+    for uav in built.uavs:
+        uav.position_bias = (3, 3)
+        uav._position_offset = (None, (0, 0))
+
+    drawn = CanvasGrid(agent_portrayal, 15, 15, 150, 150).render(built)
+    marks = {(item["x"], item["y"]) for layer in drawn.values() for item in layer}
+    for uav in built.uavs:
+        assert uav.pos in marks

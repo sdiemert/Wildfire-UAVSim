@@ -105,6 +105,79 @@ def test_there_is_no_base_report_without_the_firefighting_extension(make_model):
     assert ModelSensor(model, policy).read().base is None
 
 
+# --- positioning error ------------------------------------------------------
+#
+# The managing system is shown what the team measured rather than where it is, deliberately: one that could
+# read the true grid positions would be observing something no telemetry could have told it. What it is shown
+# about the fire and the buildings is real, because those come from the cells the UAVs really overflew.
+
+
+@pytest.fixture
+def wandering(managed, sim_config):
+    """The managed fixture with the positioning error extension on and every UAV badly miscalibrated."""
+    model, policy, sensor, effector = managed
+    sim_config(ACTIVATE_POSITION_ERROR=True, UAV_POSITION_BIAS_MAX=3, UAV_POSITION_NOISE_MAX=1)
+    for index, uav in enumerate(model.uavs):
+        uav.position_bias = (3, -3) if index % 2 else (-3, 3)
+        uav._position_offset = (None, (0, 0))
+    return model, policy, sensor, effector
+
+
+def test_the_snapshot_reports_the_position_a_uav_measured(wandering):
+    model, _, sensor, _ = wandering
+    positions = {report.uav_id: report.pos for report in sensor.read().uavs}
+
+    assert positions == {uav.unique_id: uav.measured_pos() for uav in model.uavs}
+    assert positions != {uav.unique_id: uav.pos for uav in model.uavs}
+
+
+def test_the_snapshot_and_the_policies_are_told_the_same_positions(wandering):
+    """One fix per UAV per step, shared by both readers of it.
+
+    ModelSensor.uav_report() calls UAV.observe() a second time, on top of the call
+    WildFireModel.observations() makes for the policy. Without the per step cache behind measured_pos() the
+    managing system and the policy would be given different positions for one and the same instant.
+    """
+    model, _, sensor, _ = wandering
+    reported = {report.uav_id: report.pos for report in sensor.read().uavs}
+
+    assert {obs.uav_id: obs.pos for obs in model.observations()} == reported
+    assert {report.uav_id: report.pos for report in sensor.read().uavs} == reported
+
+
+def test_the_snapshot_reports_what_the_neighbours_measured(wandering):
+    model, _, sensor, _ = wandering
+    # two UAVs put within sight of each other, each wrong about itself in its own way, and the rest of the
+    # team sent out of view so that the report names one neighbour and nobody else
+    model.grid.move_agent(model.uavs[0], (7, 7))
+    model.grid.move_agent(model.uavs[1], (8, 7))
+    for uav in model.uavs[2:]:
+        model.grid.move_agent(uav, (14, 0))
+
+    report = sensor.read().by_id(model.uavs[0].unique_id)
+    assert report.sees_uavs == (model.uavs[1].measured_pos(),)
+    assert report.sees_uavs != (model.uavs[1].pos,)
+
+
+def test_the_fire_the_snapshot_reports_is_where_it_really_is(wandering):
+    model, _, sensor, _ = wandering
+    model.grid.move_agent(model.uavs[0], (10, 10))
+
+    report = sensor.read().by_id(model.uavs[0].unique_id)
+    assert (10, 10) in report.sees_fire, "the burning cell the UAV really overflew"
+
+
+def test_a_destroyed_uav_still_reports_no_position_under_positioning_error(wandering):
+    model, _, sensor, _ = wandering
+    doomed = model.uavs[0]
+    doomed.take_damage(config.UAV_HP)
+    model.destroy_uav(doomed)
+
+    report = sensor.read().by_id(doomed.unique_id)
+    assert report.alive is False
+    assert report.pos is None
+
+
 # --- the effector, which is a trust boundary --------------------------------
 
 

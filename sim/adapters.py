@@ -45,6 +45,13 @@ class ModelSensor(Sensor):
         system whose job is to keep the base standing, which cannot see the base burning because the team
         it sent away is the only thing that could have told it.
 
+    With the positioning error extension on, the position each UAV reports is the position it measured, and
+    so are the positions of the team mates it can see -- the same values its policy was given, drawn once
+    for the step so that the two cannot disagree about where anybody was. The managing system is therefore
+    as wrong about where the team is as the team itself is, which is the point: one that could read the true
+    grid positions would be observing something no telemetry could have told it. The fire and the out
+    buildings it is shown are where they really are.
+
     The cost is one extra observe() per live UAV per reading. ADAPTATION_PERIOD is what that is traded
     against; the cells the base sensor covers are worked out once and cached, because the base does not
     move.
@@ -79,7 +86,7 @@ class ModelSensor(Sensor):
         observation = uav.observe()
         return UavReport(
             uav_id=uav.unique_id,
-            pos=uav.pos,
+            pos=uav.measured_pos(),
             alive=True,
             hp=uav.hp,
             water=uav.water,
