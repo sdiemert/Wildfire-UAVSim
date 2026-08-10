@@ -138,7 +138,7 @@ when somebody last remembered to update a table.
 
 Every current requirement is verified by test.
 
-57 tests under `tests/policy/` carry no `verifies` marker. That is
+61 tests under `tests/policy/` carry no `verifies` marker. That is
 allowed — not every test is evidence for a stated requirement — but a long list here is
 usually a sign that the specifications are behind the tests. The SuperPolicy tests are
 expected to be here: see "What is not specified here" in `specs/README.md`.
@@ -156,7 +156,10 @@ expected to be here: see "What is not specified here" in `specs/README.md`.
 - `tests/policy/test_firefighter_policy.py::test_no_uavs_gives_no_actions`
 - `tests/policy/test_follow_fire_policy.py::test_holding_position_carries_no_speed`
 - `tests/policy/test_follow_fire_policy.py::test_no_uavs_gives_no_actions`
+- `tests/policy/test_observation.py::test_a_full_load_is_the_whole_payload`
+- `tests/policy/test_observation.py::test_a_part_load_is_reported_as_the_share_of_a_full_one`
 - `tests/policy/test_observation.py::test_a_uav_on_any_cell_of_the_footprint_is_at_the_base`
+- `tests/policy/test_observation.py::test_an_empty_uav_carries_no_payload`
 - `tests/policy/test_observation.py::test_burning_count_matches_burning_positions`
 - `tests/policy/test_observation.py::test_burning_positions_returns_only_burning_cells`
 - `tests/policy/test_observation.py::test_cells_default_is_not_shared_between_observations`
@@ -167,6 +170,7 @@ expected to be here: see "What is not specified here" in `specs/README.md`.
 - `tests/policy/test_observation.py::test_occupied_finds_the_cells_other_uavs_are_standing_on`
 - `tests/policy/test_observation.py::test_the_anchor_alone_is_the_footprint_when_no_cells_are_given`
 - `tests/policy/test_observation.py::test_the_footprint_is_empty_without_a_base`
+- `tests/policy/test_observation.py::test_the_payload_falls_back_to_the_boolean_without_a_capacity`
 - `tests/policy/test_observation.py::test_uav_positions_default_is_not_shared_between_observations`
 - `tests/policy/test_observation.py::test_uav_positions_default_to_an_empty_view`
 - `tests/policy/test_policy_interface.py::test_a_malformed_pair_is_rejected`
