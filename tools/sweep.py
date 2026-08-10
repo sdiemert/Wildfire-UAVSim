@@ -19,17 +19,23 @@ process leak settings into one another unless every arm happens to set every key
 subprocess costs about a fifth of a second of interpreter startup, amortised over `--runs`, and removes
 that whole class of mistake.
 
-Arms share a seed block, so the same run index means the same fire in every arm and the comparison between
-them is paired. That also means a value tuned by `calibrate` is fitted to one set of fires: confirm it on
-a disjoint seed block before believing it.
+Every arm of one sweep shares a seed block, so the same run index means the same fire in every arm and the
+comparison between them is paired. The block itself is drawn fresh per sweep unless `--seed` says
+otherwise, and reported and recorded when it is -- sharing one block *across* sweeps is not pairing, it is
+fitting everything the tool has ever measured to one set of fires. That risk remains within a sweep: a
+value tuned by `calibrate` is fitted to the fires it was bisected on, so confirm it on a disjoint block
+before believing it.
 
 Usage:
-    python3 tools/sweep.py scan --policy firefighter --runs 100 --seed 1000 \\
+    python3 tools/sweep.py scan --policy firefighter --runs 100 \\
         --base WIDTH=100 --base HEIGHT=100 --base BATCH_SIZE=100 \\
         --axis BHP=2,3,4,5 --axis FIRE_SPREAD_SPEED=1,2 --out experiments/coarse
 
     python3 tools/sweep.py calibrate --policy firefighter --knob EXTINGUISH_SCALE \\
-        --low 0.6 --high 1.0 --target 0.10 --runs 400 --seed 1000 --out experiments/calibrate
+        --low 0.6 --high 1.0 --target 0.10 --runs 400 --out experiments/calibrate
+
+    # the reported seed replays a sweep exactly, and is the way to re-measure on a disjoint block
+    python3 tools/sweep.py scan --seed 500000 ...
 """
 
 # python libraries
@@ -52,7 +58,7 @@ if str(REPO_ROOT) not in sys.path:
 
 # own python modules
 
-from sim.cli.overrides import parse_override
+from sim.cli.overrides import draw_base_seed, parse_override
 
 
 HEADLESS = REPO_ROOT / "headless.py"
@@ -325,7 +331,7 @@ def calibrate(options, report=print):
         return stats
 
     report(f"target {options.target:.1%} on {options.knob} in [{options.low}, {options.high}], "
-           f"{options.runs} run(s) per probe, policy={options.policy}")
+           f"{options.runs} run(s) per probe, policy={options.policy} seed={options.seed}")
 
     low, high = options.low, options.high
     low_stats, high_stats = probe(low), probe(high)
@@ -403,8 +409,10 @@ def add_common(parser):
                         help="managing system for every arm; 'none' measures the bare policy")
     parser.add_argument("--runs", type=int, default=100, help="runs per arm")
     parser.add_argument("--workers", type=int, default=8, help="parallel workers within an arm")
-    parser.add_argument("--seed", type=int, default=1000,
-                        help="base seed, shared by every arm so the arms see the same fires")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="base seed, shared by every arm so the arms see the same fires. Without "
+                             "it a block is drawn from OS entropy and reported, so two sweeps do not "
+                             "silently reuse one set of fires")
     # deliberately no --steps. It is an alias for BATCH_SIZE in headless.py, so accepting it here would
     # give a sweep two names for one axis and let an arm set the run length twice. Sweep BATCH_SIZE
     # instead -- it is the constant the model itself stops on, and one of the strongest difficulty dials
@@ -442,6 +450,14 @@ def build_parser():
 def main(argv=None):
     options = build_parser().parse_args(argv)
     options.base = dict(parse_override(text) for text in options.base)
+
+    # Resolved once, here, rather than per arm: every arm of one sweep has to receive the same --seed for
+    # the comparison between them to be paired. Resolving it also means an unseeded sweep gets a fresh
+    # block each time it is run. The default used to be the constant 1000, so every sweep anybody ran
+    # without thinking about it was fitted to one set of fires -- and repeating a sweep returned the same
+    # numbers, which reads as a stable measurement rather than as the same measurement.
+    if options.seed is None:
+        options.seed = draw_base_seed()
 
     try:
         if options.command == "scan":

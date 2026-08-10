@@ -69,6 +69,18 @@ def apply_overrides(overrides: dict[str, Any]) -> None:
     cfg.validate()
 
 
+def draw_base_seed() -> int:
+    """A base seed from OS entropy, for a batch that was not given one.
+
+    headless.py seeds every batch, whether or not the user asked for a seed, and
+    draws the base from here when they did not. That is what makes an unseeded
+    batch both independent -- fresh entropy per invocation, so two batches never
+    see the same fires by accident -- and replayable, because the seed it landed
+    on is recorded in every RunResult and can be passed back as --seed.
+    """
+    return random.SystemRandom().getrandbits(32)
+
+
 def seed_simulation(seed: int) -> None:
     """Seed every random source the simulation uses.
 
@@ -78,9 +90,18 @@ def seed_simulation(seed: int) -> None:
     replaced by a seeded random.Random. Every module reads config.SYSTEM_RANDOM
     at the point of use, so setting it on config reaches all of them.
 
-    The `random` module is seeded as well. Nothing in the simulation draws from
-    it any more, but mesa.Model builds its own random.Random from it, so seeding
-    keeps anything reached through mesa reproducible too.
+    Both of these are process-global, which is why a batch may only be run in
+    parallel across processes and not across threads: two runs sharing a process
+    and running at once would interleave on one generator and consume each
+    other's streams. headless.py rejects that combination outright.
+
+    The `random` module is seeded as well, as a guard rather than because
+    anything needs it. Nothing in the simulation draws from the bare module --
+    tests/test_reproducibility.py booby-traps it to keep that true -- and mesa
+    does not either: mesa 1.x builds Model.random as random.Random(seed=None),
+    which takes OS entropy rather than the module state, and the scheduler here
+    is SimultaneousActivation, which never consults it. Moving to
+    RandomActivation would reintroduce nondeterminism a seed cannot reach.
     """
     random.seed(seed)
     _import_simulation()[0].SYSTEM_RANDOM = random.Random(seed)

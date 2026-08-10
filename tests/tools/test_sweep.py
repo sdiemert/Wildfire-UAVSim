@@ -137,6 +137,52 @@ def test_every_rendered_value_survives_the_round_trip_through_set():
         assert sweep.parse_override(f"NAME={rendered}") == ("NAME", value)
 
 
+# --- the seed block ---------------------------------------------------------
+#
+# `--seed` used to default to the constant 1000, so every sweep anyone ran without thinking about it was
+# measured on one set of fires: repeating a sweep returned the same numbers, which reads as a stable
+# measurement rather than as the same measurement, and a calibrated value was fitted to a block nobody
+# had chosen. The block is now drawn per sweep. What has to survive that is the pairing -- every arm of
+# one sweep still seeing the same fires -- which is the whole reason the arms share a block at all.
+
+
+@pytest.fixture
+def seeds_used(monkeypatch):
+    """Runs a scan with the simulator stubbed out, and reports the --seed each arm was launched with."""
+    def _run(*argv):
+        seen = []
+
+        def fake_run_arm(arm, options, out_dir):
+            seen.append(options.seed)
+            return fake_results(4, wins=1)
+
+        monkeypatch.setattr(sweep, "run_arm", fake_run_arm)
+        monkeypatch.setattr(sweep, "write_csv", lambda path, rows: [])
+        assert sweep.main(["scan", "--runs", "4", "--axis", "BHP=2,3,4",
+                           "--out", "unused", *argv]) == 0
+        return seen
+
+    return _run
+
+
+def test_every_arm_of_a_sweep_shares_one_seed_block(seeds_used):
+    """The pairing: arm k's run i has to be the same fire as arm j's run i, or the contrast is noise."""
+    seeds = seeds_used()
+    assert len(seeds) == 3 and len(set(seeds)) == 1
+
+
+def test_an_unseeded_sweep_draws_its_own_block(seeds_used):
+    """Not the constant 1000, and not the same block as the last sweep."""
+    first, second = seeds_used()[0], seeds_used()[0]
+    assert first != second
+    assert first != 1000 and second != 1000
+
+
+def test_an_explicit_seed_is_used_as_given(seeds_used):
+    """Re-measuring on a disjoint block is how a calibrated value gets confirmed, so --seed has to bind."""
+    assert set(seeds_used("--seed", "500000")) == {500000}
+
+
 # --- the join ---------------------------------------------------------------
 
 

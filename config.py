@@ -40,8 +40,12 @@ import random
 # =====================================================================================================
 
 # ### `SYSTEM_RANDOM` -- the generator every stochastic decision in the simulator draws from.
-# Replacing it with a seeded generator, as `headless.py --seed` and the test fixtures do, makes a run
-# reproducible.
+# Replacing it with a seeded generator, as `headless.py` and the test fixtures do, makes a run
+# reproducible. `headless.py` always replaces it, drawing a base seed from OS entropy and reporting it
+# when `--seed` was not given, so a batch is independent of every other batch and still replayable
+# afterwards. Only the web interface leaves the value below in place. Because this is a module
+# attribute, seeding is process-global: a batch may be parallelised across processes but not threads,
+# which `headless.py` enforces.
 # **Bounds:** a `random.Random` instance. `random.SystemRandom()` is not available on all systems.
 SYSTEM_RANDOM = random.SystemRandom()
 

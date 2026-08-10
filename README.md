@@ -91,6 +91,8 @@ This python package holds the Mesa web interface that `main.py` launches: `app.p
 
 This python package runs simulations without the graphical interface, with logging and optional parallel execution — `main.py` parses the arguments, `runner.py` executes one run, `batch.py` runs several in parallel, `overrides.py` implements `--set` and `--seed`, and `reporting.py` handles the logging and the summary. Run `python3 headless.py --help` for the available options.
 
+Every batch runs on a seed, whether or not you gave it one. Run N takes `seed + N`, and without `--seed` the base is drawn from OS entropy and reported in the log, so two batches never see the same fires by accident and any batch can still be replayed afterwards by passing back the seed its results recorded. Seeding works by replacing `config.SYSTEM_RANDOM`, which is a module attribute and therefore process-global: that is why `--workers` parallelises across processes, and why `--executor thread` is refused above one worker rather than warned about. Threads sharing one generator do not merely fail to reproduce — they interleave and take each other's fires.
+
 ### `sim/policy/`
 
 This python package holds the policies that decide where each UAV flies. `base.py` defines the abstract `Policy` interface, `observation.py` defines the `Observation` a UAV receives, `action.py` defines the `Action` it returns, and every concrete policy lives in its own file (`random_policy.py`, `follow_fire.py`, `firefighter.py`). The policy in use can be picked from the dropdown on the web interface, or with the `--policy` option of `headless.py`.
@@ -716,21 +718,21 @@ Roughly half the remaining difficulty is the positioning error. With `UAV_POSITI
 
 ```bash
 # the surface the defaults were picked off: 32 arms, 100 runs each, about three minutes
-python3 tools/sweep.py scan --policy firefighter --managing none --runs 100 --seed 1000 \
+python3 tools/sweep.py scan --policy firefighter --managing none --runs 100 \
     --base WIDTH=100 --base HEIGHT=100 --base BATCH_SIZE=100 \
     --axis FIRE_SPREAD_SPEED=1,2 --axis BHP=2,3,4,5 --axis EXTINGUISH_SCALE=1.0,0.85,0.75,0.65 \
     --out experiments/coarse
 
 # then the fine dial, to a target
 python3 tools/sweep.py calibrate --policy firefighter --managing none --knob EXTINGUISH_SCALE \
-    --low 0.65 --high 1.0 --target 0.10 --runs 400 --seed 1000 \
+    --low 0.65 --high 1.0 --target 0.10 --runs 400 \
     --base WIDTH=100 --base HEIGHT=100 --base FIRE_SPREAD_SPEED=1 --base BHP=4 \
     --out experiments/calibrate
 ```
 
 `EXTINGUISH_SCALE` and `GRID` are derived axes: one number that moves several constants together, because sweeping `WATER_EXTINGUISH_PROB_CENTRE` and `_EDGE` independently spends most of the arms on combinations nobody wants. They are listed in `DERIVED` at the top of `tools/sweep.py`, which is where to add more.
 
-Every arm shares a seed block, so the arms see the same fires and the comparison between them is paired. That also means a calibrated value is fitted to one set of fires: confirm it on a disjoint block before adopting it.
+Every arm of one sweep shares a seed block, so the arms see the same fires and the comparison between them is paired. The block is drawn fresh per sweep and reported in the header unless `--seed` pins it — sharing a block *across* sweeps is not pairing, it is fitting everything the tool has ever measured to one set of fires, and it used to be the default. Within a sweep the risk remains: a calibrated value is fitted to the fires it was bisected on, so confirm it on a disjoint block (`--seed 500000`, as the numbers above were) before adopting it. The block each run actually used is the `seed` column of `runs.csv`.
 
 ## Variables description
 

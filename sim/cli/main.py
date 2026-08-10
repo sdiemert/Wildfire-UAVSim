@@ -43,7 +43,7 @@ from dataclasses import asdict
 # own python modules
 
 from sim.cli.batch import run_batch
-from sim.cli.overrides import _import_simulation, apply_overrides, parse_override
+from sim.cli.overrides import _import_simulation, apply_overrides, draw_base_seed, parse_override
 from sim.cli.reporting import configure_logging, log_summary
 from sim.cli.runner import RunConfig
 
@@ -74,13 +74,16 @@ def build_parser() -> argparse.ArgumentParser:
         default="process",
         help="parallelism backend. The simulation is CPU bound and holds the GIL, "
              "so 'process' is the only one that actually runs runs concurrently; "
-             "'thread' is kept for debugging (default: process)",
+             "'thread' is kept for debugging and requires --workers 1, because "
+             "seeding is process-global (default: process)",
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=None,
-        help="base seed; run N uses seed+N so runs differ but the batch is reproducible",
+        help="base seed; run N uses seed+N so runs differ but the batch is reproducible. "
+             "Without it a base is drawn from OS entropy and reported, so the batch is "
+             "independent of every other batch and still replayable afterwards",
     )
     parser.add_argument(
         "--set",
@@ -213,17 +216,35 @@ def main(argv: list[str] | None = None) -> int:
     workers = args.workers if args.workers > 0 else (os.cpu_count() or 1)
     workers = min(workers, args.runs)
 
-    if args.seed is not None and args.executor == "thread" and workers > 1:
-        log.warning(
-            "seeding is process-global: with --executor thread the runs share one "
-            "random state and results will not be reproducible"
+    # Seeding replaces config.SYSTEM_RANDOM, which is a module attribute and so process-global. Two runs
+    # sharing a process and running at once therefore interleave on one generator and consume each
+    # other's streams -- not merely failing to reproduce, but producing another run's fire. This used to
+    # be a warning, which is not enough: the batch still ran and still wrote plausible JSON with a
+    # distinct seed recorded against every run. There is nothing lost by refusing it, because the
+    # simulation is CPU bound and holds the GIL, so the thread backend never ran anything concurrently.
+    if args.executor == "thread" and workers > 1:
+        log.error(
+            "--executor thread cannot run %d workers: seeding is process-global, so the runs would "
+            "interleave on one random state and take each other's fires. Use --executor process, "
+            "or --workers 1",
+            workers,
         )
+        return 2
+
+    # Every batch runs on a recorded seed, whether or not one was asked for. An unseeded batch used to
+    # draw from SystemRandom and record None, so the run worth a second look -- the outlier, the crash,
+    # the surprising win -- could never be looked at twice. Drawing the base from OS entropy keeps an
+    # unseeded batch independent of every other batch, which a fixed default would not.
+    base_seed = args.seed if args.seed is not None else draw_base_seed()
+    if args.seed is None:
+        log.info("no --seed given; base seed %d (pass --seed %d to repeat this batch)",
+                 base_seed, base_seed)
 
     configs = [
         RunConfig(
             run_id=run_id,
             steps=steps,
-            seed=None if args.seed is None else args.seed + run_id,
+            seed=base_seed + run_id,
             overrides=overrides,
             log_every=args.log_every,
             policy=args.policy,
