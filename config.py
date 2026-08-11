@@ -56,14 +56,11 @@ SYSTEM_RANDOM = random.SystemRandom()
 # =====================================================================================================
 
 # ### `ACTIVATE_WIND` -- whether wind skews the direction the fire spreads in.
-# With it off, `MU`, `WIND_DIRECTION` and the composed wind settings are ignored.
+# With it off, `MU`, `WIND_DIRECTION` and `WIND_VARIABILITY` are ignored. An empty `WIND_DIRECTION` says the
+# same thing, so there are two ways to ask for a still day; this one exists so that a sweep can switch the
+# wind off with `--set ACTIVATE_WIND=False` without having to discard, and later restore, the direction list.
 # **Bounds:** `True` / `False`.
 ACTIVATE_WIND = True
-
-# ### `FIXED_WIND` -- whether the wind blows from one direction or two.
-# `True` uses `WIND_DIRECTION` alone; `False` composes `FIRST_DIR` and `SECOND_DIR`.
-# **Bounds:** `True` / `False`.
-FIXED_WIND = False
 
 # ### `ACTIVATE_SMOKE` -- whether burning cells raise smoke, which drifts downwind and blinds observers.
 # The master switch for the whole of the `## Smoke` section below. With it off no cell ever smokes, nothing
@@ -165,36 +162,70 @@ FIRE_START_STEP = (10, 20)
 # =====================================================================================================
 # ## Wind
 #
-# Ignored unless `ACTIVATE_WIND` is True. Wind raises the chance of spreading downwind and lowers it
-# upwind, by a fraction `MU` of the probability that is left.
+# Ignored unless `ACTIVATE_WIND` is True.
+#
+# One wind blows over the whole grid at any instant, from the 8 point compass.
+# It raises the chance of the fire spreading along the one ray pointing downwind, and
+# lowers it everywhere else, by a fraction `MU`.
+#
+# A direction names where the wind blows *toward*, with y increasing north: 'EAST' pushes the fire toward
+# larger x, 'SOUTH' toward smaller y. So under an easterly the cell that lights you is the one to your
+# west. That is worth reading twice, because meteorology names a wind for where it comes *from* and this
+# does not.
+#
+# The wind is drawn from `WIND_DIRECTION` and held for `WIND_VARIABILITY` steps before being drawn again,
+# which makes a fixed wind, a wind randomised once per run, and a wind that wanders all the same setting
+# at different values:
+#
+#     WIND_DIRECTION = ['SOUTH']                    a southerly, all run, every run
+#     WIND_DIRECTION = [...], WIND_VARIABILITY = None   one direction per run, drawn at reset
+#     WIND_DIRECTION = [...], WIND_VARIABILITY = 20     turning every 20 steps
+#     WIND_DIRECTION = []                           no wind, the same as ACTIVATE_WIND = False
+#
+# This replaced a pair of settings, FIRST_DIR and SECOND_DIR, mixed by a FIRST_DIR_PROB drawn afresh for
+# every cell and every neighbour of it. That gave a diagonal wind only in aggregate -- no cell ever felt
+# one, and neighbouring cells felt the wind blowing different ways at the same instant, which is not a
+# thing a wind does. The diagonals here are directions in their own right.
 # =====================================================================================================
 
-# ### `WIND_DIRECTION` -- the single direction the wind blows, used when `FIXED_WIND` is True.
-# **Bounds:** one of 'north', 'south', 'east', 'west'. Anything else raises `ValueError` in
-# `fire_spread.build_kernel()`.
-WIND_DIRECTION = 'south'
+# ### `WIND_DIRECTION` -- the directions the wind may blow, drawn from uniformly.
+# A single entry is a wind that never varies, whatever `WIND_VARIABILITY` says, and costs no randomness.
+# **Bounds:** a list of names from `WIND_DIRECTIONS` below -- 'NORTH', 'NORTH_EAST', 'EAST', 'SOUTH_EAST',
+# 'SOUTH', 'SOUTH_WEST', 'WEST', 'NORTH_WEST'. Case is not significant. `None` or `[]` means no wind.
+# A bare string is taken as a list of one, so `--set WIND_DIRECTION=SOUTH` does what it looks like.
+WIND_DIRECTION = ['SOUTH', 'SOUTH_WEST']
 
-# Composed wind. Read only when `FIXED_WIND` is False, but defined either way: a name that exists under
-# one setting and not the other cannot be overridden from the command line (`headless.py --set` rejects it
-# as an unknown constant) and turns any stray read into a NameError instead of a wrong answer. Mixing two
-# perpendicular directions gives a diagonal wind: NW, NE, SW or SE.
+# ### `WIND_VARIABILITY` -- how many simulation steps the wind holds a direction before drawing again.
+# Counted in the same steps as `BATCH_SIZE`, not in fire updates, so `FIRE_SPREAD_SPEED` does not scale it:
+# the smoke drifts on this clock too, and the smoke has no other use for the fire's.
+# **Bounds:** an integer `>= 1`, or `None` for a wind drawn once at reset and held for the whole run.
+# A value `>= BATCH_SIZE` amounts to the same thing as `None`.
+WIND_VARIABILITY = 20
 
-# ### `FIRST_DIR` -- the predominant wind direction.
-# **Bounds:** one of 'north', 'south', 'east', 'west'.
-FIRST_DIR = 'south'
-
-# ### `SECOND_DIR` -- the other direction, blown whenever the first one is not.
-# **Bounds:** one of 'north', 'south', 'east', 'west'.
-SECOND_DIR = 'east'
-
-# ### `FIRST_DIR_PROB` -- how far `FIRST_DIR` predominates, drawn afresh per cell per update.
-# **Bounds:** float in `[0, 1]`. `1` collapses onto `FIRST_DIR`, `0` onto `SECOND_DIR`, and `0.5`
-# splits the wind evenly between the two.
-FIRST_DIR_PROB = 0.8
-
-# ### `MU` -- wind strength (wind velocity).
-# The fraction of the remaining probability that blowing downwind adds, and blowing upwind takes away.
-# **Bounds:** float in `[0, 1]`. `0` makes the wind irrelevant, `1` makes it absolute.
+# ### `MU` -- how hard the wind leans on the fire.
+# Not a wind speed, despite the name: it is the *contrast* between downwind and everywhere else, and it is
+# one number doing both halves of that job. A burning neighbour at offset (dx, dy) influences a cell by
+# `w = distance ** -2` (`distance_rate()` below), which the wind then moves:
+#
+#     on the downwind ray:  w  ->  w + MU * (1 - w)      a fraction MU of the way to certainty
+#     everywhere else:      w  ->  w * (1 - MU)          shrunk by a fraction MU
+#
+# "Everywhere else" is everything not exactly on the ray -- crosswind and the two flanking diagonals are
+# suppressed just as hard as upwind is.
+# **Bounds:** float in `[0, 1]`. `0` makes the wind irrelevant. `1` makes it absolute: the cell one step
+# downwind ignites with certainty and no other cell ever ignites at all, so the fire becomes a line one
+# cell wide. At the shipped `0.5`, over the spread radius of 3:
+#
+#     SOUTH ray                        SOUTH_EAST ray
+#      (0, 1)  d=1.00  w 1.00 -> 1.00   (-1, 1)  d=1.41  w 0.50 -> 0.75
+#      (0, 2)  d=2.00  w 0.25 -> 0.63   (-2, 2)  d=2.83  w 0.13 -> 0.56
+#      (0, 3)  d=3.00  w 0.11 -> 0.56   (-3, 3)  d=4.24  outside the radius
+#
+# A diagonal ray reaches one ring less than a cardinal one, because its third cell falls outside the
+# radius, and its nearest cell is not a certainty. That asymmetry is deliberate and left alone: a diagonal
+# step covers 1.41 cells, so the two come out close in front speed (0.75 * 1.41 = 1.06 against 1.00),
+# and the alternative -- widening the downwind set into a cone -- would change cardinal spread as well and
+# invalidate every calibrated number in this file.
 MU = 0.5
 
 # =====================================================================================================
@@ -780,8 +811,39 @@ COLORS_LEN = len(VEGETATION_COLORS)
 # alike, and headless.py calls it again after applying --set overrides.
 # =====================================================================================================
 
-# every direction the wind logic understands, in agents.Wind and in fire_spread.build_kernel()
-WIND_DIRECTIONS = ('north', 'south', 'east', 'west')
+# Every direction the wind logic understands, and the heading each one blows toward, as a step in grid
+# coordinates with y increasing north. Read by environment.Wind and by fire_spread.on_wind(), which is the
+# single definition of "downwind" the fire and the smoke both go through.
+#
+# A burning neighbour at offset (dx, dy) = s' - s pushes fire into s when it lies *upwind* of s, which is
+# to say at (-k * ux, -k * uy) for a whole number of steps k >= 1 along the heading. Under an easterly,
+# heading (1, 0), that is the neighbours with dx < 0 and dy == 0.
+WIND_HEADINGS = {
+    'NORTH':      (0, 1),
+    'NORTH_EAST': (1, 1),
+    'EAST':       (1, 0),
+    'SOUTH_EAST': (1, -1),
+    'SOUTH':      (0, -1),
+    'SOUTH_WEST': (-1, -1),
+    'WEST':       (-1, 0),
+    'NORTH_WEST': (-1, 1),
+}
+
+WIND_DIRECTIONS = tuple(WIND_HEADINGS)
+
+
+# The direction list as the simulation reads it: upper cased, a bare string taken as a list of one, and
+# () for a still day. Everything that consults the wind goes through here rather than reading
+# WIND_DIRECTION itself, so that 'south', 'SOUTH' and ['SOUTH'] cannot come to mean three different things
+# -- lower case is what this file shipped for years, and what the sweeps in experiments/ still pass.
+#
+# It answers () rather than raising on a name it does not know: validate() below is what reports that, and
+# it reports every problem in the configuration at once rather than dying on the first.
+def wind_directions():
+    if not ACTIVATE_WIND or not WIND_DIRECTION:
+        return ()
+    names = [WIND_DIRECTION] if isinstance(WIND_DIRECTION, str) else list(WIND_DIRECTION)
+    return tuple(name.upper() for name in names if isinstance(name, str))
 
 
 # checks the configuration over, raising ValueError describing everything that is wrong with it rather
@@ -815,20 +877,26 @@ def validate(managing=None, remote=False):
             f"FIRE_SPREAD_SPEED must be an integer >= 1, got {FIRE_SPREAD_SPEED!r}")
     require(0.0 <= DENSITY_PROB <= 1.0, f"DENSITY_PROB must be in [0, 1], got {DENSITY_PROB!r}")
 
-    # wind. The composed directions are only read when the wind is on and not fixed, but they are always
-    # defined, so they are always worth checking
+    # wind. Checked only when the wind is on, like the other extensions: with ACTIVATE_WIND off nothing
+    # here is read, and a run that has switched the wind off should not have to hold a valid direction list
+    # to start. An empty WIND_DIRECTION is not an error either -- it is the other way of saying no wind.
     if ACTIVATE_WIND:
         require(0.0 <= MU <= 1.0, f"MU must be in [0, 1], got {MU!r}")
-        if FIXED_WIND:
-            require(WIND_DIRECTION in WIND_DIRECTIONS,
-                    f"WIND_DIRECTION must be one of {WIND_DIRECTIONS}, got {WIND_DIRECTION!r}")
-        else:
-            require(FIRST_DIR in WIND_DIRECTIONS,
-                    f"FIRST_DIR must be one of {WIND_DIRECTIONS}, got {FIRST_DIR!r}")
-            require(SECOND_DIR in WIND_DIRECTIONS,
-                    f"SECOND_DIR must be one of {WIND_DIRECTIONS}, got {SECOND_DIR!r}")
-            require(0.0 <= FIRST_DIR_PROB <= 1.0,
-                    f"FIRST_DIR_PROB must be in [0, 1], got {FIRST_DIR_PROB!r}")
+        # the raw setting is checked rather than wind_directions(), which upper cases and drops anything
+        # that is not a string, and would therefore hide exactly the mistakes worth reporting
+        if WIND_DIRECTION:
+            names = [WIND_DIRECTION] if isinstance(WIND_DIRECTION, str) else WIND_DIRECTION
+            if not isinstance(names, (list, tuple)):
+                require(False, "WIND_DIRECTION must be a list of direction names, a single name, or "
+                               f"None/[] for no wind, got {WIND_DIRECTION!r}")
+            else:
+                for name in names:
+                    require(isinstance(name, str) and name.upper() in WIND_DIRECTIONS,
+                            f"WIND_DIRECTION entries must be one of {WIND_DIRECTIONS}, got {name!r}")
+        require(WIND_VARIABILITY is None or (isinstance(WIND_VARIABILITY, int)
+                                            and not isinstance(WIND_VARIABILITY, bool)
+                                            and WIND_VARIABILITY >= 1),
+                f"WIND_VARIABILITY must be an integer >= 1, or None, got {WIND_VARIABILITY!r}")
 
     # smoke. The pre-dispelling counter is checked whatever the switch says, as it always has been; the
     # plume settings below it are only read when there is smoke to shape, so they follow the pattern of the

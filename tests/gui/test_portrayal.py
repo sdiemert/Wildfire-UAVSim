@@ -184,8 +184,8 @@ def test_the_map_draws_the_plume_the_team_is_actually_blinded_by(make_model, sim
     from sim.smoke import SmokeField
 
     built = make_model(NUM_AGENTS=0, WIDTH=15, HEIGHT=15, ACTIVATE_SMOKE=True,
-                       SMOKE_OCCLUDES_OBSERVATION=True, ACTIVATE_WIND=True, FIXED_WIND=True,
-                       WIND_DIRECTION="south", SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6,
+                       SMOKE_OCCLUDES_OBSERVATION=True, ACTIVATE_WIND=True,
+                       WIND_DIRECTION=["SOUTH"], SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6,
                        SMOKE_OCCLUSION_THRESHOLD=0.5, FIRE_START_POSITION=(14, 14), FIRE_START_STEP=0)
     built.smoke_field = SmokeField(config.HEIGHT, config.WIDTH)
     built.fire_agent_at((7, 9)).smoke.smoke = True

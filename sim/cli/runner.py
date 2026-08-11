@@ -64,6 +64,14 @@ class RunResult:
     # where and when the fire was lit; worth recording because both can be randomised in config.py
     fire_start_pos: list[int] = field(default_factory=list)
     fire_start_step: int = 0
+    # the wind, for the same reason: WIND_DIRECTION is a list drawn from, so a batch sweeping nothing at
+    # all still gets a different wind per run and the results have to be readable by which one it got.
+    # wind_initial is the direction drawn at reset -- the run's only wind when WIND_VARIABILITY is None --
+    # and wind_redraws counts the fresh draws after it, some of which will have landed on the direction
+    # already blowing. Empty and zero when the wind is off.
+    wind_directions: list[str] = field(default_factory=list)
+    wind_initial: str = ""
+    wind_redraws: int = 0
     # firefighting extension; all zero/false when it is switched off
     water_drops: int = 0
     cells_extinguished: int = 0
@@ -228,6 +236,9 @@ def run_simulation(config: RunConfig) -> RunResult:
             burned_out_cells_final=burned_out,
             fire_start_pos=list(model.fire_start_pos),
             fire_start_step=model.fire_start_step,
+            wind_directions=list(model.wind.directions),
+            wind_initial=model.wind_initial or "",
+            wind_redraws=model.wind.redraws,
             water_drops=model.water_drops,
             cells_extinguished=model.cells_extinguished,
             refills=model.refills,

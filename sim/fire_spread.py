@@ -18,15 +18,18 @@ mask with a fixed kernel:
 
     with K[dx, dy] = log(1 - w(dx, dy))
 
-The kernel is built once per model, and each step costs one pass over the grid instead of a Python
+The kernels are built once per model, and each step costs one pass over the grid instead of a Python
 loop over every cell times every neighbour.
 
-Reproducibility: with the wind switched off, or with FIXED_WIND, this consumes no randomness at all,
-exactly like the per cell version, so seeded runs reproduce the old results step for step. With
-composed wind (FIXED_WIND = False) the old code drew from SYSTEM_RANDOM once per cell/neighbour pair
-inside Wind.change_direction(); this module draws one array per affected offset instead. The
-distribution is the same, the stream of draws is not, so seeded composed wind runs will not match
-results produced before this module existed.
+One kernel is built per direction the wind may blow (see config.WIND_DIRECTION), which is at most eight
+small arrays, and probability_field() is handed the one blowing now. Building them all up front rather
+than rebuilding on each turn keeps a turning wind free: the cost is a couple of hundred logarithms at
+construction, against a rebuild every WIND_VARIABILITY steps.
+
+Reproducibility: this module consumes no randomness at all, in any wind mode, so a seeded run is decided
+entirely by the fire and the UAVs. It used to draw an array per offset per step under the old composed
+wind, which tossed a coin per cell and per neighbour to pick between two directions; the wind is now one
+direction over the whole grid and the only draw it takes is Wind.change_direction(), once per turn.
 """
 
 # python libraries
@@ -41,31 +44,33 @@ import numpy
 # constants (see sim/cli/) is picked up when a FireSpread is built
 import config
 
+from sim.environment import on_heading
+
 
 # stand-in for log(0), used for the four orthogonal neighbours, whose w is exactly 1 and which
-# therefore set P = 1 outright. It only has to be low enough that 1 - exp(NEG_INF) rounds to 1.0:
+# therefore set P = 1 outright. A diagonal neighbour reaches it too once the wind is strong enough to
+# carry its 0.5 the rest of the way, which is to say at MU = 1. It only has to be low enough that
+# 1 - exp(NEG_INF) rounds to 1.0:
 # exp(-50) is 2e-22, far below the 2e-16 resolution of a float64 near 1. A true -inf would be
 # multiplied by a zero of the burning mask and give nan.
 NEG_INF = -50.0
 
-# the four wind directions, and the offsets they favour. is_on_wind_direction(s, s') in sim/environment.py
+# the eight wind directions, and the offsets they favour. is_on_wind_direction(s, s') in sim/environment.py
 # compares the cell with its neighbour; rewriting it on the offset (dx, dy) = s' - s gives, for
-# 'east' (s[0] > s'[0] and s[1] == s'[1]) the neighbours lying to the west, and so on. Taken from
+# 'EAST' (s[0] > s'[0] and s[1] == s'[1]) the neighbours lying to the west, and so on. Taken from
 # config.py, which validates the wind settings against the same tuple, so the two cannot drift apart.
 WIND_DIRECTIONS = config.WIND_DIRECTIONS
 
 
-# checks whether a neighbour at offset (dx, dy) from a cell pushes fire into it under this wind
+# checks whether a neighbour at offset (dx, dy) from a cell pushes fire into it under this wind. The rule
+# itself lives in sim/environment.py beside the Wind, so that the convolution here and the readable per
+# cell definition there cannot come to disagree about which way is downwind.
 def on_wind(direction, dx, dy):
-    if direction == "east":
-        return dx < 0 and dy == 0
-    if direction == "west":
-        return dx > 0 and dy == 0
-    if direction == "north":
-        return dx == 0 and dy < 0
-    if direction == "south":
-        return dx == 0 and dy > 0
-    raise ValueError(f"unknown wind direction {direction!r}, expected one of {WIND_DIRECTIONS}")
+    try:
+        heading = config.WIND_HEADINGS[direction.upper()]
+    except (AttributeError, KeyError):
+        raise ValueError(f"unknown wind direction {direction!r}, expected one of {WIND_DIRECTIONS}") from None
+    return on_heading(heading, dx, dy)
 
 
 # the influence a burning neighbour at offset (dx, dy) has on a cell, before the logarithm. This is
@@ -97,15 +102,15 @@ def build_kernel(radius, mu, direction=None):
     return kernel
 
 
-# the offsets at which two wind directions disagree. Only these need a per cell coin toss under
-# composed wind; everywhere else the two kernels hold the same value.
-def mixed_offsets(kernel_first, kernel_second, radius):
-    offsets = []
-    for dx in range(-radius, radius + 1):
-        for dy in range(-radius, radius + 1):
-            if kernel_first[dx + radius, dy + radius] != kernel_second[dx + radius, dy + radius]:
-                offsets.append((dx, dy))
-    return offsets
+# the offsets a kernel contributes at all, so that the evaluation loop skips the corners of the window
+# (which lie beyond the radius) and anything the wind zeroed out
+def contributing_offsets(kernel, radius):
+    return [
+        (dx, dy)
+        for dx in range(-radius, radius + 1)
+        for dy in range(-radius, radius + 1)
+        if kernel[dx + radius, dy + radius] != 0
+    ]
 
 
 # Class FireSpread evaluates the ignition probability of every cell of the grid at once. It reads the
@@ -124,44 +129,19 @@ class FireSpread:
         self.radius = radius
         self.moore = moore
 
-        self.wind_active = bool(config.ACTIVATE_WIND)
-        self.fixed_wind = bool(config.FIXED_WIND)
-        self.first_dir_prob = config.FIRST_DIR_PROB if not self.fixed_wind else 1.0
-
         mu = config.MU
-        if not self.wind_active:
-            # one kernel, no wind bias anywhere
-            self.kernel = build_kernel(radius, mu)
-            self.kernel_second = None
-            self.mixed = set()
-        elif self.fixed_wind:
-            self.kernel = build_kernel(radius, mu, config.WIND_DIRECTION)
-            self.kernel_second = None
-            self.mixed = set()
-        else:
-            # composed wind: each cell/neighbour pair independently blows FIRST_DIR with probability
-            # FIRST_DIR_PROB, otherwise SECOND_DIR. The two kernels differ on only a handful of
-            # offsets, which are the ones that need a random draw per step.
-            self.kernel = build_kernel(radius, mu, config.FIRST_DIR)
-            self.kernel_second = build_kernel(radius, mu, config.SECOND_DIR)
-            self.mixed = set(mixed_offsets(self.kernel, self.kernel_second, radius))
+        self.directions = config.wind_directions()
 
-        # the per cell wind draws are the only randomness this module needs, and they are only
-        # needed under composed wind. The generator is seeded from SYSTEM_RANDOM, so a runner that
-        # seeds the simulation (see sim/cli/) makes them reproducible too. It is built lazily so
-        # that the other two wind modes consume nothing from SYSTEM_RANDOM and leave the stream of
-        # draws, and therefore seeded runs, exactly as they were before this module existed.
-        self.rng = numpy.random.default_rng(config.SYSTEM_RANDOM.getrandbits(64)) if self.mixed else None
-
-        # offsets that contribute at all, so that the evaluation loop skips the corners of the
-        # window (which lie beyond the radius) and anything the wind zeroed out
-        self.offsets = [
-            (dx, dy)
-            for dx in range(-radius, radius + 1)
-            for dy in range(-radius, radius + 1)
-            if self.kernel[dx + radius, dy + radius] != 0
-            or (self.kernel_second is not None and self.kernel_second[dx + radius, dy + radius] != 0)
-        ]
+        # one kernel per direction the wind may blow, and always the unbiased one under None, so that a
+        # caller which passes no direction -- a test, or a run with the wind switched off -- gets an
+        # answer rather than a KeyError. Each is paired with the offsets it actually contributes at.
+        self.kernels = {None: build_kernel(radius, mu)}
+        for direction in self.directions:
+            self.kernels[direction] = build_kernel(radius, mu, direction)
+        self.offsets = {
+            direction: contributing_offsets(kernel, radius)
+            for direction, kernel in self.kernels.items()
+        }
 
     # checks that the Fire agents really do share the radius and neighbourhood this kernel was built
     # for. A per agent radius would make the whole approach wrong, so it fails loudly instead.
@@ -173,28 +153,38 @@ class FireSpread:
                     f"but the spread kernel was built for radius={self.radius} moore={self.moore}"
                 )
 
-    # gives the ignition probability of every cell, from the burning mask of the whole grid. The
-    # mask is indexed [x, y] like the Mesa grid positions, and is zero padded because the grid is
-    # not a torus, which reproduces the clipping get_neighborhood() does at the edges.
-    def probability_field(self, burning):
+    # the kernel for a direction, by way of the one place that turns an unknown direction into a clear
+    # error. None, and a direction the wind was never configured to blow, both fall back to no bias --
+    # the first deliberately, the second because a model that has switched the wind off mid run has no
+    # kernel to offer and an unbiased fire is the honest answer.
+    def kernel_for(self, direction):
+        if direction is None:
+            return self.kernels[None], self.offsets[None]
+        name = direction.upper()
+        if name not in self.kernels:
+            if name not in config.WIND_HEADINGS:
+                raise ValueError(f"unknown wind direction {direction!r}, "
+                                 f"expected one of {WIND_DIRECTIONS}")
+            return self.kernels[None], self.offsets[None]
+        return self.kernels[name], self.offsets[name]
+
+    # gives the ignition probability of every cell, from the burning mask of the whole grid, under the
+    # wind blowing this step. The mask is indexed [x, y] like the Mesa grid positions, and is zero padded
+    # because the grid is not a torus, which reproduces the clipping get_neighborhood() does at the edges.
+    #
+    # The direction is an argument rather than state, so that this object holds no opinion about what the
+    # weather is doing: the model owns the Wind and hands over whichever direction it is holding, and a
+    # test can drive one directly without building a model at all.
+    def probability_field(self, burning, direction=None):
         radius = self.radius
         height, width = self.height, self.width
+        kernel, offsets = self.kernel_for(direction)
 
         padded = numpy.pad(numpy.asarray(burning, dtype=float), radius)
         accumulated = numpy.zeros((height, width))
 
-        for dx, dy in self.offsets:
+        for dx, dy in offsets:
             shifted = padded[radius + dx:radius + dx + height, radius + dy:radius + dy + width]
-            weight = self.kernel[dx + radius, dy + radius]
-
-            if (dx, dy) in self.mixed:
-                # composed wind, on an offset the two directions disagree about: draw which way the
-                # wind blows for each cell of the grid, as change_direction() did per pair. Each
-                # offset gets its own draw, because the old code redrew for every pair.
-                second = self.kernel_second[dx + radius, dy + radius]
-                blows_first = self.rng.random((height, width)) < self.first_dir_prob
-                accumulated += numpy.where(blows_first, weight, second) * shifted
-            else:
-                accumulated += weight * shifted
+            accumulated += kernel[dx + radius, dy + radius] * shifted
 
         return 1.0 - numpy.exp(accumulated)

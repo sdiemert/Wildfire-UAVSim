@@ -74,10 +74,10 @@ Both versions are kept, and `tests/test_fire_spread.py` checks them against each
 under each wind setting, at the edges of the grid and with sparse vegetation. **If you change how the
 fire spreads, change it in both places**, or that test will fail.
 
-One caveat on reproducibility. With the wind switched off or with `FIXED_WIND = True`, seeded runs
-give exactly the results they gave before this file existed. With composed wind (`FIXED_WIND =
-False`) the wind direction is drawn per cell in one go rather than one cell at a time, so runs are
-statistically the same but a given seed no longer reproduces older results.
+`sim/fire_spread.py` takes nothing at all from `SYSTEM_RANDOM`, in any wind mode: it holds one kernel
+per direction the wind may blow and is handed the one blowing this step. The only draw the wind takes
+is `Wind.change_direction()`, once every `WIND_VARIABILITY` steps — and a single direction list does
+not even take that, so a seeded fixed wind run reproduces results recorded before the wind could turn.
 
 ### `sim/formulas.py`
 
@@ -791,22 +791,42 @@ python3 headless.py --set 'FIRE_START_POSITION=(3, 3)' --set FIRE_START_STEP=10
 
 ### Wind
 
-Wind raises the chance of the fire spreading downwind and lowers it upwind, by a fraction `MU` of the probability that is left. All of it is ignored unless `ACTIVATE_WIND` is `True`.
+One wind blows over the whole grid at any instant, from the 8 point compass. It raises the chance of the fire spreading along the one ray pointing downwind and lowers it everywhere else, by a fraction `MU`. All of it is ignored unless `ACTIVATE_WIND` is `True`.
 
 | Variable | Meaning | Bounds | Default |
 |---|---|---|---|
-| `ACTIVATE_WIND` | Whether the fire spread is influenced by wind | `True` / `False` | `False` |
-| `FIXED_WIND` | Whether the wind blows from one direction or two | `True` / `False` | `False` |
-| `WIND_DIRECTION` | The single direction, used when `FIXED_WIND` is `True` | `'north'`, `'south'`, `'east'`, `'west'` | `'south'` |
-| `FIRST_DIR` | Predominant direction of a composed wind | `'north'`, `'south'`, `'east'`, `'west'` | `'south'` |
-| `SECOND_DIR` | The other direction, blown whenever the first is not | `'north'`, `'south'`, `'east'`, `'west'` | `'east'` |
-| `FIRST_DIR_PROB` | How far `FIRST_DIR` predominates | float in `[0, 1]` | `0.8` |
-| `MU` | Wind strength (wind velocity) | float in `[0, 1]` | `0.9` |
+| `ACTIVATE_WIND` | Whether the fire spread is influenced by wind | `True` / `False` | `True` |
+| `WIND_DIRECTION` | The directions the wind may blow, drawn from uniformly | a list of the 8 names below; `None` or `[]` for no wind | `['SOUTH', 'SOUTH_WEST']` |
+| `WIND_VARIABILITY` | Simulation steps the wind holds a direction before drawing again | integer `>= 1`, or `None` for never | `20` |
+| `MU` | How hard the wind leans on the fire | float in `[0, 1]` | `0.5` |
 | `PROBABILITY_MAP` | Draw each cell's probability of catching fire instead of the forest | `True` / `False` | `False` |
 
-`FIRST_DIR`, `SECOND_DIR` and `FIRST_DIR_PROB` only exist when `FIXED_WIND` is `False`, which is also the only time anything reads them. Mixing two perpendicular directions gives a diagonal wind: NW, NE, SW or SE. `FIRST_DIR_PROB` is drawn afresh per cell per update, so `1` collapses onto `FIRST_DIR`, `0` onto `SECOND_DIR`, and `0.5` splits the wind evenly. A direction outside the four raises `ValueError` in `fire_spread.build_kernel()`.
+The eight directions are `'NORTH'`, `'NORTH_EAST'`, `'EAST'`, `'SOUTH_EAST'`, `'SOUTH'`, `'SOUTH_WEST'`, `'WEST'` and `'NORTH_WEST'`. Case is not significant, and a bare string is taken as a list of one, so `--set WIND_DIRECTION=south` does what it looks like. A name outside the eight is refused by `config.validate()`.
 
-`MU = 0` makes the wind irrelevant and `MU = 1` makes it absolute.
+**A direction names where the wind blows *toward***, with y increasing north: `'EAST'` pushes the fire toward larger x, `'SOUTH'` toward smaller y. Meteorology names a wind for where it comes *from*; this does not.
+
+Between them, `WIND_DIRECTION` and `WIND_VARIABILITY` cover the cases that used to need four settings:
+
+| What you want | How to ask for it |
+|---|---|
+| A fixed southerly, every run | `WIND_DIRECTION = ['SOUTH']` |
+| A wind randomised once per run | a list of several, `WIND_VARIABILITY = None` |
+| A wind that turns during a run | a list of several, `WIND_VARIABILITY = 20` |
+| No wind | `WIND_DIRECTION = []`, or `ACTIVATE_WIND = False` |
+
+A single entry costs no randomness at all, so a fixed wind run reproduces seeded results exactly as it did before the wind could turn. `ACTIVATE_WIND = False` and an empty list say the same thing; the switch exists so that a sweep can turn the wind off with `--set ACTIVATE_WIND=False` without discarding the list.
+
+`headless.py` records `wind_directions`, `wind_initial` and `wind_redraws` in every run result, which is what makes a batch with a randomised wind readable afterwards.
+
+#### What `MU` does
+
+It is not a wind speed, despite the name. A burning neighbour at offset `(dx, dy)` influences a cell by `w = distance ** -2`, which the wind then moves: on the downwind ray to `w + MU * (1 - w)`, and *everywhere else* to `w * (1 - MU)`. One number does both halves. "Everywhere else" means everything not exactly on the ray — crosswind and the two flanking diagonals are suppressed as hard as upwind is.
+
+`MU = 0` makes the wind irrelevant. `MU = 1` makes it absolute: the cell one step downwind ignites with certainty and no other cell ignites at all, so the fire becomes a line one cell wide.
+
+A diagonal ray reaches one ring less than a cardinal one — its third cell lies at distance 4.24, outside the spread radius of 3 — and its nearest cell is not a certainty. That asymmetry is deliberate. A diagonal step covers 1.41 cells, so the two come out close in front speed, and the alternative of widening the downwind set into a cone would change cardinal spread as well and invalidate every calibrated number in `config.py`. `tests/test_fire_spread.py::test_downwind_offsets_are_a_single_ray` pins it so that removing it is a decision rather than an accident.
+
+Diagonals used to be expressed by mixing two perpendicular cardinals with a `FIRST_DIR_PROB` drawn afresh for every cell and every neighbour of it. That gave a diagonal only in aggregate — no cell ever felt one, and neighbouring cells felt the wind blowing different ways at the same instant. `FIXED_WIND`, `FIRST_DIR`, `SECOND_DIR` and `FIRST_DIR_PROB` are gone; the diagonals are directions in their own right.
 
 `PROBABILITY_MAP` requires `NUM_AGENTS = 0`: nothing but the fire is drawn on the probability map, so a UAV would be handed a portrayal with no `"Layer"` attribute and the canvas would throw `KeyError: 'Layer'`.
 
@@ -850,7 +870,7 @@ occluded(s) = density(s) >= SMOKE_OCCLUSION_THRESHOLD
 
 Against that, the fire spreads at `MU = 0.5` over a radius of `3` — half the lean, a third of the reach. That difference is the extension: a UAV can be blinded by a fire it is nowhere near, and the ground the fire is about to reach is exactly the ground the team can no longer watch.
 
-Under composed wind (`FIXED_WIND = False`) the two direction kernels are **blended once** by `FIRST_DIR_PROB` rather than drawn per cell, as `sim/fire_spread.py` does. Smoke sits over a cell for many steps and so has already averaged the wind that blew over it, where an ignition is a single event that either happened downwind or did not. Nothing in `sim/smoke.py` touches `SYSTEM_RANDOM` in any wind mode, and occlusion is a threshold rather than a roll — which is what lets a UAV be asked any number of times in one step what it can see without moving the run along.
+The plume **follows the wind**, exactly as the fire does: `SmokeField` holds a kernel per direction and is handed the one blowing this step, so when the wind turns the whole plume swings with it. It is rebuilt from scratch each step, with no carried over density, which is the same simplification the fire makes — a burning cell's influence depends on the wind now, not on the wind of the step it caught in. Nothing in `sim/smoke.py` touches `SYSTEM_RANDOM` in any wind mode, and occlusion is a threshold rather than a roll — which is what lets a UAV be asked any number of times in one step what it can see without moving the run along.
 
 #### What it hides
 
@@ -881,7 +901,7 @@ Measured over 200 paired runs — same seeds, same fires, `firefighter` unmanage
 ```bash
 # reproduces the table above, one arm at a time
 python3 headless.py --policy firefighter --managing none --runs 200 --workers 8 --seed 1000 \
-        --log-every 0 --set FIXED_WIND=True --set "WIND_DIRECTION='south'" \
+        --log-every 0 --set "WIND_DIRECTION=['SOUTH']" \
         --set SMOKE_OCCLUDES_OBSERVATION=True
 ```
 
@@ -1222,7 +1242,9 @@ A scenario with no wind, smoke, or UAV, should appear.
 
 ### Windy conditions (no smoke, wind, no UAV)
 
-Concretely, a scenario with two weak wind components should appear, first with 50% of south component, and a second west component with 50%. In this scenario, neither smoke nor UAV should appear.
+Concretely, a scenario with a moderate wind out of the south west quarter, turning every 20 steps between due south and south west. In this scenario, neither smoke nor UAV should appear.
+
+This recipe used to compose a 50/50 south and west wind to mean "south west". It now asks for the direction itself, and uses the list to say the wind is unsettled between two neighbouring points of the compass rather than to build a third one out of two.
 
 `NUM_AGENTS = 0`
 
@@ -1232,15 +1254,9 @@ Concretely, a scenario with two weak wind components should appear, first with 5
 
 `PROBABILITY_MAP = False`
 
-`FIXED_WIND = False`
+`WIND_DIRECTION = ['SOUTH', 'SOUTH_WEST']`
 
-`WIND_DIRECTION = 'south'`
-
-`FIRST_DIR = 'south'`
-
-`SECOND_DIR = 'west'`
-
-`FIRST_DIR_PROB = 0.5`
+`WIND_VARIABILITY = 20`
 
 `MU = 0.5`
 
@@ -1256,9 +1272,7 @@ A scenario with strong windy conditions, blowing east, and late short-lasting sm
 
 `PROBABILITY_MAP = False`
 
-`FIXED_WIND = True`
-
-`WIND_DIRECTION = 'east'`
+`WIND_DIRECTION = ['EAST']`
 
 `MU = 0.95`
 

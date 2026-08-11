@@ -167,9 +167,17 @@ def make_model(sim_config):
         # view, or what the base sensor reports would start depending on how far the fire had got. Tests
         # about the occlusion switch it back on and place the smoke themselves, the way
         # tests/agents/test_uav_smoke_occlusion.py does.
+        #
+        # The wind is pinned to one direction for the fourth time over the same argument. config.py ships
+        # WIND_DIRECTION as a list drawn from and WIND_VARIABILITY as a step count, so a model built here
+        # would get a different wind per test and turn part way through a long one -- and the fire would
+        # lean somewhere new each run. A singleton list costs no draw at all (see environment.Wind), so it
+        # also keeps the fixture out of the SYSTEM_RANDOM stream. Tests about the wind say what they want:
+        # tests/test_wind.py drives it directly, and tests/test_fire_spread.py names a direction per case.
         settings = {"WIDTH": 9, "HEIGHT": 9, "NUM_AGENTS": 1, "BATCH_SIZE": 10_000,
                     "DENSITY_PROB": 1.0, "FIRE_START_POSITION": None, "FIRE_START_STEP": 0,
-                    "ACTIVATE_POSITION_ERROR": False, "SMOKE_OCCLUDES_OBSERVATION": False}
+                    "ACTIVATE_POSITION_ERROR": False, "SMOKE_OCCLUDES_OBSERVATION": False,
+                    "WIND_DIRECTION": ["SOUTH"]}
         settings.update(overrides)
         sim_config(**settings)
 

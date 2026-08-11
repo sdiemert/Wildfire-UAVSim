@@ -209,9 +209,23 @@ class StatusSidebar(VisualizationElement):
         else:
             countdown = model.fire_start_step - model.evaluation_timesteps_counter
             cells.append(self.cell("Fire in", f"{countdown} step(s)", "value muted"))
+        cells.append(self.wind_cell(model))
         if config.ACTIVATE_FIREFIGHTING:
             cells.extend(self.base_cells(model))
         return self.heading("Status", f"step {model.evaluation_timesteps_counter}") + self.grid(cells)
+
+    # which way the wind is blowing, and how long it has left before it turns. Worth a cell of its own
+    # because a wind drawn from a list is different every run and can change part way through one: without
+    # it, a fire front that suddenly swings looks like a bug rather than the weather.
+    def wind_cell(self, model):
+        wind = model.wind
+        if wind.wind_direction is None:
+            return self.cell("Wind", "none", "value muted")
+
+        name = wind.wind_direction.replace("_", "-").title()
+        if not wind.is_variable():
+            return self.cell("Wind", name)
+        return self.cell("Wind", f"{name} &middot; {wind.variability - wind.steps_held} step(s)")
 
     # the home base, as the two cells it takes up in the metrics grid
     def base_cells(self, model):

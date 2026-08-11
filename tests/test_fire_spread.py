@@ -25,7 +25,9 @@ from sim import fire_spread, formulas
 
 TOLERANCE = 1e-12
 
-WIND_DIRECTIONS = ("north", "south", "east", "west")
+# every direction the wind can blow, cardinals and diagonals alike. Taken from config.py rather than
+# restated, so that adding a ninth direction there cannot leave these tests quietly checking eight.
+WIND_DIRECTIONS = config.WIND_DIRECTIONS
 
 
 # ---------------------------------------------------------------------------
@@ -58,7 +60,9 @@ def reference_field(model, fires):
 # reference is only defined where a Fire agent exists
 def vectorized_field(model, fires):
     model.burning[model.fire_xs, model.fire_ys] = [fire.burning for fire in fires]
-    computed = model.fire_spread.probability_field(model.burning)
+    # the same direction the reference gets: probability_of_fire() consults model.wind, so handing the
+    # convolution anything else would compare two different winds and call the difference an error
+    computed = model.fire_spread.probability_field(model.burning, model.wind.wind_direction)
 
     field = numpy.zeros((config.HEIGHT, config.WIDTH))
     for fire in fires:
@@ -105,7 +109,7 @@ def test_kernel_matches_distance_rate_without_wind(radius):
 # with the wind on, the kernel has to reproduce distance_rate() composed with Wind.apply_wind()
 @pytest.mark.parametrize("direction", WIND_DIRECTIONS)
 def test_kernel_matches_apply_wind(direction, sim_config):
-    sim_config(ACTIVATE_WIND=True, FIXED_WIND=True, WIND_DIRECTION=direction)
+    sim_config(ACTIVATE_WIND=True, WIND_DIRECTION=[direction])
 
     from sim import environment
 
@@ -133,7 +137,7 @@ def test_kernel_matches_apply_wind(direction, sim_config):
 # the offset form of is_on_wind_direction() has to agree with the original, which compares positions
 @pytest.mark.parametrize("direction", WIND_DIRECTIONS)
 def test_on_wind_matches_is_on_wind_direction(direction, sim_config):
-    sim_config(ACTIVATE_WIND=True, FIXED_WIND=True, WIND_DIRECTION=direction)
+    sim_config(ACTIVATE_WIND=True, WIND_DIRECTION=[direction])
 
     from sim import environment
 
@@ -151,6 +155,86 @@ def test_unknown_wind_direction_is_rejected():
         fire_spread.on_wind("sideways", 1, 0)
 
 
+# the direction names are matched case insensitively, because config.py shipped them in lower case for
+# years and the sweeps under experiments/ still pass them that way
+def test_direction_names_are_case_insensitive():
+    for dx in range(-3, 4):
+        for dy in range(-3, 4):
+            assert fire_spread.on_wind("south", dx, dy) == fire_spread.on_wind("SOUTH", dx, dy)
+
+
+# A cardinal wind favours the three cells of its column; a diagonal one favours the two cells of its
+# diagonal, because the third lies at distance 4.24 and falls outside the spread radius of 3.
+#
+# That asymmetry is deliberate -- see the MU entry in config.py -- and this test exists to make removing
+# it a decision rather than an accident. Widening the downwind set into a cone would change cardinal
+# spread too, and every calibrated number in config.py was measured against the column.
+@pytest.mark.parametrize("direction, expected", (
+    ("SOUTH", {(0, 1), (0, 2), (0, 3)}),
+    ("NORTH", {(0, -1), (0, -2), (0, -3)}),
+    ("EAST", {(-1, 0), (-2, 0), (-3, 0)}),
+    ("WEST", {(1, 0), (2, 0), (3, 0)}),
+    ("SOUTH_EAST", {(-1, 1), (-2, 2)}),
+    ("NORTH_EAST", {(-1, -1), (-2, -2)}),
+    ("SOUTH_WEST", {(1, 1), (2, 2)}),
+    ("NORTH_WEST", {(1, -1), (2, -2)}),
+))
+def test_downwind_offsets_are_a_single_ray(direction, expected):
+    radius, mu = 3, 0.5
+    # the offsets the wind actually lifts, which is on_wind() narrowed by the radius: the third cell of a
+    # diagonal ray sits at distance 4.24 and is dropped, so a diagonal lifts two cells where a cardinal
+    # lifts three. That is the asymmetry, and it belongs to cell_weight() rather than to on_wind()
+    boosted = {
+        (dx, dy)
+        for dx in range(-radius, radius + 1)
+        for dy in range(-radius, radius + 1)
+        if fire_spread.on_wind(direction, dx, dy)
+        and fire_spread.cell_weight(dx, dy, radius, mu) > 0
+    }
+    assert boosted == expected
+
+    # and every one of them is at least as strong as it would be with no wind, which is the other half of
+    # what "downwind" means. The nearest cardinal cell is the equality: its weight is already 1
+    for dx, dy in boosted:
+        assert (fire_spread.cell_weight(dx, dy, radius, mu, direction)
+                >= fire_spread.cell_weight(dx, dy, radius, mu))
+
+
+# the corner an on-wind diagonal ray runs through lies at distance 4.24, beyond the spread radius, so it
+# contributes nothing at all -- the wind must not lift it from nothing to MU. The Moore window offers that
+# cell, distance_rate() answers 0 for it, and a bias applied before the range check turns a neighbour four
+# cells away into a coin toss. Both implementations are checked, because it was only ever wrong in one.
+def test_an_out_of_range_corner_is_never_lifted_by_the_wind(sim_config):
+    sim_config(ACTIVATE_WIND=True, WIND_DIRECTION=["SOUTH_EAST"])
+
+    from sim import environment
+
+    assert fire_spread.on_wind("SOUTH_EAST", -3, 3), "the ray does run through the corner"
+    assert fire_spread.cell_weight(-3, 3, 3, config.MU, "SOUTH_EAST") == 0.0
+    assert fire_spread.build_kernel(3, config.MU, "SOUTH_EAST")[0, 6] == 0.0
+
+    wind = environment.Wind()
+    weight = formulas.distance_rate((5, 5), (2, 8), 3)
+    assert weight == 0
+    assert wind.apply_wind(weight, (5, 5), (2, 8)) == 0
+
+
+# every offset that is not on the ray is suppressed by the same MU, crosswind and the flanking diagonals
+# included. The comments used to say "upwind", which is only a quarter of the truth.
+def test_everything_off_the_ray_is_suppressed():
+    radius, mu = 3, 0.5
+    for dx in range(-radius, radius + 1):
+        for dy in range(-radius, radius + 1):
+            plain = fire_spread.cell_weight(dx, dy, radius, mu)
+            windy = fire_spread.cell_weight(dx, dy, radius, mu, "SOUTH")
+            if plain == 0.0:
+                continue
+            if fire_spread.on_wind("SOUTH", dx, dy):
+                assert windy == pytest.approx(plain + mu * (1 - plain))
+            else:
+                assert windy == pytest.approx(plain * (1 - mu)), f"offset {(dx, dy)}"
+
+
 # ---------------------------------------------------------------------------
 # equivalence with the per cell implementation
 # ---------------------------------------------------------------------------
@@ -166,21 +250,8 @@ def test_matches_per_cell_without_wind(make_model):
 
 @pytest.mark.parametrize("direction", WIND_DIRECTIONS)
 def test_matches_per_cell_with_fixed_wind(direction, make_model):
-    worst, burning = worst_disagreement(make_model, ACTIVATE_WIND=True, FIXED_WIND=True,
-                                        WIND_DIRECTION=direction,
-                                        HEIGHT=30, WIDTH=30, FIRE_START_POSITION=(15, 15),
-                                        FIRE_START_STEP=0, ACTIVATE_FIREFIGHTING=False)
-    assert burning > 0
-    assert worst < TOLERANCE
-
-
-# composed wind draws a direction per cell, so the two implementations can only be compared where the
-# draw is forced: FIRST_DIR_PROB of 1 and 0 collapse it onto a single direction.
-@pytest.mark.parametrize("first_dir_prob", (1.0, 0.0))
-def test_matches_per_cell_with_composed_wind_forced(first_dir_prob, make_model):
-    worst, burning = worst_disagreement(make_model, ACTIVATE_WIND=True, FIXED_WIND=False,
-                                        FIRST_DIR="south", SECOND_DIR="east",
-                                        FIRST_DIR_PROB=first_dir_prob,
+    worst, burning = worst_disagreement(make_model, ACTIVATE_WIND=True,
+                                        WIND_DIRECTION=[direction],
                                         HEIGHT=30, WIDTH=30, FIRE_START_POSITION=(15, 15),
                                         FIRE_START_STEP=0, ACTIVATE_FIREFIGHTING=False)
     assert burning > 0

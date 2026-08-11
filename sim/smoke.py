@@ -26,12 +26,13 @@ Four things differ from the fire, each of them on purpose.
   * **A source obscures itself.** cell_weight() answers 0 at distance 0, because a burning cell does not
     ignite itself. A smoking cell is certainly in its own smoke, so K[0, 0] is set to 1 outright.
 
-  * **Composed wind is blended, not drawn.** FireSpread tosses a coin per cell per offset, because an
-    ignition either happened downwind or it did not. Smoke hangs about for many steps and so sits in the
-    average of the wind that blew over it, which is one fixed kernel: FIRST_DIR_PROB of the first
-    direction's, the rest of the second's. That keeps this module free of randomness altogether -- it takes
-    nothing from SYSTEM_RANDOM in any wind mode, so seeded runs reproduce exactly as they did before it
-    existed.
+  * **The plume is rebuilt from scratch every step, so it turns with the wind.** There is no carried over
+    density: the field is a function of where the sources are now and which way the wind is blowing now,
+    so when the wind turns the whole plume swings with it that step rather than bending gradually. That is
+    a simplification, and a visible one on screen at low WIND_VARIABILITY. It is the same simplification
+    the fire makes -- a burning cell's influence depends on the current wind and not on the wind of the
+    step it caught in -- and keeping the two the same is worth more here than a smoke specific memory
+    would be. This module still takes nothing at all from SYSTEM_RANDOM.
 
   * **Occlusion is a threshold, not a roll.** A cell is opaque when its density reaches
     SMOKE_OCCLUSION_THRESHOLD. Deterministic, so the two observe() calls a UAV gets in one step cannot
@@ -99,46 +100,59 @@ class SmokeField:
         self.threshold = config.SMOKE_OCCLUSION_THRESHOLD if threshold is None else threshold
 
         radius = self.radius
-        if not config.ACTIVATE_WIND:
-            # one kernel, no wind bias anywhere: a symmetric blob around every source
-            self.kernel = build_smoke_kernel(radius, self.mu)
-        elif config.FIXED_WIND:
-            self.kernel = build_smoke_kernel(radius, self.mu, config.WIND_DIRECTION)
-        else:
-            # composed wind, blended once rather than drawn per cell -- see the module docstring. The blend
-            # is of the kernels and not of two finished density fields, so that there is exactly one kernel
-            # to reason about and the clip below is applied once, to the total.
-            first = build_smoke_kernel(radius, self.mu, config.FIRST_DIR)
-            second = build_smoke_kernel(radius, self.mu, config.SECOND_DIR)
-            share = config.FIRST_DIR_PROB
-            self.kernel = (share * first) + ((1.0 - share) * second)
+
+        # one kernel per direction the wind may blow, and the unbiased one -- a symmetric blob around every
+        # source -- under None, for a still day or a caller that names no direction. Built up front for the
+        # same reason FireSpread does it: a turning wind then costs a dictionary lookup rather than a
+        # rebuild. The plume radius is larger than the fire's, so these are the bigger arrays of the two,
+        # and eight of them is still nothing.
+        self.kernels = {None: build_smoke_kernel(radius, self.mu)}
+        for direction in config.wind_directions():
+            self.kernels[direction] = build_smoke_kernel(radius, self.mu, direction)
 
         # offsets that contribute at all, so the evaluation loop skips the corners of the window (which lie
         # beyond the radius) and anything the wind blew out entirely
-        self.offsets = [
-            (dx, dy)
-            for dx in range(-radius, radius + 1)
-            for dy in range(-radius, radius + 1)
-            if self.kernel[dx + radius, dy + radius] != 0
-        ]
+        self.offsets = {
+            direction: [
+                (dx, dy)
+                for dx in range(-radius, radius + 1)
+                for dy in range(-radius, radius + 1)
+                if kernel[dx + radius, dy + radius] != 0
+            ]
+            for direction, kernel in self.kernels.items()
+        }
 
-    # the smoke density of every cell, from the mask of the cells raising smoke. The mask is indexed [x, y]
-    # like the Mesa grid positions, and is zero padded because the grid is not a torus, which reproduces the
-    # clipping get_neighborhood() does at the edges. Clipped into [0, 1]: several sources reaching one cell
-    # make it opaque, not more than opaque.
-    def density(self, smoking):
+    # the kernel for a direction. None, and a direction the wind was never configured to blow, both fall
+    # back to the unbiased blob, matching FireSpread.kernel_for().
+    def kernel_for(self, direction):
+        if direction is None:
+            return self.kernels[None], self.offsets[None]
+        name = direction.upper()
+        if name not in self.kernels:
+            if name not in config.WIND_HEADINGS:
+                raise ValueError(f"unknown wind direction {direction!r}, "
+                                 f"expected one of {config.WIND_DIRECTIONS}")
+            return self.kernels[None], self.offsets[None]
+        return self.kernels[name], self.offsets[name]
+
+    # the smoke density of every cell, from the mask of the cells raising smoke and the wind blowing this
+    # step. The mask is indexed [x, y] like the Mesa grid positions, and is zero padded because the grid is
+    # not a torus, which reproduces the clipping get_neighborhood() does at the edges. Clipped into [0, 1]:
+    # several sources reaching one cell make it opaque, not more than opaque.
+    def density(self, smoking, direction=None):
         radius = self.radius
         height, width = self.height, self.width
+        kernel, offsets = self.kernel_for(direction)
 
         padded = numpy.pad(numpy.asarray(smoking, dtype=float), radius)
         accumulated = numpy.zeros((height, width))
 
-        for dx, dy in self.offsets:
+        for dx, dy in offsets:
             shifted = padded[radius + dx:radius + dx + height, radius + dy:radius + dy + width]
-            accumulated += self.kernel[dx + radius, dy + radius] * shifted
+            accumulated += kernel[dx + radius, dy + radius] * shifted
 
         return numpy.clip(accumulated, 0.0, 1.0)
 
     # the cells nobody can see into or through, as a boolean mask indexed [x, y]
-    def opaque(self, smoking):
-        return self.density(smoking) >= self.threshold
+    def opaque(self, smoking, direction=None):
+        return self.density(smoking, direction) >= self.threshold

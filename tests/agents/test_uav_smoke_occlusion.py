@@ -63,7 +63,7 @@ def smoky(make_model):
     """
     return make_model(NUM_AGENTS=1, WIDTH=15, HEIGHT=15,
                       ACTIVATE_SMOKE=True, SMOKE_OCCLUDES_OBSERVATION=True,
-                      ACTIVATE_WIND=True, FIXED_WIND=True, WIND_DIRECTION="south",
+                      ACTIVATE_WIND=True, WIND_DIRECTION=["SOUTH"],
                       SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6, SMOKE_OCCLUSION_THRESHOLD=0.5,
                       UAV_OBSERVATION_RADIUS=4, FIRE_START_POSITION=(14, 14), FIRE_START_STEP=0)
 
@@ -163,7 +163,7 @@ def test_an_out_building_under_smoke_is_not_reported(make_model):
     model = make_model(NUM_AGENTS=1, WIDTH=15, HEIGHT=15, ACTIVATE_FIREFIGHTING=True,
                        BASE_POSITION=(1, 1), BASE_SIZE=(1, 1), NUM_OUT_BUILDINGS=0,
                        ACTIVATE_SMOKE=True, SMOKE_OCCLUDES_OBSERVATION=True,
-                       ACTIVATE_WIND=True, FIXED_WIND=True, WIND_DIRECTION="south",
+                       ACTIVATE_WIND=True, WIND_DIRECTION=["SOUTH"],
                        SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6, SMOKE_OCCLUSION_THRESHOLD=0.5,
                        UAV_OBSERVATION_RADIUS=4, FIRE_START_POSITION=(14, 14), FIRE_START_STEP=0)
     building = agents.OutBuilding(998, model)
@@ -232,8 +232,8 @@ def test_mr1_falls_when_the_team_cannot_see_the_fire(make_model):
     # nobody could see was not monitored
     def run(occluding):
         model = make_model(NUM_AGENTS=1, WIDTH=15, HEIGHT=15, ACTIVATE_SMOKE=True,
-                           SMOKE_OCCLUDES_OBSERVATION=occluding, ACTIVATE_WIND=True, FIXED_WIND=True,
-                           WIND_DIRECTION="south", SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6,
+                           SMOKE_OCCLUDES_OBSERVATION=occluding, ACTIVATE_WIND=True,
+                           WIND_DIRECTION=["SOUTH"], SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6,
                            SMOKE_OCCLUSION_THRESHOLD=0.5, UAV_OBSERVATION_RADIUS=4,
                            FIRE_START_POSITION=(7, 7), FIRE_START_STEP=0)
         place(model, model.uavs[0], (7, 7))
@@ -264,7 +264,7 @@ def test_the_base_sensor_cannot_see_fire_through_smoke(make_model):
     model = make_model(NUM_AGENTS=1, WIDTH=15, HEIGHT=15, ACTIVATE_FIREFIGHTING=True,
                        BASE_POSITION=(7, 7), BASE_SIZE=(1, 1), NUM_OUT_BUILDINGS=0,
                        BASE_SENSOR_RADIUS=4, ACTIVATE_SMOKE=True, SMOKE_OCCLUDES_OBSERVATION=True,
-                       ACTIVATE_WIND=True, FIXED_WIND=True, WIND_DIRECTION="south",
+                       ACTIVATE_WIND=True, WIND_DIRECTION=["SOUTH"],
                        SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6, SMOKE_OCCLUSION_THRESHOLD=0.5,
                        FIRE_START_POSITION=(14, 14), FIRE_START_STEP=0)
     sensor = ModelSensor(model, SuperPolicy(default="firefighter"))

@@ -69,35 +69,62 @@ def test_inverted_cell_fuel_limits_are_refused(sim_config):
 # --- wind -------------------------------------------------------------------
 
 
-def test_an_unknown_fixed_wind_direction_is_refused(sim_config):
-    sim_config(ACTIVATE_WIND=True, FIXED_WIND=True, WIND_DIRECTION="northwest")
+def test_an_unknown_wind_direction_is_refused(sim_config):
+    sim_config(ACTIVATE_WIND=True, WIND_DIRECTION=["NORTH", "up"])
     with pytest.raises(ValueError, match="WIND_DIRECTION"):
         config.validate()
 
 
-def test_an_unknown_composed_wind_direction_is_refused(sim_config):
-    sim_config(ACTIVATE_WIND=True, FIXED_WIND=False, SECOND_DIR="up")
-    with pytest.raises(ValueError, match="SECOND_DIR"):
+def test_a_direction_that_is_not_even_a_name_is_refused(sim_config):
+    sim_config(ACTIVATE_WIND=True, WIND_DIRECTION=[7])
+    with pytest.raises(ValueError, match="WIND_DIRECTION"):
         config.validate()
+
+
+def test_something_that_is_not_a_list_of_directions_is_refused(sim_config):
+    sim_config(ACTIVATE_WIND=True, WIND_DIRECTION={"NORTH": 1})
+    with pytest.raises(ValueError, match="WIND_DIRECTION"):
+        config.validate()
+
+
+@pytest.mark.parametrize("setting", ["SOUTH", "south", ["SOUTH"], ["south", "NORTH_WEST"]])
+def test_the_forms_a_direction_may_be_written_in_are_accepted(sim_config, setting):
+    """A bare string is what --set WIND_DIRECTION=SOUTH produces, and lower case is what config.py
+    shipped for years -- the sweeps under experiments/ still pass it that way."""
+    sim_config(ACTIVATE_WIND=True, WIND_DIRECTION=setting)
+    config.validate()
+
+
+@pytest.mark.parametrize("setting", [None, []])
+def test_no_directions_at_all_means_no_wind_rather_than_a_broken_run(sim_config, setting):
+    sim_config(ACTIVATE_WIND=True, WIND_DIRECTION=setting)
+    config.validate()
 
 
 def test_wind_settings_are_ignored_when_the_wind_is_off(sim_config):
     """Nothing reads them, so a stale direction is not worth refusing a run over."""
-    sim_config(ACTIVATE_WIND=False, WIND_DIRECTION="nonsense", MU=99)
+    sim_config(ACTIVATE_WIND=False, WIND_DIRECTION="nonsense", MU=99, WIND_VARIABILITY=-3)
     config.validate()
 
 
-@pytest.mark.parametrize("setting", ["MU", "FIRST_DIR_PROB"])
-def test_wind_probabilities_outside_zero_to_one_are_refused(sim_config, setting):
-    sim_config(ACTIVATE_WIND=True, FIXED_WIND=False, **{setting: 1.5})
-    with pytest.raises(ValueError, match=setting):
+def test_a_wind_strength_outside_zero_to_one_is_refused(sim_config):
+    sim_config(ACTIVATE_WIND=True, MU=1.5)
+    with pytest.raises(ValueError, match="MU"):
         config.validate()
 
 
-def test_the_composed_wind_settings_exist_under_fixed_wind():
-    """They used to be defined inside 'if not FIXED_WIND', which made them un-overridable."""
-    for name in ("FIRST_DIR", "SECOND_DIR", "FIRST_DIR_PROB"):
-        assert hasattr(config, name)
+@pytest.mark.parametrize("setting", [0, -1, 2.5, "20", True])
+def test_a_variability_that_is_not_a_positive_whole_number_of_steps_is_refused(sim_config, setting):
+    # True is in the list because bool is a subclass of int, and WIND_VARIABILITY = True would otherwise
+    # pass the check and quietly mean "turn every step"
+    sim_config(ACTIVATE_WIND=True, WIND_VARIABILITY=setting)
+    with pytest.raises(ValueError, match="WIND_VARIABILITY"):
+        config.validate()
+
+
+def test_a_variability_of_none_is_accepted_as_a_wind_that_never_turns(sim_config):
+    sim_config(ACTIVATE_WIND=True, WIND_VARIABILITY=None)
+    config.validate()
 
 
 # --- smoke ------------------------------------------------------------------

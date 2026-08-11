@@ -105,16 +105,27 @@ class WildFireModel(mesa.Model):
         # convolution below is never run at all
         self.smoking = numpy.zeros((config.HEIGHT, config.WIDTH), dtype=bool)
         self.smoke_opaque = numpy.zeros((config.HEIGHT, config.WIDTH), dtype=bool)
-        # rebuilt per reset, so that a runner overriding the wind settings is picked up
+        # the wind comes first, because it is what the two fields below are built to blow along: it draws
+        # the opening direction, and with a multi direction WIND_DIRECTION that draw has to happen before
+        # anything asks which way the wind is going. All three are rebuilt per reset, so that a runner
+        # overriding the wind settings is picked up
+        self.wind = environment.Wind()
+        self.wind_initial = self.wind.wind_direction
+        if self.wind.wind_direction is None:
+            self.log.info("no wind")
+        elif self.wind.is_variable():
+            self.log.info("wind starting %s, turning every %d step(s), drawn from %s",
+                          self.wind.wind_direction, self.wind.variability, list(self.wind.directions))
+        else:
+            self.log.info("wind %s, for the whole run", self.wind.wind_direction)
         self.fire_spread = fire_spread.FireSpread(config.HEIGHT, config.WIDTH)
         self.smoke_field = (smoke.SmokeField(config.HEIGHT, config.WIDTH)
                             if config.ACTIVATE_SMOKE and config.SMOKE_OCCLUDES_OBSERVATION else None)
-        # set Fire and wind agents (Smoke are created inside Fire agents as well)
+        # set Fire agents (Smoke are created inside Fire agents as well)
         self.set_fire_agents()
         self.fire_xs = numpy.array(self.fire_xs, dtype=int)
         self.fire_ys = numpy.array(self.fire_ys, dtype=int)
         self.fire_spread.assert_matches(self.fire_list)
-        self.wind = environment.Wind()
 
         self.new_direction_counter = 0
         self.evaluation_timesteps_counter = 0
@@ -373,7 +384,7 @@ class WildFireModel(mesa.Model):
         if not self.fire_list:  # a density low enough to leave the grid bare
             return
         self.burning[self.fire_xs, self.fire_ys] = [fire.burning for fire in self.fire_list]
-        self.fire_prob = self.fire_spread.probability_field(self.burning)
+        self.fire_prob = self.fire_spread.probability_field(self.burning, self.wind.wind_direction)
 
     # refreshes the mask of cells raising smoke from the Smoke each Fire owns, and blows it downwind into
     # the plume field that decides what can be observed (see sim/smoke.py). Built once per step and read
@@ -383,7 +394,7 @@ class WildFireModel(mesa.Model):
         if self.smoke_field is None or not self.fire_list:  # extension off, or a bare grid
             return
         self.smoking[self.fire_xs, self.fire_ys] = [fire.smoke.is_smoke_active() for fire in self.fire_list]
-        self.smoke_opaque = self.smoke_field.opaque(self.smoking)
+        self.smoke_opaque = self.smoke_field.opaque(self.smoking, self.wind.wind_direction)
 
     # whether a cell is buried in smoke, and so cannot be observed at all. The single question every
     # observer asks, so that no caller indexes the mask itself and the extension being off costs one
@@ -581,6 +592,14 @@ class WildFireModel(mesa.Model):
             self.set_drone_dirs()
 
         self.evaluation_timesteps_counter += 1
+
+        # the weather, once per step and before anything reads it. It has to turn here rather than anywhere
+        # further down, because update_fire_probabilities() below and update_smoke() after the schedule sit
+        # either side of the agents moving: a wind that turned between them would leave the smoke of this
+        # step drifting in a direction the fire of the same step never felt.
+        if self.wind.step():
+            self.log.debug("wind turned to %s at step %d",
+                           self.wind.wind_direction, self.evaluation_timesteps_counter)
 
         # the wildfire starts at its own step, which lets a run begin before there is anything to monitor.
         # It is lit before the schedule runs, so that the cells around it already see it burning while they

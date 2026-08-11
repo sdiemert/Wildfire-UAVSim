@@ -1,5 +1,18 @@
 # Wind against the no-UAV baseline — 10 August 2026
 
+> **The wind model changed on 11 August 2026, after this experiment was run.** `FIXED_WIND`, `FIRST_DIR`,
+> `SECOND_DIR` and `FIRST_DIR_PROB` no longer exist: `WIND_DIRECTION` is now a list of the 8 compass
+> points drawn from uniformly, held for `WIND_VARIABILITY` steps at a time, and the diagonals are
+> directions in their own right rather than two cardinals mixed per cell. See the Wind section of
+> `README.md`.
+>
+> The numbers below are still a correct account of the simulator as it was at the commit named next, and
+> the `cardinal` arms carry over unchanged — cardinal spread is bit-for-bit what it was, which is the
+> property the change was made to preserve. **`run.sh` and `dump_config.py` will not run as written**:
+> they pass settings that have been deleted. The `diagonal` and `steadiness` sweeps measure a mechanism
+> that no longer exists at all, and re-running them would need re-designing rather than re-writing. Left
+> as they are, deliberately, because they are the record of what was actually run.
+
 What the wind does to the loss rate on a 100x100 map, measured against
 [`experiments/20260810_baseline/`](../20260810_baseline/README.md), which lost the home base in all 5 000
 of its runs with no wind and no UAVs.

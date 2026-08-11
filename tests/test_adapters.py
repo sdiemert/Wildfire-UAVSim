@@ -107,7 +107,7 @@ def test_the_base_sensor_is_a_camera_and_smoke_blinds_it(managed, sim_config):
     """
     model, _, sensor, _ = managed
     sim_config(BASE_SENSOR_RADIUS=4, ACTIVATE_SMOKE=True, SMOKE_OCCLUDES_OBSERVATION=True,
-               ACTIVATE_WIND=True, FIXED_WIND=True, WIND_DIRECTION="south",
+               ACTIVATE_WIND=True, WIND_DIRECTION=["SOUTH"],
                SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6, SMOKE_OCCLUSION_THRESHOLD=0.5)
     sensor._sensed_cells = (None, ())
     start_occluding(model)
@@ -127,7 +127,7 @@ def test_the_base_sensor_is_a_camera_and_smoke_blinds_it(managed, sim_config):
 def test_what_a_uav_could_not_see_reaches_the_managing_system(managed, sim_config):
     model, _, sensor, _ = managed
     sim_config(ACTIVATE_SMOKE=True, SMOKE_OCCLUDES_OBSERVATION=True, ACTIVATE_WIND=True,
-               FIXED_WIND=True, WIND_DIRECTION="south", SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6,
+               WIND_DIRECTION=["SOUTH"], SMOKE_MU=0.9, SMOKE_DRIFT_RADIUS=6,
                SMOKE_OCCLUSION_THRESHOLD=0.5)
     start_occluding(model)
 
