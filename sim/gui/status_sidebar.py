@@ -209,7 +209,11 @@ class StatusSidebar(VisualizationElement):
         else:
             countdown = model.fire_start_step - model.evaluation_timesteps_counter
             cells.append(self.cell("Fire in", f"{countdown} step(s)", "value muted"))
-        cells.append(self.wind_cell(model))
+        # the wind, when there is one. Left out entirely on a still day rather than shown as "none", the
+        # way the base is left out with the firefighting extension off: a panel that reports the settings
+        # a run is not using costs a cell of a small grid to say nothing.
+        if model.wind.wind_direction is not None:
+            cells.append(self.wind_cell(model))
         if config.ACTIVATE_FIREFIGHTING:
             cells.extend(self.base_cells(model))
         return self.heading("Status", f"step {model.evaluation_timesteps_counter}") + self.grid(cells)
@@ -217,11 +221,11 @@ class StatusSidebar(VisualizationElement):
     # which way the wind is blowing, and how long it has left before it turns. Worth a cell of its own
     # because a wind drawn from a list is different every run and can change part way through one: without
     # it, a fire front that suddenly swings looks like a bug rather than the weather.
+    #
+    # The countdown is only shown for a wind that can actually turn. A fixed wind would sit there counting
+    # down to a redraw that changes nothing, which reads as an event about to happen.
     def wind_cell(self, model):
         wind = model.wind
-        if wind.wind_direction is None:
-            return self.cell("Wind", "none", "value muted")
-
         name = wind.wind_direction.replace("_", "-").title()
         if not wind.is_variable():
             return self.cell("Wind", name)

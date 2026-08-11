@@ -325,6 +325,44 @@ def test_watching_a_run_in_the_browser_does_not_change_it(model):
     assert outcome(watched=True) == outcome(watched=False)
 
 
+# --- the wind ---------------------------------------------------------------
+
+
+def test_the_panel_says_which_way_the_wind_is_blowing(model):
+    built = model("none", ACTIVATE_WIND=True, WIND_DIRECTION=["SOUTH_WEST"])
+    assert "South-West" in StatusSidebar().render(built)
+
+
+def test_a_wind_that_can_turn_says_how_long_it_has_left(model):
+    """A wind drawn from a list changes part way through a run, so the panel has to say when.
+
+    Without it a fire front that suddenly swings reads as a bug rather than as the weather.
+    """
+    built = model("none", ACTIVATE_WIND=True, WIND_DIRECTION=["NORTH", "SOUTH"], WIND_VARIABILITY=10)
+    assert "10 step(s)" in StatusSidebar().render(built)
+
+    for _ in range(4):
+        built.step()
+    assert "6 step(s)" in StatusSidebar().render(built)
+
+
+def test_a_wind_that_cannot_turn_counts_down_to_nothing(model):
+    """A fixed wind would otherwise sit there counting down to a redraw that changes nothing."""
+    built = model("none", steps=3, ACTIVATE_WIND=True, WIND_DIRECTION=["EAST"], WIND_VARIABILITY=10)
+    rendered = StatusSidebar().render(built)
+    assert "East" in rendered
+    assert "step(s)" not in rendered.split("Wind")[1].split("</div>")[0]
+
+
+@pytest.mark.parametrize("settings", (
+    {"ACTIVATE_WIND": False},
+    {"ACTIVATE_WIND": True, "WIND_DIRECTION": []},
+))
+def test_a_still_day_gets_no_wind_cell_at_all(model, settings):
+    """Left out rather than shown as 'none', the way the base is with firefighting off."""
+    assert "Wind" not in StatusSidebar().render(model("none", steps=2, **settings))
+
+
 def test_the_map_shows_true_positions_only(model):
     """The canvas is drawn cell by cell rather than UAV by UAV, so it must not ask for a fix at all.
 

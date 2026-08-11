@@ -193,14 +193,14 @@ FIRE_START_STEP = (10, 20)
 # **Bounds:** a list of names from `WIND_DIRECTIONS` below -- 'NORTH', 'NORTH_EAST', 'EAST', 'SOUTH_EAST',
 # 'SOUTH', 'SOUTH_WEST', 'WEST', 'NORTH_WEST'. Case is not significant. `None` or `[]` means no wind.
 # A bare string is taken as a list of one, so `--set WIND_DIRECTION=SOUTH` does what it looks like.
-WIND_DIRECTION = ['SOUTH', 'SOUTH_WEST']
+WIND_DIRECTION = ['NORTH', 'SOUTH']
 
 # ### `WIND_VARIABILITY` -- how many simulation steps the wind holds a direction before drawing again.
 # Counted in the same steps as `BATCH_SIZE`, not in fire updates, so `FIRE_SPREAD_SPEED` does not scale it:
 # the smoke drifts on this clock too, and the smoke has no other use for the fire's.
 # **Bounds:** an integer `>= 1`, or `None` for a wind drawn once at reset and held for the whole run.
 # A value `>= BATCH_SIZE` amounts to the same thing as `None`.
-WIND_VARIABILITY = 20
+WIND_VARIABILITY = 10
 
 # ### `MU` -- how hard the wind leans on the fire.
 # Not a wind speed, despite the name: it is the *contrast* between downwind and everywhere else, and it is
@@ -226,7 +226,7 @@ WIND_VARIABILITY = 20
 # step covers 1.41 cells, so the two come out close in front speed (0.75 * 1.41 = 1.06 against 1.00),
 # and the alternative -- widening the downwind set into a cone -- would change cardinal spread as well and
 # invalidate every calibrated number in this file.
-MU = 0.5
+MU = 0.9
 
 # =====================================================================================================
 # ## Smoke
