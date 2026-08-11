@@ -1,0 +1,1346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wind and the loss rate in Wildfire-UAVSim</title>
+<style>
+  /* A print document. Single palette, no theme switching: it is rendered to PDF and read on paper. */
+  :root {
+    --ground:      #ffffff;
+    --surface:     #f5f7f6;
+    --surface-alt: #e7ebea;
+    --ink:         #14201e;
+    --ink-soft:    #4d5957;
+    --ink-faint:   #7d8987;
+    --rule:        #c6cecc;
+    --rule-soft:   #dde3e1;
+    --accent:      #0f6f73;
+    --accent-ink:  #0a5053;
+    --accent-wash: #e2eeee;
+    --ember:       #9d3d0d;
+    --ember-wash:  #f6e6dc;
+
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+    --serif: Charter, "Bitstream Charter", "Iowan Old Style", "Source Serif 4", Georgia, serif;
+  }
+
+  @page { size: A4; margin: 18mm 16mm 20mm; }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  body {
+    margin: 0 auto;
+    max-width: 46rem;
+    padding: 0 1.5rem 3rem;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 10.5pt;
+    line-height: 1.5;
+  }
+
+  /* ---- title page ---- */
+
+  .titlepage { break-after: page; padding-top: 0.75rem; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 7.5pt;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0 0 1.5rem;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 20pt;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin: 0 0 1rem;
+    text-wrap: balance;
+  }
+
+  .subtitle {
+    font-size: 12pt;
+    color: var(--ink-soft);
+    margin: 0 0 1.5rem;
+    max-width: 34rem;
+  }
+
+  .meta {
+    font-family: var(--mono);
+    font-size: 8pt;
+    line-height: 1.7;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding: 0.75rem 0;
+    margin-bottom: 1.5rem;
+    display: grid;
+    grid-template-columns: 8.5rem 1fr;
+  }
+  .meta dt { color: var(--ink-faint); }
+  .meta dd { margin: 0; }
+
+  .abstract {
+    background: var(--surface);
+    border-left: 2px solid var(--accent);
+    padding: 1.125rem 1.375rem;
+  }
+  .abstract h2 { margin-top: 0; }
+  .abstract p:last-child { margin-bottom: 0; }
+
+  .toc {
+    margin-top: 1.5rem;
+    font-family: var(--mono);
+    font-size: 8.5pt;
+    line-height: 1.75;
+    color: var(--ink-soft);
+  }
+  .toc ol { margin: 0.5rem 0 0; padding-left: 1.6rem; }
+  .toc li::marker { color: var(--ink-faint); }
+
+  /* ---- headings ---- */
+
+  h2 {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 12.5pt;
+    letter-spacing: -0.005em;
+    margin: 2rem 0 0.5rem;
+    padding-bottom: 0.375rem;
+    border-bottom: 1px solid var(--rule);
+    break-after: avoid;
+  }
+  h3 {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 9pt;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 1.5rem 0 0.5rem;
+    break-after: avoid;
+  }
+  h4 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 10.5pt;
+    margin: 1.125rem 0 0.3rem;
+    break-after: avoid;
+  }
+  section { break-before: page; }
+  section.run-on { break-before: auto; }
+
+  p { margin: 0 0 0.7rem; text-wrap: pretty; }
+  .lede { color: var(--ink-soft); }
+  ul, ol { margin: 0 0 0.8rem; padding-left: 1.25rem; }
+  li { margin-bottom: 0.3rem; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--surface-alt);
+    padding: 0.08em 0.3em;
+    border-radius: 2px;
+  }
+
+  .formula {
+    font-family: var(--mono);
+    font-size: 9pt;
+    white-space: pre-wrap;
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    padding: 0.875rem 1rem;
+    margin: 0.75rem 0 1rem;
+    line-height: 1.7;
+    overflow-x: auto;
+    break-inside: avoid;
+  }
+  .formula .c { color: var(--ink-faint); }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 8pt;
+    line-height: 1.6;
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    padding: 0.875rem 1rem;
+    overflow-x: auto;
+    margin: 0.75rem 0 1rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    break-inside: avoid;
+  }
+  pre .c { color: var(--ink-faint); }
+  pre .n { color: var(--accent-ink); }
+
+  /* ---- tables ---- */
+
+  figure { margin: 1rem 0 1.25rem; break-inside: avoid; }
+  figcaption {
+    font-family: var(--mono);
+    font-size: 7.5pt;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 0.5rem;
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: 9pt; }
+  th, td {
+    text-align: left;
+    padding: 0.3rem 0.75rem 0.3rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: baseline;
+  }
+  thead th {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 7.5pt;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--rule);
+  }
+  tbody th { font-family: var(--mono); font-weight: 400; font-size: 8.5pt; white-space: nowrap; }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  td.ci { font-family: var(--mono); font-size: 8pt; color: var(--ink-faint); white-space: nowrap; }
+  tr.mark th, tr.mark td { background: var(--accent-wash); }
+  tr.mark td.num { color: var(--accent-ink); font-weight: 700; }
+  table.tight td, table.tight th { padding-top: 0.22rem; padding-bottom: 0.22rem; }
+
+  /* ---- surface bars ---- */
+
+  .surface { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; break-inside: avoid; }
+  .panel-head {
+    font-family: var(--mono);
+    font-size: 8pt;
+    padding-bottom: 0.4rem;
+    margin-bottom: 0.6rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .panel-head span { color: var(--ink-faint); }
+  .grp { min-height: 6.45rem; }
+  .bhp-label {
+    font-family: var(--mono);
+    font-size: 7pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0.6rem 0 0.2rem;
+  }
+  .bar-row {
+    display: grid;
+    grid-template-columns: 2.2rem 1fr 2rem;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--mono);
+    font-size: 7.5pt;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 0.18rem;
+  }
+  .bar-row .k { color: var(--ink-soft); }
+  .bar-row .v { text-align: right; }
+  .track { position: relative; height: 0.5rem; background: var(--surface-alt); }
+  .fill {
+    position: absolute; inset: 0 auto 0 0; width: var(--w);
+    background: var(--accent);
+    background: color-mix(in oklab, var(--ember) var(--t), var(--accent));
+  }
+  .track::after {
+    content: ""; position: absolute; left: 15.4%; top: -1px; bottom: -1px;
+    width: 1px; background: var(--ink); opacity: 0.45;
+  }
+  .on-target .k, .on-target .v { color: var(--accent-ink); font-weight: 700; }
+  .on-target .track { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+  /* ---- callouts ---- */
+
+  .note {
+    border-left: 2px solid var(--ember);
+    background: var(--ember-wash);
+    padding: 0.875rem 1.125rem;
+    margin: 1rem 0;
+    break-inside: avoid;
+  }
+  .note h3 { margin-top: 0; color: var(--ember); }
+  .note p:last-child { margin-bottom: 0; }
+
+  .keyfact {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 0.875rem 1.125rem;
+    margin: 1rem 0;
+    break-inside: avoid;
+  }
+  .keyfact p:last-child { margin-bottom: 0; }
+
+  .footnote { font-size: 8.5pt; color: var(--ink-soft); }
+</style>
+</head>
+<style>
+  /* the shared stylesheet draws a target marker at 15.4% of every bar track; this document has no
+     target, so it is removed rather than explained away in a caption */
+  .track::after { content: none; }
+</style>
+
+<div class="titlepage">
+  <p class="eyebrow">Wildfire-UAVSim &middot; experiment record</p>
+  <h1>Wind and the loss rate</h1>
+  <p class="subtitle">
+    What a wind does to the chance of losing the home base on a 100&times;100 map, measured against the
+    no-UAV baseline that loses it every time.
+  </p>
+
+  <dl class="meta">
+    <dt>Experiment</dt><dd>20260810_wind</dd>
+    <dt>Date</dt><dd>10 August 2026</dd>
+    <dt>Commit</dt><dd>d08da5f851ec87026d7d973b159e29d34de88689</dd>
+    <dt>Simulator</dt><dd>Wildfire-UAVSim, mesa 1.x</dd>
+    <dt>Compared against</dt><dd>20260810_baseline &mdash; 100.0% loss over 5 000 runs</dd>
+    <dt>Measured</dt><dd>73 arms, 1 000 runs each, seeds 3 000 000 &ndash; 3 000 999</dd>
+    <dt>Interval</dt><dd>Wilson score, 95%</dd>
+  </dl>
+
+  <div class="abstract">
+    <h2 style="border:0;padding:0;margin-bottom:0.5rem">Summary</h2>
+    <p>
+      <strong>Wind is not a difficulty dial over most of its range.</strong> From &mu; = 0 to &mu; = 0.75
+      the loss rate is indistinguishable from the no-wind baseline in all four cardinal directions
+      &mdash; 99.5% or above, against the baseline's 100.0% &mdash; even though by &mu; = 0.75 the wind
+      has discarded three quarters of every off-axis spread weight and nearly doubled the front speed.
+    </p>
+    <p>
+      Above &mu; = 0.85 the loss rate collapses, and <strong>how far it collapses depends more on which
+      way the wind blows than on how hard</strong>. At &mu; = 0.9 a south or west wind still loses 97% of
+      runs while a north or east wind loses 65%. That factor of five is a property of the map rather than
+      of the weather: the base sits a quarter of the way into the grid, so two directions have 73 rows of
+      ground upwind of it to draw ignitions from and two have 25.
+    </p>
+    <p>
+      The mechanism is not that wind keeps fire away from the base. A cell burns for one update and goes
+      out, so the fire is a travelling wave; the base takes one point of damage per step the wave stands
+      on it and is lost at four. Wind makes the fire faster <em>and</em> thinner, and a thin fast fire
+      crosses the base in two or three steps and leaves. The base survives because it was singed rather
+      than besieged.
+    </p>
+  </div>
+
+  <div class="toc">
+    <strong>Contents</strong>
+    <ol>
+      <li>Objective and result</li>
+      <li>What the wind does in the model</li>
+      <li>Parameters</li>
+      <li>Method</li>
+      <li>Results</li>
+      <li>Comparison with the baseline</li>
+      <li>Validity</li>
+      <li>What was not run</li>
+      <li>Reproducing</li>
+    </ol>
+  </div>
+</div>
+
+<section id="objective">
+  <h2>1. Objective and result</h2>
+
+  <p class="lede">
+    The no-UAV baseline established that this configuration is unwinnable: 5 000 runs, 5 000 losses, a
+    95% Wilson interval of 99.92 &ndash; 100.00. This experiment asks what the wind does to that, and how
+    much of the answer is the wind rather than the map.
+  </p>
+
+  <p>
+    The question matters for two reasons. The first is practical: wind is one of the few settings that
+    could soften a scenario which is otherwise saturated at 100%, and a saturated baseline cannot
+    discriminate between UAV policies at the weak end. The second is that the earlier calibration
+    experiment recorded, as a counterintuitive aside, that stronger wind made the scenario <em>easier</em>.
+    That is worth either confirming with numbers or explaining properly, and it turns out to need both.
+  </p>
+
+  <div class="keyfact">
+    <p>
+      <strong>Result.</strong> Wind changes nothing the base can detect until &mu; &gt; 0.75. Above 0.85
+      it collapses the loss rate, by a factor that depends on direction more than on strength: at
+      &mu; = 0.9 the loss rate is 97.0% with a south wind and 64.6% with a north one, on the same
+      1 000 fires. At &mu; = 1 a cardinal wind leaves 0.3 &ndash; 1.6% and a diagonal wind leaves
+      6.8 &ndash; 20.3%.
+    </p>
+  </div>
+
+  <p>
+    The rest of this document sets out the arithmetic that produces that shape (&sect;2), what was held
+    fixed and what was swept (&sect;3, &sect;4), the measurements (&sect;5), how they compare with the
+    baseline (&sect;6), the four checks that the surface is real rather than an artefact of a setting
+    that failed to apply (&sect;7), and what remains unmeasured (&sect;8).
+  </p>
+</section>
+
+<section id="model">
+  <h2>2. What the wind does in the model</h2>
+
+  <p class="lede">
+    Every result below follows from about five lines of arithmetic in <code>sim/fire_spread.py</code> and
+    one property of <code>sim/agents/fire.py</code> that is easy to miss. They are worth setting out
+    before the measurements rather than after them, because the naive reading of "stronger wind" predicts
+    the opposite of what happens.
+  </p>
+
+  <h3>2.1 Spread</h3>
+
+  <p>
+    A cell that is not burning is ignited by each burning cell within a Moore radius of 3, independently,
+    with a weight falling off as the inverse square of the distance:
+  </p>
+
+  <div class="formula">
+    w(s, s&prime;) = d(s, s&prime;)<sup>&minus;2</sup> &nbsp; for d &le; 3, &nbsp; 0 otherwise<br>
+    P(s ignites) = 1 &minus; &prod;<sub>s&prime; burning</sub> (1 &minus; w(s, s&prime;))
+  </div>
+
+  <p>
+    The wind does not add a term. It classifies each burning neighbour as lying along the wind axis or
+    not &mdash; <code>on_wind()</code> counts only the three collinear downwind offsets &mdash; and moves
+    its weight towards 1 or towards 0 by the fraction <code>MU</code>:
+  </p>
+
+  <div class="formula">
+    on the wind axis:&nbsp; w &rarr; w + &mu;(1 &minus; w)<br>
+    everywhere else:&nbsp;&nbsp; w &rarr; w(1 &minus; &mu;) <span class="c">&larr; exactly a factor of (1 &minus; &mu;)</span>
+  </div>
+
+  <p>
+    The second line is the important one, and it is exact: <strong>every off-axis weight in the kernel is
+    multiplied by (1 &minus; &mu;)</strong>, reaching zero only when &mu; is exactly 1. Meanwhile the
+    three on-axis weights are pushed to certainty. Written out for the neighbours that matter:
+  </p>
+
+  <table class="tight">
+    <thead>
+      <tr><th>MU</th><th class="num">0</th><th class="num">0.25</th><th class="num">0.5</th>
+          <th class="num">0.75</th><th class="num">0.85</th><th class="num">0.9</th>
+          <th class="num">0.95</th><th class="num">0.975</th><th class="num">0.99</th>
+          <th class="num">1.0</th></tr>
+    </thead>
+    <tbody>
+      <tr><th>downwind d = 1</th>
+          <td class="num">1.000</td><td class="num">1.000</td><td class="num">1.000</td>
+          <td class="num">1.000</td><td class="num">1.000</td><td class="num">1.000</td>
+          <td class="num">1.000</td><td class="num">1.000</td><td class="num">1.000</td>
+          <td class="num">1.000</td></tr>
+      <tr><th>downwind d = 3</th>
+          <td class="num">0.111</td><td class="num">0.333</td><td class="num">0.556</td>
+          <td class="num">0.778</td><td class="num">0.867</td><td class="num">0.911</td>
+          <td class="num">0.956</td><td class="num">0.978</td><td class="num">0.991</td>
+          <td class="num">1.000</td></tr>
+      <tr class="mark"><th>crosswind d = 1</th>
+          <td class="num">1.000</td><td class="num">0.750</td><td class="num">0.500</td>
+          <td class="num">0.250</td><td class="num">0.150</td><td class="num">0.100</td>
+          <td class="num">0.050</td><td class="num">0.025</td><td class="num">0.010</td>
+          <td class="num">0.000</td></tr>
+      <tr><th>front speed, cells/update</th>
+          <td class="num">1.44</td><td class="num">1.96</td><td class="num">2.39</td>
+          <td class="num">2.74</td><td class="num">2.85</td><td class="num">2.90</td>
+          <td class="num">2.95</td><td class="num">2.98</td><td class="num">2.99</td>
+          <td class="num">3.00</td></tr>
+    </tbody>
+  </table>
+  <p class="footnote">
+    Read off <code>fire_spread.cell_weight()</code> itself rather than worked by hand. The last row is the
+    expected distance the downwind front advances per fire update from a single burning cell,
+    3w<sub>3</sub> + 2w<sub>2</sub>(1 &minus; w<sub>3</sub>) + (1 &minus; w<sub>2</sub>)(1 &minus; w<sub>3</sub>).
+  </p>
+
+  <div class="keyfact">
+    <p>
+      <strong>The wind makes the fire faster and thinner at the same time.</strong> It roughly doubles the
+      downwind front speed &mdash; from 1.44 cells per update to a guaranteed 3.00 &mdash; while scaling
+      everything off the axis by (1 &minus; &mu;). Anyone expecting a stronger wind to be more dangerous
+      is reading the first half of that sentence. The measurements in &sect;5 say the second half wins.
+    </p>
+  </div>
+
+  <h3>2.2 Why thinness beats speed: the fire is a wave</h3>
+
+  <p>
+    A burning cell in this model burns for <em>one fire update</em> and then stops. It loses
+    <code>BURNING_RATE</code> fuel, ignites what it can reach, and goes out. The fire is therefore a wave
+    a few cells deep travelling across the grid, not a growing region of flame with a burning interior.
+  </p>
+
+  <p>
+    That matters because of how the home base is destroyed. The base is not destroyed by fire reaching
+    it; it accumulates one point of damage per step on which any of its four cells is alight, and is lost
+    at <code>BHP</code> = 4 of them. What kills the base is therefore <em>dwell</em> &mdash; how many
+    consecutive steps the wave is standing on the footprint &mdash; and a wide slow fire dwells while a
+    narrow fast one passes over and is gone.
+  </p>
+
+  <div class="note">
+    <h3>The mechanism, in one sentence</h3>
+    <p>
+      Wind does not keep the fire away from the base. It makes the fire arrive sooner, cross the base in
+      two or three steps instead of four or more, and leave. The base survives because it was singed
+      rather than besieged.
+    </p>
+  </div>
+
+  <p>
+    This is visible at the extreme. At &mu; = 1 the fire is a single line of cells one wide, advancing
+    three cells an update along one axis, and &sect;7.3 shows that a line lit directly beside the base can
+    clear the two-deep footprint in its first leap &mdash; scoring two or three damage against a
+    requirement of four, and losing a run it geometrically should have won.
+  </p>
+</section>
+
+
+<section id="parameters">
+  <h2>3. Parameters</h2>
+
+  <p>
+    Every arm holds the twelve settings of the no-UAV baseline fixed and changes nothing but the wind. The
+    baseline is therefore not a separate scenario to be compared against loosely; it is the &mu; = 0 face
+    of this same surface, and &sect;6 checks that it behaves like one.
+  </p>
+
+  <table class="tight">
+    <thead><tr><th>Setting</th><th>Baseline</th><th>Here</th></tr></thead>
+    <tbody>
+      <tr class="mark"><th>ACTIVATE_WIND</th><td>False</td><td>True</td></tr>
+      <tr class="mark"><th>FIXED_WIND</th><td>&mdash;</td><td>True (cardinal) / False (diagonal)</td></tr>
+      <tr class="mark"><th>WIND_DIRECTION</th><td>&mdash;</td><td>north, south, east, west</td></tr>
+      <tr class="mark"><th>FIRST_DIR, SECOND_DIR</th><td>&mdash;</td><td>the four perpendicular pairs</td></tr>
+      <tr class="mark"><th>FIRST_DIR_PROB</th><td>&mdash;</td><td>0.5 &mdash; the even split that puts the resultant on the diagonal</td></tr>
+      <tr class="mark"><th>MU</th><td>&mdash;</td><td>0, 0.25, 0.5, 0.75, 0.85, 0.9, 0.95, 0.975, 0.99, 1.0</td></tr>
+      <tr><th>WIDTH, HEIGHT</th><td>100, 100</td><td>unchanged</td></tr>
+      <tr><th>BATCH_SIZE</th><td>100</td><td>unchanged</td></tr>
+      <tr><th>NUM_AGENTS</th><td>0</td><td>unchanged</td></tr>
+      <tr><th>ACTIVATE_FIREFIGHTING, BHP</th><td>True, 4</td><td>unchanged</td></tr>
+      <tr><th>FIRE_START_POSITION, _STEP</th><td>random, 0</td><td>unchanged</td></tr>
+      <tr><th>BURNING_RATE, FIRE_SPREAD_SPEED</th><td>1, 1</td><td>unchanged</td></tr>
+      <tr><th>DENSITY_PROB</th><td>1.0</td><td>unchanged</td></tr>
+      <tr><th>ACTIVATE_SMOKE</th><td>False</td><td>unchanged</td></tr>
+    </tbody>
+  </table>
+
+  <p class="footnote">
+    Everything else took its <code>config.py</code> default. <code>config-used.json</code> records all 90
+    settings as they were actually applied, together with the commit, so a later reader can diff rather
+    than assume. Note that smoke is off throughout: <code>SMOKE_MU</code> is a second, independent wind,
+    and leaving it on would have made this a two-factor experiment reported as one.
+  </p>
+</section>
+
+<section id="method">
+  <h2>4. Method</h2>
+
+  <h3>4.1 The sweeps</h3>
+
+  <p>
+    Each sweep is a cartesian product of its axes run through <code>tools/sweep.py scan</code>, which puts
+    every arm in its own <code>headless.py</code> subprocess. The subprocess matters: applying overrides
+    mutates the global <code>config</code> module, so arms sharing an interpreter leak settings into one
+    another unless every arm happens to set every key any other arm sets.
+  </p>
+
+  <table class="tight">
+    <thead>
+      <tr><th>Sweep</th><th>Varies</th><th class="num">Arms</th><th class="num">Runs/arm</th>
+          <th>Seed block</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr class="mark"><th>cardinal</th><td><code>WIND_DIRECTION</code> &times; <code>MU</code></td>
+          <td class="num">40</td><td class="num">1 000</td><td>3 000 000</td><td>complete</td></tr>
+      <tr class="mark"><th>diagonal</th><td><code>FIRST_DIR</code> &times; <code>SECOND_DIR</code> &times; <code>MU</code></td>
+          <td class="num">33 of 40</td><td class="num">1 000</td><td>3 000 000</td><td>3 of 4 pairs</td></tr>
+      <tr><th>runlength</th><td><code>BATCH_SIZE</code> &times; <code>MU</code></td>
+          <td class="num">32</td><td class="num">500</td><td>4 000 000</td><td>not run (&sect;8)</td></tr>
+      <tr><th>steadiness</th><td><code>FIRST_DIR_PROB</code> &times; <code>MU</code></td>
+          <td class="num">12</td><td class="num">500</td><td>5 000 000</td><td>not run (&sect;8)</td></tr>
+      <tr><th>extent</th><td><code>MU</code>, no home base</td>
+          <td class="num">10</td><td class="num">200</td><td>6 000 000</td><td>not run (&sect;8)</td></tr>
+    </tbody>
+  </table>
+
+  <p>
+    The blocks are disjoint from each other and from every other experiment in the repository: the
+    calibration sweep used 1 000 and 500 000, and the no-UAV baseline used 1 000 000 and 2 000 000.
+  </p>
+
+  <h3>4.2 Independence, and pairing</h3>
+
+  <p>
+    Run <em>i</em> of an arm is seeded <code>base_seed + i</code>, and <code>seed_simulation()</code>
+    replaces <code>config.SYSTEM_RANDOM</code> &mdash; the only generator the simulation draws from &mdash;
+    with a fresh <code>random.Random(seed)</code> before each model is built. No state crosses between
+    runs, and <code>analyse.py</code> refuses an arm that repeats a seed.
+  </p>
+
+  <p>
+    Because the two direction sweeps share one block, their arms are also <em>paired</em>: run 37 is the
+    same fire in all 73 of them, so a difference between two arms is a difference between the winds and
+    not between the fires they were shown. &sect;7.1 verifies that rather than assuming it, and explains
+    why it survives the extra random draw a composed wind takes.
+  </p>
+
+  <h3>4.3 Why the MU levels are not evenly spaced</h3>
+
+  <p>
+    A pilot of 100 runs per arm found the loss rate at 100% from &mu; = 0 to &mu; = 0.75 and at 2% at
+    &mu; = 1.0. An evenly spaced grid would have spent nine tenths of its arms re-measuring the same flat
+    100%, so the ten levels put four below 0.85 &mdash; enough to establish that the flat region is
+    genuinely flat, in every direction &mdash; and six between 0.85 and 1.0, where the response moves.
+    Every chart in &sect;5 therefore plots <code>MU</code> on an evenly spaced categorical axis; a linear
+    one would compress the entire interesting region into the last twentieth of the width.
+  </p>
+
+  <h3>4.4 Interval</h3>
+
+  <p>
+    Every rate is reported with a 95% Wilson score interval. Many of these arms sit at or very near a
+    boundary &mdash; 100%, or a fraction of a percent &mdash; which is exactly where the normal
+    approximation misbehaves: at p&#770; = 1 its standard error is zero and it collapses to the degenerate
+    point [100%, 100%]. <code>wilson()</code> is imported from <code>tools/sweep.py</code> rather than
+    reimplemented, so this experiment, the no-UAV baseline and the repository's sweep tool cannot disagree
+    about what a 95% interval is.
+  </p>
+
+  <h3>4.5 Reading the arms off disk</h3>
+
+  <p>
+    <code>analyse.py</code> reads the per-arm JSON that <code>headless.py</code> writes, not the merged
+    <code>runs.csv</code> that <code>tools/sweep.py</code> writes when a scan finishes. The distinction
+    matters here: this sweep was interrupted, and an interrupted scan leaves every arm it completed on
+    disk with no CSV at all. Those arms are perfectly good measurements and the identity of each is in its
+    filename. An arm containing any errored run is discarded whole (&sect;7.4).
+  </p>
+</section>
+
+
+<section id="results">
+  <h2>5. Results</h2>
+
+  <h3>5.1 The four cardinal directions</h3>
+
+  <p class="lede">
+    40 arms, 1 000 runs each, all 40 000 runs drawn from one seed block so that run <em>i</em> is the same
+    fire in every arm.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="loss rate against wind strength" style="width:100%;height:auto">
+<g font-family="ui-monospace, Menlo, monospace" font-size="10">
+<line x1="52" y1="256.0" x2="588" y2="256.0" stroke="#d8dedd" stroke-width="1"/>
+<text x="44" y="259.5" text-anchor="end" fill="#6b7a77">0%</text>
+<line x1="52" y1="196.5" x2="588" y2="196.5" stroke="#d8dedd" stroke-width="1"/>
+<text x="44" y="200.0" text-anchor="end" fill="#6b7a77">25%</text>
+<line x1="52" y1="137.0" x2="588" y2="137.0" stroke="#d8dedd" stroke-width="1"/>
+<text x="44" y="140.5" text-anchor="end" fill="#6b7a77">50%</text>
+<line x1="52" y1="77.5" x2="588" y2="77.5" stroke="#d8dedd" stroke-width="1"/>
+<text x="44" y="81.0" text-anchor="end" fill="#6b7a77">75%</text>
+<line x1="52" y1="18.0" x2="588" y2="18.0" stroke="#d8dedd" stroke-width="1"/>
+<text x="44" y="21.5" text-anchor="end" fill="#6b7a77">100%</text>
+<text x="52.0" y="274" text-anchor="middle" fill="#6b7a77">0.0</text>
+<text x="111.6" y="274" text-anchor="middle" fill="#6b7a77">0.25</text>
+<text x="171.1" y="274" text-anchor="middle" fill="#6b7a77">0.5</text>
+<text x="230.7" y="274" text-anchor="middle" fill="#6b7a77">0.75</text>
+<text x="290.2" y="274" text-anchor="middle" fill="#6b7a77">0.85</text>
+<text x="349.8" y="274" text-anchor="middle" fill="#6b7a77">0.9</text>
+<text x="409.3" y="274" text-anchor="middle" fill="#6b7a77">0.95</text>
+<text x="468.9" y="274" text-anchor="middle" fill="#6b7a77">0.975</text>
+<text x="528.4" y="274" text-anchor="middle" fill="#6b7a77">0.99</text>
+<text x="588.0" y="274" text-anchor="middle" fill="#6b7a77">1.0</text>
+<path d="M52.0,18.0 L111.6,18.0 L171.1,18.0 L230.7,18.2 L290.2,19.4 L349.8,25.1 L409.3,128.2 L468.9,186.5 L528.4,223.6 L588.0,253.6" fill="none" stroke="#b4441f" stroke-width="2"/>
+<circle cx="52.0" cy="18.0" r="2.6" fill="#b4441f"/>
+<circle cx="111.6" cy="18.0" r="2.6" fill="#b4441f"/>
+<circle cx="171.1" cy="18.0" r="2.6" fill="#b4441f"/>
+<circle cx="230.7" cy="18.2" r="2.6" fill="#b4441f"/>
+<circle cx="290.2" cy="19.4" r="2.6" fill="#b4441f"/>
+<circle cx="349.8" cy="25.1" r="2.6" fill="#b4441f"/>
+<circle cx="409.3" cy="128.2" r="2.6" fill="#b4441f"/>
+<circle cx="468.9" cy="186.5" r="2.6" fill="#b4441f"/>
+<circle cx="528.4" cy="223.6" r="2.6" fill="#b4441f"/>
+<circle cx="588.0" cy="253.6" r="2.6" fill="#b4441f"/>
+<path d="M52.0,18.0 L111.6,18.0 L171.1,18.5 L230.7,19.2 L290.2,20.4 L349.8,23.7 L409.3,135.1 L468.9,193.2 L528.4,222.4 L588.0,252.2" fill="none" stroke="#6a4b9c" stroke-width="2"/>
+<circle cx="52.0" cy="18.0" r="2.6" fill="#6a4b9c"/>
+<circle cx="111.6" cy="18.0" r="2.6" fill="#6a4b9c"/>
+<circle cx="171.1" cy="18.5" r="2.6" fill="#6a4b9c"/>
+<circle cx="230.7" cy="19.2" r="2.6" fill="#6a4b9c"/>
+<circle cx="290.2" cy="20.4" r="2.6" fill="#6a4b9c"/>
+<circle cx="349.8" cy="23.7" r="2.6" fill="#6a4b9c"/>
+<circle cx="409.3" cy="135.1" r="2.6" fill="#6a4b9c"/>
+<circle cx="468.9" cy="193.2" r="2.6" fill="#6a4b9c"/>
+<circle cx="528.4" cy="222.4" r="2.6" fill="#6a4b9c"/>
+<circle cx="588.0" cy="252.2" r="2.6" fill="#6a4b9c"/>
+<path d="M52.0,18.0 L111.6,18.0 L171.1,18.2 L230.7,19.0 L290.2,29.4 L349.8,102.3 L409.3,230.8 L468.9,249.3 L528.4,253.4 L588.0,255.3" fill="none" stroke="#1f6f8b" stroke-width="2"/>
+<circle cx="52.0" cy="18.0" r="2.6" fill="#1f6f8b"/>
+<circle cx="111.6" cy="18.0" r="2.6" fill="#1f6f8b"/>
+<circle cx="171.1" cy="18.2" r="2.6" fill="#1f6f8b"/>
+<circle cx="230.7" cy="19.0" r="2.6" fill="#1f6f8b"/>
+<circle cx="290.2" cy="29.4" r="2.6" fill="#1f6f8b"/>
+<circle cx="349.8" cy="102.3" r="2.6" fill="#1f6f8b"/>
+<circle cx="409.3" cy="230.8" r="2.6" fill="#1f6f8b"/>
+<circle cx="468.9" cy="249.3" r="2.6" fill="#1f6f8b"/>
+<circle cx="528.4" cy="253.4" r="2.6" fill="#1f6f8b"/>
+<circle cx="588.0" cy="255.3" r="2.6" fill="#1f6f8b"/>
+<path d="M52.0,18.0 L111.6,18.0 L171.1,18.0 L230.7,18.2 L290.2,27.8 L349.8,100.1 L409.3,226.0 L468.9,248.1 L528.4,253.1 L588.0,255.0" fill="none" stroke="#3f7a2e" stroke-width="2"/>
+<circle cx="52.0" cy="18.0" r="2.6" fill="#3f7a2e"/>
+<circle cx="111.6" cy="18.0" r="2.6" fill="#3f7a2e"/>
+<circle cx="171.1" cy="18.0" r="2.6" fill="#3f7a2e"/>
+<circle cx="230.7" cy="18.2" r="2.6" fill="#3f7a2e"/>
+<circle cx="290.2" cy="27.8" r="2.6" fill="#3f7a2e"/>
+<circle cx="349.8" cy="100.1" r="2.6" fill="#3f7a2e"/>
+<circle cx="409.3" cy="226.0" r="2.6" fill="#3f7a2e"/>
+<circle cx="468.9" cy="248.1" r="2.6" fill="#3f7a2e"/>
+<circle cx="528.4" cy="253.1" r="2.6" fill="#3f7a2e"/>
+<circle cx="588.0" cy="255.0" r="2.6" fill="#3f7a2e"/>
+<line x1="591.0" y1="253.6" x2="595.0" y2="232.0" stroke="#b4441f" stroke-width="0.75"/>
+<text x="597.0" y="235.5" fill="#b4441f">south</text>
+<line x1="591.0" y1="252.2" x2="595.0" y2="220.0" stroke="#6a4b9c" stroke-width="0.75"/>
+<text x="597.0" y="223.5" fill="#6a4b9c">west</text>
+<text x="597.0" y="259.5" fill="#1f6f8b">north</text>
+<line x1="591.0" y1="255.0" x2="595.0" y2="244.0" stroke="#3f7a2e" stroke-width="0.75"/>
+<text x="597.0" y="247.5" fill="#3f7a2e">east</text>
+</g>
+</svg>
+
+    <figcaption>
+      Loss rate against wind strength. <code>MU</code> runs on an evenly spaced categorical axis, not a
+      linear one &mdash; the levels themselves are unevenly spaced, four below 0.85 and six above it,
+      because that is where the response lives.
+    </figcaption>
+  </figure>
+
+  <p>
+    The surface has three regions, and only the third is the one anybody would have predicted.
+  </p>
+
+  <p>
+    <strong>Below &mu; = 0.75 the wind does not exist</strong>, as far as the base is concerned. Every one
+    of the sixteen arms at &mu; &isin; {0, 0.25, 0.5, 0.75} lost at least 99.5% of its runs, against a
+    no-wind baseline of 100.0%. By &mu; = 0.75 the wind has thrown away three quarters of every off-axis
+    spread weight and raised the front speed from 1.44 to 2.74 cells per update &mdash; it has transformed
+    the fire &mdash; and the loss rate has moved by a tenth of a point.
+  </p>
+
+  <p>
+    <strong>Between 0.85 and 0.99 the direction decides everything.</strong> The four curves split into
+    two pairs that are nowhere near each other: at &mu; = 0.9 a south or west wind still loses 97% of runs
+    while a north or east wind loses 65%, and at &mu; = 0.95 it is 51&ndash;54% against 11&ndash;13%. A
+    factor of five, from nothing but which way the air is moving, on identical fires.
+  </p>
+
+  <p>
+    <strong>At &mu; = 1 everything collapses together</strong>, to between 0.3% and 1.6%. The fire is a
+    single line one cell wide, and &sect;7 accounts for every run that is lost, individually.
+  </p>
+
+  <figure>
+    <table class="tight">
+<thead>
+<tr>
+<th rowspan="2">MU</th>
+<th colspan="2" class="num">south</th>
+<th colspan="2" class="num">west</th>
+<th colspan="2" class="num">north</th>
+<th colspan="2" class="num">east</th>
+</tr>
+<tr>
+<th class="num">loss</th><th class="num">95% Wilson</th>
+<th class="num">loss</th><th class="num">95% Wilson</th>
+<th class="num">loss</th><th class="num">95% Wilson</th>
+<th class="num">loss</th><th class="num">95% Wilson</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>0.0</th>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+</tr>
+<tr><th>0.25</th>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+</tr>
+<tr><th>0.5</th>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">99.8%</td><td class="ci">99.3&ndash;99.9</td>
+<td class="num">99.9%</td><td class="ci">99.4&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+</tr>
+<tr><th>0.75</th>
+<td class="num">99.9%</td><td class="ci">99.4&ndash;100.0</td>
+<td class="num">99.5%</td><td class="ci">98.8&ndash;99.8</td>
+<td class="num">99.6%</td><td class="ci">99.0&ndash;99.8</td>
+<td class="num">99.9%</td><td class="ci">99.4&ndash;100.0</td>
+</tr>
+<tr class="mark"><th>0.85</th>
+<td class="num">99.4%</td><td class="ci">98.7&ndash;99.7</td>
+<td class="num">99.0%</td><td class="ci">98.2&ndash;99.5</td>
+<td class="num">95.2%</td><td class="ci">93.7&ndash;96.4</td>
+<td class="num">95.9%</td><td class="ci">94.5&ndash;97.0</td>
+</tr>
+<tr class="mark"><th>0.9</th>
+<td class="num">97.0%</td><td class="ci">95.7&ndash;97.9</td>
+<td class="num">97.6%</td><td class="ci">96.5&ndash;98.4</td>
+<td class="num">64.6%</td><td class="ci">61.6&ndash;67.5</td>
+<td class="num">65.5%</td><td class="ci">62.5&ndash;68.4</td>
+</tr>
+<tr class="mark"><th>0.95</th>
+<td class="num">53.7%</td><td class="ci">50.6&ndash;56.8</td>
+<td class="num">50.8%</td><td class="ci">47.7&ndash;53.9</td>
+<td class="num">10.6%</td><td class="ci">8.8&ndash;12.7</td>
+<td class="num">12.6%</td><td class="ci">10.7&ndash;14.8</td>
+</tr>
+<tr class="mark"><th>0.975</th>
+<td class="num">29.2%</td><td class="ci">26.5&ndash;32.1</td>
+<td class="num">26.4%</td><td class="ci">23.8&ndash;29.2</td>
+<td class="num">2.8%</td><td class="ci">1.9&ndash;4.0</td>
+<td class="num">3.3%</td><td class="ci">2.4&ndash;4.6</td>
+</tr>
+<tr class="mark"><th>0.99</th>
+<td class="num">13.6%</td><td class="ci">11.6&ndash;15.9</td>
+<td class="num">14.1%</td><td class="ci">12.1&ndash;16.4</td>
+<td class="num">1.1%</td><td class="ci">0.6&ndash;2.0</td>
+<td class="num">1.2%</td><td class="ci">0.7&ndash;2.1</td>
+</tr>
+<tr class="mark"><th>1.0</th>
+<td class="num">1.0%</td><td class="ci">0.5&ndash;1.8</td>
+<td class="num">1.6%</td><td class="ci">1.0&ndash;2.6</td>
+<td class="num">0.3%</td><td class="ci">0.1&ndash;0.9</td>
+<td class="num">0.4%</td><td class="ci">0.2&ndash;1.0</td>
+</tr>
+</tbody>
+</table>
+
+    <figcaption>
+      Loss rate and 95% Wilson interval, 1 000 runs per cell. Shaded rows are those where at least one
+      direction has moved off 100%.
+    </figcaption>
+  </figure>
+
+  <div class="keyfact">
+    <p>
+      <strong>The split between the directions is the map, not the wind.</strong> The home base sits at
+      (25, 25) on a 100&times;100 grid &mdash; a quarter of the way in, not in the middle. A wind that
+      drives fire towards decreasing coordinates has 73 rows of grid upwind of the base to draw ignitions
+      from; one driving the other way has 25. South and west are the long-approach directions, north and
+      east the short ones, and that 73:25 ratio is the whole of the effect. It would vanish on a map with
+      a centred base, which is worth knowing before this result is carried anywhere else.
+    </p>
+  </div>
+
+  <p>
+    It is worth being precise about what this does and does not say. It is not that a north wind blows the
+    fire away from the base: at &mu; = 0.9 the off-axis weight is still 0.1, the fire is a broad wedge
+    rather than a line, and fires lit well off the axis still arrive. It is that the wedge opens downwind,
+    so the set of ignition cells that can feed it is three times larger for a south wind than a north one.
+    The wind sets the shape; where the base sits on the map sets how much of the map that shape can catch.
+  </p>
+
+  <h3>5.2 The four diagonals</h3>
+
+  <p>
+    There is no diagonal wind direction in this simulator. Composing two perpendicular ones is how
+    <code>config.py</code> says to ask for one, and it is a <em>mixture</em> rather than a bearing: each
+    cell/neighbour pair blows <code>FIRST_DIR</code> with probability <code>FIRST_DIR_PROB</code> and
+    <code>SECOND_DIR</code> otherwise. That distinction turns out to matter more than the bearing does.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="loss rate against wind strength" style="width:100%;height:auto">
+<g font-family="ui-monospace, Menlo, monospace" font-size="10">
+<line x1="52" y1="256.0" x2="588" y2="256.0" stroke="#d8dedd" stroke-width="1"/>
+<text x="44" y="259.5" text-anchor="end" fill="#6b7a77">0%</text>
+<line x1="52" y1="196.5" x2="588" y2="196.5" stroke="#d8dedd" stroke-width="1"/>
+<text x="44" y="200.0" text-anchor="end" fill="#6b7a77">25%</text>
+<line x1="52" y1="137.0" x2="588" y2="137.0" stroke="#d8dedd" stroke-width="1"/>
+<text x="44" y="140.5" text-anchor="end" fill="#6b7a77">50%</text>
+<line x1="52" y1="77.5" x2="588" y2="77.5" stroke="#d8dedd" stroke-width="1"/>
+<text x="44" y="81.0" text-anchor="end" fill="#6b7a77">75%</text>
+<line x1="52" y1="18.0" x2="588" y2="18.0" stroke="#d8dedd" stroke-width="1"/>
+<text x="44" y="21.5" text-anchor="end" fill="#6b7a77">100%</text>
+<text x="52.0" y="274" text-anchor="middle" fill="#6b7a77">0.0</text>
+<text x="111.6" y="274" text-anchor="middle" fill="#6b7a77">0.25</text>
+<text x="171.1" y="274" text-anchor="middle" fill="#6b7a77">0.5</text>
+<text x="230.7" y="274" text-anchor="middle" fill="#6b7a77">0.75</text>
+<text x="290.2" y="274" text-anchor="middle" fill="#6b7a77">0.85</text>
+<text x="349.8" y="274" text-anchor="middle" fill="#6b7a77">0.9</text>
+<text x="409.3" y="274" text-anchor="middle" fill="#6b7a77">0.95</text>
+<text x="468.9" y="274" text-anchor="middle" fill="#6b7a77">0.975</text>
+<text x="528.4" y="274" text-anchor="middle" fill="#6b7a77">0.99</text>
+<text x="588.0" y="274" text-anchor="middle" fill="#6b7a77">1.0</text>
+<path d="M52.0,18.0 L111.6,18.0 L171.1,18.0 L230.7,19.0 L290.2,19.2 L349.8,27.5 L409.3,115.3 L468.9,180.1 L528.4,198.2 L588.0,207.7" fill="none" stroke="#b4441f" stroke-width="2"/>
+<circle cx="52.0" cy="18.0" r="2.6" fill="#b4441f"/>
+<circle cx="111.6" cy="18.0" r="2.6" fill="#b4441f"/>
+<circle cx="171.1" cy="18.0" r="2.6" fill="#b4441f"/>
+<circle cx="230.7" cy="19.0" r="2.6" fill="#b4441f"/>
+<circle cx="290.2" cy="19.2" r="2.6" fill="#b4441f"/>
+<circle cx="349.8" cy="27.5" r="2.6" fill="#b4441f"/>
+<circle cx="409.3" cy="115.3" r="2.6" fill="#b4441f"/>
+<circle cx="468.9" cy="180.1" r="2.6" fill="#b4441f"/>
+<circle cx="528.4" cy="198.2" r="2.6" fill="#b4441f"/>
+<circle cx="588.0" cy="207.7" r="2.6" fill="#b4441f"/>
+<path d="M52.0,18.0 L111.6,18.0 L171.1,18.0" fill="none" stroke="#3f7a2e" stroke-width="2"/>
+<circle cx="52.0" cy="18.0" r="2.6" fill="#3f7a2e"/>
+<circle cx="111.6" cy="18.0" r="2.6" fill="#3f7a2e"/>
+<circle cx="171.1" cy="18.0" r="2.6" fill="#3f7a2e"/>
+<path d="M52.0,18.0 L111.6,18.0 L171.1,18.2 L230.7,19.4 L290.2,27.8 L349.8,75.6 L409.3,200.1 L468.9,235.3 L528.4,238.9 L588.0,239.8" fill="none" stroke="#1f6f8b" stroke-width="2"/>
+<circle cx="52.0" cy="18.0" r="2.6" fill="#1f6f8b"/>
+<circle cx="111.6" cy="18.0" r="2.6" fill="#1f6f8b"/>
+<circle cx="171.1" cy="18.2" r="2.6" fill="#1f6f8b"/>
+<circle cx="230.7" cy="19.4" r="2.6" fill="#1f6f8b"/>
+<circle cx="290.2" cy="27.8" r="2.6" fill="#1f6f8b"/>
+<circle cx="349.8" cy="75.6" r="2.6" fill="#1f6f8b"/>
+<circle cx="409.3" cy="200.1" r="2.6" fill="#1f6f8b"/>
+<circle cx="468.9" cy="235.3" r="2.6" fill="#1f6f8b"/>
+<circle cx="528.4" cy="238.9" r="2.6" fill="#1f6f8b"/>
+<circle cx="588.0" cy="239.8" r="2.6" fill="#1f6f8b"/>
+<path d="M52.0,18.0 L111.6,18.0 L171.1,18.0 L230.7,18.7 L290.2,19.9 L349.8,24.9 L409.3,123.7 L468.9,188.6 L528.4,203.9 L588.0,212.0" fill="none" stroke="#6a4b9c" stroke-width="2"/>
+<circle cx="52.0" cy="18.0" r="2.6" fill="#6a4b9c"/>
+<circle cx="111.6" cy="18.0" r="2.6" fill="#6a4b9c"/>
+<circle cx="171.1" cy="18.0" r="2.6" fill="#6a4b9c"/>
+<circle cx="230.7" cy="18.7" r="2.6" fill="#6a4b9c"/>
+<circle cx="290.2" cy="19.9" r="2.6" fill="#6a4b9c"/>
+<circle cx="349.8" cy="24.9" r="2.6" fill="#6a4b9c"/>
+<circle cx="409.3" cy="123.7" r="2.6" fill="#6a4b9c"/>
+<circle cx="468.9" cy="188.6" r="2.6" fill="#6a4b9c"/>
+<circle cx="528.4" cy="203.9" r="2.6" fill="#6a4b9c"/>
+<circle cx="588.0" cy="212.0" r="2.6" fill="#6a4b9c"/>
+<text x="597.0" y="211.2" fill="#b4441f">south+east</text>
+<line x1="174.1" y1="18.0" x2="178.1" y2="36.0" stroke="#3f7a2e" stroke-width="0.75"/>
+<text x="171.1" y="39.5" text-anchor="middle" fill="#3f7a2e">south+west</text>
+<text x="597.0" y="243.3" fill="#1f6f8b">north+east</text>
+<line x1="591.0" y1="212.0" x2="595.0" y2="219.7" stroke="#6a4b9c" stroke-width="0.75"/>
+<text x="597.0" y="223.2" fill="#6a4b9c">north+west</text>
+</g>
+</svg>
+
+    <figcaption>
+      Loss rate against wind strength for the composed winds, <code>FIRST_DIR_PROB</code> = 0.5. The
+      <code>south+west</code> pair is missing above <code>MU</code> = 0.5: the sweep was stopped before those arms
+      ran (&sect;8).
+    </figcaption>
+  </figure>
+
+  <div class="keyfact">
+    <p>
+      <strong>A diagonal wind is far less protective than a cardinal one.</strong> At full strength a
+      cardinal wind leaves a loss rate of 0.3 &ndash; 1.6%; a diagonal one leaves 6.8 &ndash; 20.3%, up to
+      twenty times higher. A cardinal wind at &mu; = 1 collapses the fire to a line one cell wide. A
+      composed one cannot: even at &mu; = 1 each pair of cells independently picks one of two directions,
+      so the fire still steps two ways and stays two-dimensional.
+    </p>
+  </div>
+
+  <figure>
+    <table class="tight">
+<thead>
+<tr>
+<th rowspan="2">MU</th>
+<th colspan="2" class="num">south+east</th>
+<th colspan="2" class="num">south+west</th>
+<th colspan="2" class="num">north+east</th>
+<th colspan="2" class="num">north+west</th>
+</tr>
+<tr>
+<th class="num">loss</th><th class="num">95% Wilson</th>
+<th class="num">loss</th><th class="num">95% Wilson</th>
+<th class="num">loss</th><th class="num">95% Wilson</th>
+<th class="num">loss</th><th class="num">95% Wilson</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>0.0</th>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+</tr>
+<tr><th>0.25</th>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+</tr>
+<tr><th>0.5</th>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+<td class="num">99.9%</td><td class="ci">99.4&ndash;100.0</td>
+<td class="num">100.0%</td><td class="ci">99.6&ndash;100.0</td>
+</tr>
+<tr><th>0.75</th>
+<td class="num">99.6%</td><td class="ci">99.0&ndash;99.8</td>
+<td class="num">&ndash;</td><td class="ci">&ndash;</td>
+<td class="num">99.4%</td><td class="ci">98.7&ndash;99.7</td>
+<td class="num">99.7%</td><td class="ci">99.1&ndash;99.9</td>
+</tr>
+<tr class="mark"><th>0.85</th>
+<td class="num">99.5%</td><td class="ci">98.8&ndash;99.8</td>
+<td class="num">&ndash;</td><td class="ci">&ndash;</td>
+<td class="num">95.9%</td><td class="ci">94.5&ndash;97.0</td>
+<td class="num">99.2%</td><td class="ci">98.4&ndash;99.6</td>
+</tr>
+<tr class="mark"><th>0.9</th>
+<td class="num">96.0%</td><td class="ci">94.6&ndash;97.0</td>
+<td class="num">&ndash;</td><td class="ci">&ndash;</td>
+<td class="num">75.8%</td><td class="ci">73.0&ndash;78.4</td>
+<td class="num">97.1%</td><td class="ci">95.9&ndash;98.0</td>
+</tr>
+<tr class="mark"><th>0.95</th>
+<td class="num">59.1%</td><td class="ci">56.0&ndash;62.1</td>
+<td class="num">&ndash;</td><td class="ci">&ndash;</td>
+<td class="num">23.5%</td><td class="ci">21.0&ndash;26.2</td>
+<td class="num">55.6%</td><td class="ci">52.5&ndash;58.7</td>
+</tr>
+<tr class="mark"><th>0.975</th>
+<td class="num">31.9%</td><td class="ci">29.1&ndash;34.9</td>
+<td class="num">&ndash;</td><td class="ci">&ndash;</td>
+<td class="num">8.7%</td><td class="ci">7.1&ndash;10.6</td>
+<td class="num">28.3%</td><td class="ci">25.6&ndash;31.2</td>
+</tr>
+<tr class="mark"><th>0.99</th>
+<td class="num">24.3%</td><td class="ci">21.7&ndash;27.1</td>
+<td class="num">&ndash;</td><td class="ci">&ndash;</td>
+<td class="num">7.2%</td><td class="ci">5.8&ndash;9.0</td>
+<td class="num">21.9%</td><td class="ci">19.4&ndash;24.6</td>
+</tr>
+<tr class="mark"><th>1.0</th>
+<td class="num">20.3%</td><td class="ci">17.9&ndash;22.9</td>
+<td class="num">&ndash;</td><td class="ci">&ndash;</td>
+<td class="num">6.8%</td><td class="ci">5.4&ndash;8.5</td>
+<td class="num">18.5%</td><td class="ci">16.2&ndash;21.0</td>
+</tr>
+</tbody>
+</table>
+
+    <figcaption>
+      Loss rate and 95% Wilson interval, 1 000 runs per cell.
+    </figcaption>
+  </figure>
+
+  <h3>5.3 What the wind does to the fire, as opposed to the base</h3>
+
+  <p>
+    A loss rate that does not move invites the reading that the setting is not connected. It is connected;
+    it is doing a great deal to the fire, and none of it to the outcome. Mean cells burned per run under a
+    south wind, against the loss rate of the same arms:
+  </p>
+
+  <table class="tight">
+    <thead>
+      <tr><th>MU</th><th class="num">0</th><th class="num">0.25</th><th class="num">0.5</th>
+          <th class="num">0.75</th><th class="num">0.85</th><th class="num">0.9</th>
+          <th class="num">0.95</th><th class="num">0.975</th><th class="num">0.99</th>
+          <th class="num">1.0</th></tr>
+    </thead>
+    <tbody>
+      <tr><th>cells burned</th>
+          <td class="num">5 895</td><td class="num">5 683</td><td class="num">5 365</td>
+          <td class="num">4 727</td><td class="num">4 111</td><td class="num">3 560</td>
+          <td class="num">1 944</td><td class="num">1 057</td><td class="num">520</td>
+          <td class="num">37</td></tr>
+      <tr class="mark"><th>loss rate</th>
+          <td class="num">100.0</td><td class="num">100.0</td><td class="num">100.0</td>
+          <td class="num">99.9</td><td class="num">99.4</td><td class="num">97.0</td>
+          <td class="num">53.7</td><td class="num">29.2</td><td class="num">13.6</td>
+          <td class="num">1.0</td></tr>
+    </tbody>
+  </table>
+
+  <p>
+    Between &mu; = 0 and 0.75 the wind removes a fifth of the burned area and changes the loss rate by one
+    tenth of one point. By &mu; = 1 the fire burns 37 cells of a 10 000 cell grid &mdash; a line &mdash;
+    and still destroys the base in one run in a hundred.
+  </p>
+
+  <div class="note">
+    <h3>A caveat on this table</h3>
+    <p>
+      A run that is lost stops early, so burned area here mixes the extent of the fire with how long the
+      run lasted. The comparison is sound across the top of the table, where the median step of loss moves
+      only from 28 to 30, and progressively less so below it. The clean version of this measurement is the
+      <code>extent</code> sweep described in &sect;8, which runs with no base at all so that every run
+      lasts the full hundred steps. It has no data yet.
+    </p>
+  </div>
+</section>
+
+<section id="baseline">
+  <h2>6. Comparison with the baseline</h2>
+
+  <p class="lede">
+    The baseline lost the home base in 5 000 runs out of 5 000, a rate of 100.00% with a 95% Wilson
+    interval of 99.92 &ndash; 100.00. Everything in &sect;5 is a departure from that number, and this
+    section is about how far the departures go and how much they can be trusted.
+  </p>
+
+  <h3>6.1 The two experiments cannot be paired</h3>
+
+  <p>
+    The baseline drew its fires from seeds 1 000 000 upwards; this experiment draws from 3 000 000. That
+    is deliberate. Sharing a seed block <em>across</em> experiments is not pairing, it is fitting every
+    measurement ever taken to one set of fires, and the repository's convention is that each batch gets
+    its own block. The consequence is that the comparison here is between independent samples, and a
+    difference of a few tenths of a point between the baseline and a &mu; = 0 arm is a difference between
+    two sets of fires rather than a finding.
+  </p>
+
+  <p>
+    The honest internal comparator is therefore the &mu; = 0 arms: the same code, with the wind switched
+    on and turned all the way down, on this experiment's own fires. If those do not reproduce the
+    baseline, nothing else here can be read against it.
+  </p>
+
+  <table class="tight">
+    <thead><tr><th>Arm</th><th class="num">n</th><th class="num">lost</th><th class="num">loss rate</th>
+               <th class="num">95% Wilson</th></tr></thead>
+    <tbody>
+      <tr class="mark"><th>baseline, no wind at all</th><td class="num">5 000</td><td class="num">5 000</td>
+          <td class="num">100.00%</td><td class="ci">99.92 &ndash; 100.00</td></tr>
+      <tr class="mark"><th>wind on, MU = 0, all four directions</th><td class="num">1 000</td>
+          <td class="num">1 000</td><td class="num">100.00%</td><td class="ci">99.62 &ndash; 100.00</td></tr>
+      <tr><th>MU = 0.25, worst of four</th><td class="num">1 000</td><td class="num">1 000</td>
+          <td class="num">100.00%</td><td class="ci">99.62 &ndash; 100.00</td></tr>
+      <tr><th>MU = 0.5, worst of four</th><td class="num">1 000</td><td class="num">998</td>
+          <td class="num">99.80%</td><td class="ci">99.27 &ndash; 99.95</td></tr>
+      <tr><th>MU = 0.75, worst of four</th><td class="num">1 000</td><td class="num">995</td>
+          <td class="num">99.50%</td><td class="ci">98.83 &ndash; 99.79</td></tr>
+      <tr><th>MU = 0.9, south</th><td class="num">1 000</td><td class="num">970</td>
+          <td class="num">97.00%</td><td class="ci">95.75 &ndash; 97.89</td></tr>
+      <tr><th>MU = 0.9, north</th><td class="num">1 000</td><td class="num">646</td>
+          <td class="num">64.60%</td><td class="ci">61.59 &ndash; 67.50</td></tr>
+      <tr><th>MU = 1.0, north</th><td class="num">1 000</td><td class="num">3</td>
+          <td class="num">0.30%</td><td class="ci">0.10 &ndash; 0.88</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.2 How far up the range the baseline survives</h3>
+
+  <p>
+    Ten of the forty cardinal arms have intervals that contain the baseline's 100.0% outright: all four
+    directions at &mu; &le; 0.25, and three of four at &mu; = 0.5. Reading a little more loosely, every
+    arm up to &mu; = 0.75 sits within half a percentage point of it.
+  </p>
+
+  <div class="keyfact">
+    <p>
+      <strong>For the purposes of comparing UAV policies, switching the wind on below &mu; = 0.75 buys
+      nothing.</strong> The scenario is exactly as unwinnable as the baseline, and just as saturated: it
+      still cannot distinguish a policy that saves 0 runs in 1 000 from one that saves 1. If a later
+      experiment needs headroom at the weak end, the wind has to be turned to 0.9 or above &mdash; and at
+      that point the direction becomes a first-order experimental factor that has to be held fixed and
+      reported, not left at whatever <code>config.py</code> happens to say.
+    </p>
+  </div>
+
+  <h3>6.3 The calibration experiment's aside, resolved</h3>
+
+  <p>
+    The earlier calibration batch recorded that stronger wind made the scenario easier, and attributed it
+    to the wind concentrating the fire into a ray that misses a 2&times;2 base. The direction of that
+    finding is confirmed here and the explanation is very nearly right, but it is worth sharpening on two
+    points, because both change what it implies.
+  </p>
+
+  <ul>
+    <li>
+      <strong>It is not about missing.</strong> At &mu; = 1 the fire does reach the base in every run
+      where the geometry allows it &mdash; 32 of 32, &sect;7.3. What changes is that the fire that arrives
+      is a line, and a line does not dwell long enough to do four points of damage. Missing and passing
+      through look the same in the loss rate and are different in every other respect, not least what a
+      UAV would have to do about them.
+    </li>
+    <li>
+      <strong>The effect is not gradual.</strong> "Stronger wind is easier" suggests a dial. Three
+      quarters of the dial does nothing whatsoever, and the entire effect is packed into the last fifth.
+      Anyone tuning difficulty with <code>MU</code> would find it inert and then, in one step, decisive.
+    </li>
+  </ul>
+</section>
+
+<section id="validity">
+  <h2>7. Validity</h2>
+
+  <p class="lede">
+    Most of this surface is flat, and a flat surface is exactly what a wind setting that silently failed
+    to apply would also produce. Four checks separate those two readings. All four pass.
+  </p>
+
+  <h3>7.1 The arms see the same fires</h3>
+
+  <p>
+    Every arm of both direction sweeps shares one seed block, so run <em>i</em> should be the same fire
+    throughout, and a difference between two arms should be a difference between the winds rather than
+    between the fires they were shown. This holds for a reason particular to this simulator:
+    <code>WildFireModel.reset()</code> draws the ignition cell at <code>model.py:88</code> and only builds
+    the <code>FireSpread</code> at <code>model.py:109</code>, so the one draw a composed wind takes from
+    <code>SYSTEM_RANDOM</code> to seed its own generator lands after the cell has been chosen. The wind
+    changes how a fire spreads without changing where it starts.
+  </p>
+
+  <p>
+    <strong>Verified rather than assumed:</strong> 1 000 seeds, each naming one ignition cell, across all
+    73 arms of the two sweeps.
+  </p>
+
+  <h3>7.2 At <code>MU</code> = 0 the direction cannot matter</h3>
+
+  <p>
+    Zero strength multiplies every weight in the kernel by one, so the four directions at &mu; = 0 must
+    agree <em>run for run</em> &mdash; not merely in rate. Anything less would mean a direction is
+    reaching the kernel by some path <code>MU</code> does not gate, and every difference reported at
+    higher strength would be suspect.
+  </p>
+
+  <p>
+    <strong>Verified:</strong> the four arms are identical run for run, 1 000 runs each, and lose 100.00%
+    of them (95% Wilson 99.62 &ndash; 100.00). Four identical arms is the price of being able to say the
+    knob is wired up.
+  </p>
+
+  <h3>7.3 At <code>MU</code> = 1 the outcome is predictable run by run</h3>
+
+  <p>
+    At full strength the three on-axis weights are 1 and every other weight is 0, so the fire is a
+    straight line advancing three cells an update. It should therefore be lost <em>if and only if</em> the
+    ignition cell lies on the two-cell strip running through the base, on the upwind side of it. That is a
+    prediction about which individual runs are lost, not about how many, and it is much harder to satisfy
+    by accident than a matching rate.
+  </p>
+
+  <table class="tight">
+    <thead><tr><th>Direction</th><th class="num">upwind strip</th><th class="num">predicted lost</th>
+               <th class="num">actually lost</th><th class="num">mismatches</th></tr></thead>
+    <tbody>
+      <tr><th>north</th><td class="num">50 cells</td><td class="num">3</td><td class="num">3</td><td class="num">0</td></tr>
+      <tr><th>east</th><td class="num">50 cells</td><td class="num">4</td><td class="num">4</td><td class="num">0</td></tr>
+      <tr><th>south</th><td class="num">146 cells</td><td class="num">10</td><td class="num">10</td><td class="num">0</td></tr>
+      <tr><th>west</th><td class="num">146 cells</td><td class="num">15</td><td class="num">15</td><td class="num">0</td></tr>
+    </tbody>
+  </table>
+
+  <p>
+    <strong>32 predicted, 32 lost, not one mismatch in either direction.</strong> The 50-against-146 split
+    in the second column is the 25-against-73 approach asymmetry of &sect;5.1, and it is why north and
+    east end lower than south and west at &mu; = 1.
+  </p>
+
+  <p>
+    The rule is stated for ignitions further than three cells from the base, and that exclusion is not
+    bookkeeping &mdash; it is the dwell mechanism showing itself. The wave ignites everything within three
+    cells along the axis in its first update, so a fire lit inside that radius clears the two-deep
+    footprint in a single leap and scores two or three damage against the four required. Three runs fell
+    inside it and one was lost. A fire lit beside the base is <em>less</em> dangerous than one lit twenty
+    cells away, which is absurd as physics and exactly right as a description of this model.
+  </p>
+
+  <h3>7.4 An arm was discarded</h3>
+
+  <p>
+    The <code>south+west</code> arm at &mu; = 0.75 has 1 000 records on disk of which 256 carry a
+    <code>BrokenProcessPool</code> error, because the sweep was killed while that arm was running.
+    <code>analyse.py</code> discards the whole arm rather than the failed runs: keeping the survivors
+    would report a rate over whichever runs happened to finish first, which is a biased sample dressed as
+    a measurement. A run that raised is not a measurement, and counting it either way is how an experiment
+    reports a bug as a result.
+  </p>
+</section>
+
+<section id="notrun">
+  <h2>8. What was not run</h2>
+
+  <p>
+    The sweep was stopped part way. Three further sweeps were designed, are still in <code>run.sh</code>,
+    and have no data. They are listed here rather than quietly dropped, because two of them bear directly
+    on how far the results above can be carried.
+  </p>
+
+  <table class="tight">
+    <thead><tr><th>Sweep</th><th>Varies</th><th>What it would settle</th></tr></thead>
+    <tbody>
+      <tr class="mark"><th>runlength</th><td><code>BATCH_SIZE</code> &times; <code>MU</code>, 32 arms</td>
+          <td>Whether "wind does nothing below 0.85" is a fact about wind or about a 100 step budget. The
+              wind narrows the fire but also speeds it up, and 100 steps is more time than either version
+              needs; a shorter run should move the cliff. <strong>The one worth running next.</strong></td></tr>
+      <tr><th>steadiness</th><td><code>FIRST_DIR_PROB</code> &times; <code>MU</code>, 12 arms</td>
+          <td>How much of the diagonal result in &sect;5.2 is the mixture rather than the bearing. At
+              <code>FIRST_DIR_PROB</code> = 1 a composed wind is a fixed wind, which would also check the
+              two wind code paths against each other.</td></tr>
+      <tr><th>extent</th><td><code>MU</code>, no base, 10 arms</td>
+          <td>The unconfounded version of &sect;5.3: with no base to lose, every run lasts the full
+              hundred steps and burned area measures the fire rather than the run.</td></tr>
+    </tbody>
+  </table>
+
+  <p>
+    Within the sweeps that did run, the <code>south+west</code> diagonal is missing at &mu; &ge; 0.75
+    &mdash; three arms never started and one was discarded (&sect;7.4). The three complete diagonal pairs
+    are enough to support the finding in &sect;5.2, which is a large effect, but the fourth pair would
+    have made it symmetric with the cardinal sweep.
+  </p>
+
+  <p class="footnote">
+    None of this affects the cardinal sweep, which is complete: 40 arms, 1 000 runs each, all four
+    directions at all ten strengths.
+  </p>
+</section>
+
+<section id="reproducing" class="run-on">
+  <h2>9. Reproducing</h2>
+
+  <p>
+    Everything below runs from the repository root at the commit on the title page. The sweeps are one
+    script, because the seed blocks and the base settings have to agree between them and a list of
+    commands in a README is a poor way to guarantee that:
+  </p>
+
+<pre><span class="c"># all five sweeps. The two reported here are the first two, and take about</span>
+<span class="c"># an hour on eight workers; the other three were not run.</span>
+bash experiments/20260810_wind/run.sh
+
+<span class="c"># arms.csv, summary.json, and the four checks of section 7</span>
+python3 experiments/20260810_wind/analyse.py
+
+<span class="c"># config-used.json: all 90 settings as applied, the axes, and the commit</span>
+python3 experiments/20260810_wind/dump_config.py
+
+<span class="c"># the charts and tables in section 5, regenerated from summary.json</span>
+python3 experiments/20260810_wind/figures.py all</pre>
+
+  <p>
+    Two things about the run are easy to get wrong and expensive to notice late.
+    <strong>Set the run length through <code>BATCH_SIZE</code>, never <code>--steps</code></strong> &mdash;
+    they are aliases for one setting, and a sweep that varies both varies neither predictably.
+    <strong><code>--policy random</code> is recorded for completeness only</strong>: with
+    <code>NUM_AGENTS = 0</code> no policy is ever consulted, and naming one keeps the command identical to
+    the baseline's.
+  </p>
+
+  <p>
+    The figures in &sect;5 are generated rather than typed. 73 arms is more numbers than can be
+    transcribed into HTML by hand without introducing an error that no amount of proofreading finds, so
+    <code>figures.py</code> emits the tables and the SVG charts from <code>summary.json</code> and they
+    are pasted in; regenerating them after a re-run is a diff rather than a re-read.
+  </p>
+
+  <p>
+    The raw per-run JSON and the merged CSVs are not in the repository. <code>.gitignore</code> excludes
+    <code>experiments/**/*.json</code> and <code>experiments/**/*.csv</code> on the grounds that they run
+    to hundreds of megabytes and are regenerable from the script above, so this report and the README
+    beside it are the record. Every number quoted in either of them is in one of the two.
+  </p>
+</section>
+
+
+</body>
+</html>
