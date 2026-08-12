@@ -23,6 +23,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest"]
 
+# The analysis under experiments/ only. The simulation imports none of these, so they stay out of the
+# dependencies above and an install of the simulator does not drag scikit-learn in with it.
+# requirements.txt lists them unconditionally, because it is the documented install path and someone
+# following it is setting up to work on the whole repository.
+analysis = ["scipy", "scikit-learn", "markdown"]
+
 # only available after `pip install -e .`, which is optional: main.py and headless.py at the repository
 # root do the same thing without one
 [project.scripts]

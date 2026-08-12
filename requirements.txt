@@ -7,5 +7,14 @@ mesa==1.2.1
 numpy
 matplotlib
 
+# the simulation itself needs none of these. They are used by the analysis under
+# experiments/: scipy for the Sobol sequence the parameter space design is drawn
+# from and for its t intervals, scikit-learn for the K-means clustering and the
+# k-NN regression that checks it, and markdown to render a report.md into the
+# self contained HTML that Chrome prints to PDF.
+scipy
+scikit-learn
+markdown
+
 # testing: run the suite with `python3 -m pytest`
 pytest
